@@ -86,7 +86,7 @@ export default function Sidebar({ user }) {
   const links = getNavLinks();
 
   return (
-    <div style={{
+    <div className="no-print" style={{
       width: isCollapsed ? '80px' : '260px',
       transition: 'width 0.3s ease',
       backgroundColor: 'var(--color-primary)',

@@ -187,8 +187,8 @@ export default function CreateOrder() {
   };
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '2rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
+    <div className="create-order-container" style={{ maxWidth: '1000px', margin: '0 auto', padding: '2rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }} className="no-print">
         <button 
           onClick={() => currentStep === 0 ? navigate('/merchandiser/orders') : handleBack()}
           className="btn btn-secondary"
@@ -746,139 +746,211 @@ export default function CreateOrder() {
 
         {/* Step 5: Summary & Submit */}
         {currentStep === 5 && (
-          <div className="fade-in">
-            <h2 style={{ marginBottom: '1.5rem' }}>Order Summary</h2>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                  <span style={{ color: 'var(--text-muted-current)' }}>Order Type:</span>
-                  <span style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>{formData.order_type}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                  <span style={{ color: 'var(--text-muted-current)' }}>Buyer:</span>
-                  <span style={{ fontWeight: 'bold' }}>{brands.find(b => b.id === formData.buyer_id)?.brand_name}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                  <span style={{ color: 'var(--text-muted-current)' }}>Design:</span>
-                  <span>{formData.design_no} / {formData.design_name}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                  <span style={{ color: 'var(--text-muted-current)' }}>Vendor:</span>
-                  <span>{partners.find(p => p.id === formData.vendor_id)?.partner_name}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                  <span style={{ color: 'var(--text-muted-current)' }}>Count:</span>
-                  <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{getShortCountsString()}</span>
-                </div>
+          <div className="fade-in print-area">
+            {/* Header / Invoice style info */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid var(--color-primary)', paddingBottom: '1rem', marginBottom: '2rem' }}>
+              <div>
+                <h1 style={{ margin: 0, color: 'var(--color-primary)', fontSize: '1.75rem' }}>Ashok Textiles</h1>
+                <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-muted-current)', fontSize: '0.875rem' }}>Order Confirmation Summary</p>
               </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                    <span style={{ color: 'var(--text-muted-current)' }}>Total Quantity:</span>
-                    <span style={{ fontWeight: 'bold' }}>{formData.total_quantity} Mtrs</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                    <span style={{ color: 'var(--text-muted-current)' }}>Production Qty:</span>
-                    <span style={{ fontWeight: 'bold' }}>{formData.technical_specs.production_quantity} Mtrs</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                    <span style={{ color: 'var(--text-muted-current)' }}>Order Reed/Pick:</span>
-                    <span>{formData.technical_specs.order_reed} / {formData.technical_specs.order_pick}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                    <span style={{ color: 'var(--text-muted-current)' }}>On Loom Reed/Pick:</span>
-                    <span>{formData.technical_specs.on_loom_reed} / {formData.technical_specs.on_loom_pick}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                    <span style={{ color: 'var(--text-muted-current)' }}>Width (Order/Finished):</span>
-                    <span>{formData.technical_specs.order_width}" / {formData.technical_specs.finished_width}"</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                    <span style={{ color: 'var(--text-muted-current)' }}>Weave:</span>
-                    <span>{formData.technical_specs.weave_type}</span>
-                </div>
+              <div style={{ textAlign: 'right' }}>
+                <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
+                  {isEdit ? `Order No: ${formData.order_number}` : 'Order No: DRAFT'}
+                </h2>
+                <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-muted-current)', fontSize: '0.875rem' }}>
+                  Date: {new Date().toLocaleDateString()}
+                </p>
               </div>
             </div>
 
-            <div style={{ marginTop: '2rem' }}>
-              <h3 style={{ fontSize: '1rem', marginBottom: '1rem' }}>Yarn Requirement Summary</h3>
-              <div style={{ backgroundColor: 'var(--surface-current)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
-                {/* Count + Color Summary */}
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <h4 style={{ fontSize: '0.875rem', color: 'var(--text-muted-current)', marginBottom: '0.5rem' }}>Count & Color Wise</h4>
-                  <div className="table-container">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Warp/Weft</th>
-                          <th>Yarn Description</th>
-                          <th>Color</th>
-                          <th style={{ textAlign: 'right' }}>Requirement (kg)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {formData.yarn_mappings.map((m, i) => (
-                          <tr key={i}>
-                            <td style={{ textTransform: 'capitalize' }}>{m.type} {m.type === 'warp' ? (m.warpIdx + 1) : ''}</td>
-                            <td>{formatYarn(yarnCounts.find(y => y.id === m.countId))}</td>
-                            <td>{m.color}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{m.kg} kg</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+            {/* Order Details Table */}
+            <div style={{ marginBottom: '2rem' }}>
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '0.75rem', color: 'var(--color-primary)', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>Order Details</h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid var(--border-current)', fontSize: '0.9rem' }}>
+                <tbody>
+                  <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', width: '25%', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Buyer</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', width: '25%', borderRight: '1px solid var(--border-current)' }}>{brands.find(b => b.id === formData.buyer_id)?.brand_name || '-'}</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', width: '25%', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Order Type</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', width: '25%' , textTransform: 'uppercase'}}>{formData.order_type || '-'}</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Design No / Name</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', borderRight: '1px solid var(--border-current)' }}>{formData.design_no || '-'} {formData.design_name ? `(${formData.design_name})` : ''}</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Season / Merchandiser</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.season || '-'} / {formData.merchandiser_name || '-'}</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Vendor</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', borderRight: '1px solid var(--border-current)' }}>{partners.find(p => p.id === formData.vendor_id)?.partner_name || '-'}</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Yarn Count (W X We)</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', color: 'var(--color-primary)' }}>{getShortCountsString()}</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Order Qty (Mtrs)</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', borderRight: '1px solid var(--border-current)' }}>{formData.total_quantity || '0'} Mtrs</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Production Qty (Mtrs)</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold' }}>{formData.technical_specs.production_quantity || '0'} Mtrs</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Order Reed / Pick</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', borderRight: '1px solid var(--border-current)' }}>{formData.technical_specs.order_reed || '-'} / {formData.technical_specs.order_pick || '-'}</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>On Loom Reed / Pick</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.technical_specs.on_loom_reed || '-'} / {formData.technical_specs.on_loom_pick || '-'}</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Finished Width / Order Width</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', borderRight: '1px solid var(--border-current)' }}>{formData.technical_specs.finished_width || '-'} / {formData.technical_specs.order_width || '-'}</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Weave Type</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.technical_specs.weave_type || '-'}</td>
+                  </tr>
+                  <tr>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>FOB Date</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', borderRight: '1px solid var(--border-current)' }}>{formData.fob_date || '-'}</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Dispatch Date</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.dispatch_date || '-'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-                {/* Total Count Wise Summary */}
-                <div>
-                   <h4 style={{ fontSize: '0.875rem', color: 'var(--text-muted-current)', marginBottom: '0.5rem' }}>Total Count Wise</h4>
-                   <div className="table-container" style={{ maxWidth: '600px' }}>
-                     <table className="table">
-                       <thead>
-                         <tr>
-                           <th>Yarn Description</th>
-                           <th style={{ textAlign: 'right' }}>Total Quantity (kg)</th>
-                         </tr>
-                       </thead>
-                       <tbody>
-                        {Object.entries(
-                          formData.yarn_mappings.reduce((acc, curr) => {
-                            const count = formatYarn(yarnCounts.find(y => y.id === curr.countId));
-                            acc[count] = (acc[count] || 0) + parseFloat(curr.kg || 0);
-                            return acc;
-                          }, {})
-                        ).map(([count, total], i) => (
-                          <tr key={i} style={{ backgroundColor: 'var(--surface-current)' }}>
-                            <td><span style={{ fontWeight: '500' }}>{count}</span></td>
-                            <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>{total.toFixed(2)} kg</td>
-                          </tr>
-                        ))}
-                       </tbody>
-                     </table>
-                   </div>
-                </div>
+            {/* Yarn Requirement Table */}
+            <div style={{ marginBottom: '2rem' }}>
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '0.75rem', color: 'var(--color-primary)', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>Yarn Requirement Summary (Count & Color Wise)</h3>
+              <div style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '2px solid var(--border-current)' }}>
+                      <th style={{ padding: '0.6rem 0.75rem', textAlign: 'left' }}>Position</th>
+                      <th style={{ padding: '0.6rem 0.75rem', textAlign: 'left' }}>Yarn Description</th>
+                      <th style={{ padding: '0.6rem 0.75rem', textAlign: 'left' }}>Color</th>
+                      <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Requirement (KG)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {formData.yarn_mappings.map((m, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                        <td style={{ padding: '0.6rem 0.75rem', textTransform: 'capitalize' }}>{m.type} {m.type === 'warp' ? (m.warpIdx + 1) : ''}</td>
+                        <td style={{ padding: '0.6rem 0.75rem' }}>{formatYarn(yarnCounts.find(y => y.id === m.countId))}</td>
+                        <td style={{ padding: '0.6rem 0.75rem' }}>{m.color}</td>
+                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 'bold' }}>{parseFloat(m.kg || 0).toFixed(2)} kg</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
 
+            {/* Total Count Wise Summary Table */}
+            <div style={{ marginBottom: '2rem' }}>
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '0.75rem', color: 'var(--color-primary)', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>Total Count Wise Summary</h3>
+              <div style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden', maxWidth: '600px' }}>
+                <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '2px solid var(--border-current)' }}>
+                      <th style={{ padding: '0.6rem 0.75rem', textAlign: 'left' }}>Yarn Description</th>
+                      <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Total Quantity (KG)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(
+                      formData.yarn_mappings.reduce((acc, curr) => {
+                        const count = formatYarn(yarnCounts.find(y => y.id === curr.countId));
+                        acc[count] = (acc[count] || 0) + parseFloat(curr.kg || 0);
+                        return acc;
+                      }, {})
+                    ).map(([count, total], i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                        <td style={{ padding: '0.6rem 0.75rem' }}><span style={{ fontWeight: '500' }}>{count}</span></td>
+                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>{total.toFixed(2)} kg</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Signature section for print layout */}
+            <div style={{ display: 'none', justifyContent: 'space-between', marginTop: '4rem', paddingTop: '2rem' }} className="print-only-block">
+              <style>{`
+                @media print {
+                  .print-only-block {
+                    display: flex !important;
+                  }
+                }
+              `}</style>
+              <div style={{ borderTop: '1px solid black', width: '200px', textAlign: 'center', paddingTop: '0.5rem' }}>
+                Prepared By
+              </div>
+              <div style={{ borderTop: '1px solid black', width: '200px', textAlign: 'center', paddingTop: '0.5rem' }}>
+                Authorized Signatory
+              </div>
+            </div>
+
+            {/* Print & Submissions control */}
             <style>{`
               @media print {
-                aside,
+                /* Hide sidebar, navigation elements, buttons, and status dots */
                 .no-print,
+                .no-print *,
                 button,
                 .btn,
+                aside,
                 header {
                   display: none !important;
                 }
-                main,
-                #root,
-                .main-content {
-                  margin-left: 0 !important;
+                
+                /* Reset containers for multi-page height flow and zero spacing margins */
+                body, html {
+                  background: white !important;
+                  color: black !important;
+                  height: auto !important;
+                  min-height: auto !important;
+                  overflow: visible !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                
+                .app-container {
+                  display: block !important;
+                  height: auto !important;
+                  min-height: auto !important;
+                  overflow: visible !important;
+                  background: white !important;
+                }
+                
+                .main-content-wrapper {
+                  display: block !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  overflow: visible !important;
+                  margin: 0 !important;
                   padding: 0 !important;
                   background: white !important;
-                  width: 100% !important;
                 }
+                
+                main,
+                .main-content {
+                  display: block !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                  max-width: 100% !important;
+                }
+                
+                .create-order-container {
+                  max-width: 100% !important;
+                  width: 100% !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  height: auto !important;
+                  overflow: visible !important;
+                }
+                
                 .glass-panel {
                   border: none !important;
                   box-shadow: none !important;
@@ -887,10 +959,43 @@ export default function CreateOrder() {
                   margin: 0 !important;
                   width: 100% !important;
                   max-width: 100% !important;
+                  height: auto !important;
+                  overflow: visible !important;
                 }
-                body {
-                  background: white !important;
-                  color: black !important;
+
+                /* Structured Bordered Tables for Print */
+                table {
+                  width: 100% !important;
+                  border-collapse: collapse !important;
+                  margin-top: 1rem !important;
+                  margin-bottom: 2rem !important;
+                  page-break-inside: avoid !important;
+                }
+                
+                th, td {
+                  border: 1px solid #000000 !important; /* solid black borders for clear layout */
+                  padding: 8px 12px !important;
+                  font-size: 11pt !important;
+                  color: #000000 !important;
+                  background-color: transparent !important;
+                }
+                
+                /* Styled headers and label cells in print */
+                th,
+                .spec-label {
+                  background-color: #f3f4f6 !important; /* light grey backgrounds */
+                  font-weight: bold !important;
+                  color: #000000 !important;
+                }
+
+                h1, h2, h3, h4 {
+                  color: #800000 !important; /* Keep brand maroon color */
+                  page-break-after: avoid !important;
+                }
+                
+                h3 {
+                  border-bottom: 2px solid #800000 !important;
+                  padding-bottom: 4px !important;
                 }
               }
             `}</style>
