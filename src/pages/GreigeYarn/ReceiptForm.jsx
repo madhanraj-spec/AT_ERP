@@ -14,28 +14,49 @@ export default function ReceiptForm() {
   // Form State
   const [receiptType, setReceiptType] = useState('spinning_mill');
   const [formData, setFormData] = useState({
-    yarn_count_id: '',
     spinning_mill_id: '',
     order_form_no: '',
     invoice_no: '',
     invoice_date: new Date().toISOString().split('T')[0],
     invoice_amount: '',
-    bag_weight: '',
-    bag_count: '',
-    cone_weight: '',
-    cone_count: '',
-    rate_per_kg: '',
-    location_id: '',
     vehicle_no: '',
     received_by: ''
   });
 
-  const [verificationWeight, setVerificationWeight] = useState('');
+  const [items, setItems] = useState([
+    {
+      yarn_count_id: '',
+      bag_weight: '',
+      bag_count: '',
+      cone_weight: '',
+      cone_count: '',
+      rate_per_kg: '',
+      location_id: '',
+      verification_weight: ''
+    }
+  ]);
+
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchMasters();
   }, []);
+
+  // Reset items list when receipt source type changes
+  useEffect(() => {
+    setItems([
+      {
+        yarn_count_id: '',
+        bag_weight: '',
+        bag_count: '',
+        cone_weight: '',
+        cone_count: '',
+        rate_per_kg: '',
+        location_id: '',
+        verification_weight: ''
+      }
+    ]);
+  }, [receiptType]);
 
   const fetchMasters = async () => {
     const [counts, partners, locs] = await Promise.all([
@@ -53,17 +74,31 @@ export default function ReceiptForm() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // Auto Calculations
-  const computedWeight = useMemo(() => {
-    const bags = (parseFloat(formData.bag_weight) || 0) * (parseInt(formData.bag_count) || 0);
-    const cones = (parseFloat(formData.cone_weight) || 0) * (parseInt(formData.cone_count) || 0);
+  // Helper calculations for items
+  const getItemComputedWeight = (item) => {
+    const bags = (parseFloat(item.bag_weight) || 0) * (parseInt(item.bag_count) || 0);
+    const cones = (parseFloat(item.cone_weight) || 0) * (parseInt(item.cone_count) || 0);
     return (bags + cones).toFixed(2);
-  }, [formData.bag_weight, formData.bag_count, formData.cone_weight, formData.cone_count]);
+  };
 
-  const isVerified = useMemo(() => {
-    if (parseFloat(computedWeight) <= 0) return false;
-    return parseFloat(computedWeight) === parseFloat(verificationWeight);
-  }, [computedWeight, verificationWeight]);
+  const isItemVerified = (item) => {
+    const weight = parseFloat(getItemComputedWeight(item));
+    if (weight <= 0) return false;
+    return weight === parseFloat(item.verification_weight);
+  };
+
+  // Verification Gatekeepers
+  const isAllVerified = useMemo(() => {
+    if (items.length === 0) return false;
+    return items.every(item => {
+      if (!item.yarn_count_id || !item.location_id) return false;
+      return isItemVerified(item);
+    });
+  }, [items]);
+
+  const grandTotalComputedWeight = useMemo(() => {
+    return items.reduce((sum, item) => sum + parseFloat(getItemComputedWeight(item)), 0).toFixed(2);
+  }, [items]);
 
   // Submission Logic
   const generateReceiptNumber = async () => {
@@ -87,42 +122,55 @@ export default function ReceiptForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!isVerified) return;
+    if (!isAllVerified) return;
     
     setSaving(true);
-    const receiptNo = await generateReceiptNumber();
+    try {
+      const receiptNo = await generateReceiptNumber();
 
-    const payload = {
-      receipt_no: receiptNo,
-      receipt_type: receiptType,
-      yarn_count_id: formData.yarn_count_id,
-      total_weight: parseFloat(computedWeight),
-      bag_weight: parseFloat(formData.bag_weight) || 0,
-      bag_count: parseInt(formData.bag_count) || 0,
-      cone_weight: parseFloat(formData.cone_weight) || 0,
-      cone_count: parseInt(formData.cone_count) || 0,
-      rate_per_kg: parseFloat(formData.rate_per_kg) || 0,
-      location_id: formData.location_id,
-      vehicle_no: formData.vehicle_no,
-      received_by: formData.received_by
-    };
+      const payloads = items.map(item => {
+        const bagsWeight = (parseFloat(item.bag_weight) || 0) * (parseInt(item.bag_count) || 0);
+        const conesWeight = (parseFloat(item.cone_weight) || 0) * (parseInt(item.cone_count) || 0);
+        const computedItemWeight = bagsWeight + conesWeight;
+        
+        const payload = {
+          receipt_no: receiptNo,
+          receipt_type: receiptType,
+          yarn_count_id: item.yarn_count_id,
+          total_weight: computedItemWeight,
+          bag_weight: parseFloat(item.bag_weight) || 0,
+          bag_count: parseInt(item.bag_count) || 0,
+          cone_weight: parseFloat(item.cone_weight) || 0,
+          cone_count: parseInt(item.cone_count) || 0,
+          rate_per_kg: parseFloat(item.rate_per_kg) || 0,
+          location_id: item.location_id,
+          vehicle_no: formData.vehicle_no,
+          received_by: formData.received_by
+        };
 
-    if (receiptType === 'spinning_mill') {
-      payload.spinning_mill_id = formData.spinning_mill_id;
-      payload.invoice_no = formData.invoice_no;
-      payload.invoice_date = formData.invoice_date;
-      payload.invoice_amount = parseFloat(formData.invoice_amount) || 0;
-    } else {
-      payload.order_form_no = formData.order_form_no;
-    }
+        if (receiptType === 'spinning_mill') {
+          payload.spinning_mill_id = formData.spinning_mill_id;
+          payload.invoice_no = formData.invoice_no;
+          payload.invoice_date = formData.invoice_date;
+          payload.invoice_amount = parseFloat(formData.invoice_amount) || 0;
+        } else {
+          payload.order_form_no = formData.order_form_no;
+        }
 
-    const { error } = await supabase.from('greige_yarn_receipts').insert([payload]);
-    setSaving(false);
+        return payload;
+      });
 
-    if (error) {
-      alert("Database error: " + error.message);
-    } else {
-      navigate('/greige-yarn/receipts');
+      const { error } = await supabase.from('greige_yarn_receipts').insert(payloads);
+      setSaving(false);
+
+      if (error) {
+        alert("Database error: " + error.message);
+      } else {
+        navigate('/greige-yarn/receipts');
+      }
+    } catch (err) {
+      setSaving(false);
+      alert("Error: " + err.message);
     }
   };
 
@@ -163,14 +211,6 @@ export default function ReceiptForm() {
           <h2 style={{ fontSize: '1.125rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.5rem' }}>2. Document Details</h2>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div className="input-group">
-              <label className="input-label">Yarn Count Setup</label>
-              <select name="yarn_count_id" className="input-field" value={formData.yarn_count_id} onChange={handleChange} required>
-                <option value="">Select Count...</option>
-                {yarnCounts.map(yc => <option key={yc.id} value={yc.id}>{yc.count_value} ({yc.material} - {yc.product_type})</option>)}
-              </select>
-            </div>
-
             {receiptType === 'spinning_mill' ? (
               <>
                 <div className="input-group">
@@ -202,87 +242,231 @@ export default function ReceiptForm() {
           </div>
         </div>
 
-        {/* Step 3: Package Math Details */}
+        {/* Step 3: Yarn Counts Received */}
         <div className="glass-panel">
-          <h2 style={{ fontSize: '1.125rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.5rem' }}>3. Package Details</h2>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-            <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px', border: '1px dashed #d1d5db' }}>
-              <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', color: '#4b5563' }}>Bags (Primary)</h3>
-              <div className="input-group">
-                <label className="input-label">Weight of 1 Bag (kg)</label>
-                <input type="number" step="0.01" name="bag_weight" className="input-field" value={formData.bag_weight} onChange={handleChange} required />
-              </div>
-              <div className="input-group">
-                <label className="input-label">Number of Bags</label>
-                <input type="number" name="bag_count" className="input-field" value={formData.bag_count} onChange={handleChange} required />
-              </div>
-            </div>
+          <h2 style={{ fontSize: '1.125rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>3. Yarn Counts Received</span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+              onClick={() => setItems(prev => [...prev, {
+                yarn_count_id: '',
+                bag_weight: '',
+                bag_count: '',
+                cone_weight: '',
+                cone_count: '',
+                rate_per_kg: '',
+                location_id: '',
+                verification_weight: ''
+              }])}
+            >
+              + Add Another Yarn Count
+            </button>
+          </h2>
 
-            <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px', border: '1px dashed #d1d5db' }}>
-              <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', color: '#4b5563' }}>Cones (Optional/Loose)</h3>
-              <div className="input-group">
-                <label className="input-label">Weight per Cone (kg)</label>
-                <input type="number" step="0.01" name="cone_weight" className="input-field" value={formData.cone_weight} onChange={handleChange} />
-              </div>
-              <div className="input-group">
-                <label className="input-label">Number of Cones</label>
-                <input type="number" name="cone_count" className="input-field" value={formData.cone_count} onChange={handleChange} />
-              </div>
-            </div>
-            
-            <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px', border: '1px dashed #d1d5db', gridColumn: 'span 2' }}>
-              <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', color: '#4b5563' }}>Pricing Details</h3>
-              <div className="input-group" style={{ maxWidth: '50%' }}>
-                <label className="input-label">Yarn Price / Rate per KG (₹)</label>
-                <input type="number" step="0.01" name="rate_per_kg" className="input-field" value={formData.rate_per_kg} onChange={handleChange} required />
-              </div>
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {items.map((item, idx) => {
+              const itemWeight = getItemComputedWeight(item);
+              const verified = isItemVerified(item);
+              
+              return (
+                <div key={idx} style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', padding: '1.5rem', position: 'relative', backgroundColor: verified ? '#f8fafc' : '#ffffff' }}>
+                  
+                  {/* Item Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px dashed var(--border-current)', paddingBottom: '0.5rem' }}>
+                    <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>Yarn Count #{idx + 1}</span>
+                    {items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))}
+                        style={{ backgroundColor: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '4px', cursor: 'pointer', padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Item Fields Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                    <div className="input-group">
+                      <label className="input-label">Select Yarn Count</label>
+                      <select
+                        className="input-field"
+                        value={item.yarn_count_id}
+                        onChange={e => {
+                          const updated = [...items];
+                          updated[idx].yarn_count_id = e.target.value;
+                          setItems(updated);
+                        }}
+                        required
+                      >
+                        <option value="">Select Count...</option>
+                        {yarnCounts.map(yc => <option key={yc.id} value={yc.id}>{yc.count_value} ({yc.material} - {yc.product_type})</option>)}
+                      </select>
+                    </div>
+
+                    <div className="input-group">
+                      <label className="input-label">Storage Location (Bay)</label>
+                      <select
+                        className="input-field"
+                        value={item.location_id}
+                        onChange={e => {
+                          const updated = [...items];
+                          updated[idx].location_id = e.target.value;
+                          setItems(updated);
+                        }}
+                        required
+                      >
+                        <option value="">Select Storage Location...</option>
+                        {locations.map(l => <option key={l.id} value={l.id}>{l.location_name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Packaging Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginTop: '1rem' }}>
+                    <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px', border: '1px dashed #d1d5db' }}>
+                      <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', color: '#4b5563', fontWeight: 'bold' }}>Bags (Primary)</h4>
+                      <div className="input-group">
+                        <label className="input-label">Weight of 1 Bag (kg)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="input-field"
+                          value={item.bag_weight}
+                          onChange={e => {
+                            const updated = [...items];
+                            updated[idx].bag_weight = e.target.value;
+                            setItems(updated);
+                          }}
+                          required
+                        />
+                      </div>
+                      <div className="input-group" style={{ marginTop: '0.5rem' }}>
+                        <label className="input-label">Number of Bags</label>
+                        <input
+                          type="number"
+                          className="input-field"
+                          value={item.bag_count}
+                          onChange={e => {
+                            const updated = [...items];
+                            updated[idx].bag_count = e.target.value;
+                            setItems(updated);
+                          }}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px', border: '1px dashed #d1d5db' }}>
+                      <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', color: '#4b5563', fontWeight: 'bold' }}>Cones (Optional/Loose)</h4>
+                      <div className="input-group">
+                        <label className="input-label">Weight per Cone (kg)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="input-field"
+                          value={item.cone_weight}
+                          onChange={e => {
+                            const updated = [...items];
+                            updated[idx].cone_weight = e.target.value;
+                            setItems(updated);
+                          }}
+                        />
+                      </div>
+                      <div className="input-group" style={{ marginTop: '0.5rem' }}>
+                        <label className="input-label">Number of Cones</label>
+                        <input
+                          type="number"
+                          className="input-field"
+                          value={item.cone_count}
+                          onChange={e => {
+                            const updated = [...items];
+                            updated[idx].cone_count = e.target.value;
+                            setItems(updated);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pricing & Verification Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginTop: '1rem' }}>
+                    {receiptType === 'spinning_mill' ? (
+                      <div className="input-group">
+                        <label className="input-label">Yarn Price / Rate per KG (₹)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="input-field"
+                          value={item.rate_per_kg}
+                          onChange={e => {
+                            const updated = [...items];
+                            updated[idx].rate_per_kg = e.target.value;
+                            setItems(updated);
+                          }}
+                          required
+                        />
+                      </div>
+                    ) : (
+                      <div></div> // empty spacer
+                    )}
+
+                    <div className="input-group">
+                      <label className="input-label">Verify Invoice Weight for Count (kg)</label>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="input-field"
+                          placeholder="Enter weight to verify"
+                          value={item.verification_weight}
+                          onChange={e => {
+                            const updated = [...items];
+                            updated[idx].verification_weight = e.target.value;
+                            setItems(updated);
+                          }}
+                          required
+                          style={{ borderColor: verified ? '#22c55e' : (item.verification_weight && !verified ? '#ef4444' : '') }}
+                        />
+                        {verified ? <CheckCircle2 color="#22c55e" size={20} /> : <AlertCircle color={item.verification_weight ? '#ef4444' : '#9ca3af'} size={20} />}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Calculated Weight Preview */}
+                  <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: verified ? '#f0fdf4' : '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px', border: verified ? '1px solid #bbf7d0' : '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: 'bold' }}>Calculated Count Weight:</span>
+                    <span style={{ fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--color-primary)' }}>{itemWeight} kg</span>
+                  </div>
+
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Step 4: Weight Verification Gatekeeper */}
-        <div className="glass-panel" style={{ backgroundColor: isVerified ? '#f0fdf4' : 'var(--surface-current)', borderColor: isVerified ? '#86efac' : 'var(--border-current)' }}>
-          <h2 style={{ fontSize: '1.125rem', marginBottom: '1rem', color: isVerified ? '#166534' : 'inherit' }}>4. Verification</h2>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.875rem', color: 'var(--text-muted-current)' }}>System Calculated Final Weight</p>
-              <p style={{ margin: '0', fontSize: '2rem', fontWeight: 'bold', color: 'var(--color-primary)' }}>{computedWeight} kg</p>
-            </div>
-            
-            <div style={{ minWidth: '300px' }}>
-              <div className="input-group">
-                <label className="input-label">Verify Invoice Weight</label>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <input 
-                    type="number" 
-                    step="0.01"
-                    className="input-field" 
-                    placeholder="Enter matching weight"
-                    value={verificationWeight} 
-                    onChange={e => setVerificationWeight(e.target.value)} 
-                    style={{ borderColor: isVerified ? '#22c55e' : (verificationWeight && !isVerified ? '#ef4444' : '') }}
-                  />
-                  {isVerified ? <CheckCircle2 color="#22c55e" /> : <AlertCircle color={verificationWeight ? '#ef4444' : '#9ca3af'} />}
-                </div>
-                {!isVerified && verificationWeight !== '' && parseFloat(computedWeight) > 0 && <span style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.25rem' }}>Weights do not match! Check bag/cone counts.</span>}
-              </div>
-            </div>
+        {/* Grand Total Weight Banner */}
+        <div style={{ backgroundColor: isAllVerified ? '#f0fdf4' : '#fef2f2', border: isAllVerified ? '1px solid #bbf7d0' : '1px solid #fca5a5', borderRadius: 'var(--radius-md)', padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '0.9rem', color: isAllVerified ? '#15803d' : '#b91c1c' }}>Grand Total Intake Weight</h3>
+            <h2 style={{ margin: '0.25rem 0 0 0', fontSize: '2rem', fontWeight: 'bold', color: isAllVerified ? '#166534' : '#991b1b' }}>{grandTotalComputedWeight} kg</h2>
+          </div>
+          <div>
+            {isAllVerified ? (
+              <span style={{ color: '#15803d', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.25rem' }}><CheckCircle2 size={18} /> All Counts Verified</span>
+            ) : (
+              <span style={{ color: '#b91c1c', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.25rem' }}><AlertCircle size={18} /> Verification Pending</span>
+            )}
           </div>
         </div>
 
         {/* Step 5: Storage (Locked until verified) */}
-        {isVerified && (
+        {isAllVerified && (
           <div className="glass-panel fade-in">
-            <h2 style={{ fontSize: '1.125rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.5rem' }}>5. Storage & Logistics</h2>
+            <h2 style={{ fontSize: '1.125rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.5rem' }}>4. Storage & Logistics</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <div className="input-group">
-                <label className="input-label">Select Warehouse Location</label>
-                <select name="location_id" className="input-field" value={formData.location_id} onChange={handleChange} required>
-                  <option value="">Select Storage Location...</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.location_name}</option>)}
-                </select>
-              </div>
               <div className="input-group">
                 <label className="input-label">Vehicle Registry No.</label>
                 <input type="text" name="vehicle_no" placeholder="TN-XX-XXXX" className="input-field" value={formData.vehicle_no} onChange={handleChange} required />
@@ -291,7 +475,7 @@ export default function ReceiptForm() {
                 <label className="input-label">Received By (Personnel)</label>
                 <input type="text" name="received_by" className="input-field" value={formData.received_by} onChange={handleChange} required />
               </div>
-              <div className="input-group">
+              <div className="input-group" style={{ gridColumn: 'span 2' }}>
                 <label className="input-label">Invoice Attachment (Optional)</label>
                 <input type="file" className="input-field" style={{ padding: '0.5rem' }} />
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>Files will be linked to receipt record.</span>
@@ -304,8 +488,8 @@ export default function ReceiptForm() {
           <button 
             type="submit" 
             className="btn btn-primary" 
-            disabled={!isVerified || saving}
-            style={{ fontSize: '1rem', padding: '0.75rem 2rem', opacity: (!isVerified || saving) ? 0.5 : 1 }}
+            disabled={!isAllVerified || saving}
+            style={{ fontSize: '1rem', padding: '0.75rem 2rem', opacity: (!isAllVerified || saving) ? 0.5 : 1 }}
           >
             {saving ? 'Generating AT/GYRR...' : 'Create Receipt + Print'}
           </button>
