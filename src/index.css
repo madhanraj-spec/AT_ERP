@@ -1,38 +1,298 @@
-@import "./styles/theme.css";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-/* Additional global styles or utility classes can go here */
+:root {
+  /* Core Brand Colors - Maroon & White Theme */
+  --color-primary: #800000;
+  --color-primary-light: #a31c1c;
+  --color-primary-dark: #4d0000;
+  
+  --color-bg-light: #f8f9fa;
+  --color-surface-light: #ffffff;
+  --color-text-light: #1f2937;
+  --color-text-muted-light: #6b7280;
+  --color-border-light: #e5e7eb;
 
-.container {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 0 var(--spacing-md);
+  --color-bg-dark: #111111;
+  --color-surface-dark: #1f1f1f;
+  --color-text-dark: #f9fafb;
+  --color-text-muted-dark: #9ca3af;
+  --color-border-dark: #374151;
+  
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+
+  /* Shadows and Effects */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-primary: 0 4px 14px 0 rgba(128, 0, 0, 0.39);
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-full: 9999px;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Default Theme Application (Light Mode) */
+body {
+  --bg-current: var(--color-bg-light);
+  --surface-current: var(--color-surface-light);
+  --text-current: var(--color-text-light);
+  --text-muted-current: var(--color-text-muted-light);
+  --border-current: var(--color-border-light);
+  
+  font-family: var(--font-sans);
+  background-color: var(--bg-current);
+  color: var(--text-current);
+  line-height: 1.5;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Dark Mode Preferences (Disabled to enforce strict Maroon/White branding)
+@media (prefers-color-scheme: dark) {
+  body {
+    --bg-current: var(--color-bg-dark);
+    --surface-current: var(--color-surface-dark);
+    --text-current: var(--color-text-dark);
+    --text-muted-current: var(--color-text-muted-dark);
+    --border-current: var(--color-border-dark);
+  }
+}
+*/
+
+/* Resets & Base Styles */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-current);
+}
+
+p { margin: 0 0 1rem 0; }
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* Layout Utilities */
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Glassmorphism & UI Utilities */
+.glass-panel {
+  background: rgba(var(--surface-current), 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 1.5rem;
+}
+
+/*
+@media (prefers-color-scheme: dark) {
+  .glass-panel {
+    background: rgba(31, 31, 31, 0.7);
+  }
+}
+*/
+
+/* Micro-animations */
+.hover-lift {
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.fade-in {
+  animation: fadeIn var(--transition-normal);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Forms & Inputs */
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.input-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-muted-current);
+}
+
+.input-field {
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-current);
+  background-color: var(--surface-current);
+  color: var(--text-current);
+  font-size: 0.875rem;
+  transition: all var(--transition-fast);
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(128, 0, 0, 0.1);
+}
+
+/* Buttons */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
   font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s, box-shadow 0.2s;
+  border-radius: var(--radius-md);
+  border: none;
+  transition: all var(--transition-fast);
 }
 
 .btn-primary {
   background-color: var(--color-primary);
-  color: var(--text-white);
+  color: white;
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover {
   background-color: var(--color-primary-light);
+  box-shadow: var(--shadow-primary);
+  transform: translateY(-1px);
 }
 
-.card {
-  background-color: var(--bg-card);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  padding: var(--spacing-lg);
-  border: 1px solid var(--border-color);
+.btn-secondary {
+  background-color: transparent;
+  color: var(--text-current);
+  border: 1px solid var(--border-current);
 }
+
+.btn-secondary:hover {
+  background-color: var(--border-current);
+}
+
+.btn-danger {
+  background-color: var(--color-danger);
+  color: white;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+}
+
+.badge-warning { background-color: #fef3c7; color: #b45309; }
+.badge-success { background-color: #d1fae5; color: #047857; }
+.badge-info { background-color: #dbeafe; color: #1d4ed8; }
+.badge-neutral { background-color: var(--border-current); color: var(--text-current); }
+
+/*
+@media (prefers-color-scheme: dark) {
+  .badge-warning { background-color: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+  .badge-success { background-color: rgba(16, 185, 129, 0.2); color: #34d399; }
+  .badge-info { background-color: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+}
+*/
+
+/* Tables */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-current);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.table th {
+  background-color: rgba(0,0,0,0.02);
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted-current);
+  border-bottom: 1px solid var(--border-current);
+}
+
+/*
+@media (prefers-color-scheme: dark) {
+  .table th { background-color: rgba(255,255,255,0.02); }
+}
+*/
+
+.table td {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-current);
+  color: var(--text-current);
+  font-size: 0.875rem;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr:hover {
+  background-color: rgba(0,0,0,0.01);
+}
+
+/*
+@media (prefers-color-scheme: dark) {
+  .table tbody tr:hover { background-color: rgba(255,255,255,0.02); }
+}
+*/

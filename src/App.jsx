@@ -1,62 +1,146 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import './App.css';
-import Login from './pages/auth/Login';
-import ProtectedRoute from './components/ProtectedRoute';
-import MainLayout from './layouts/MainLayout';
-import OrderList from './pages/merch/OrderList';
-import CreateOrder from './pages/merch/CreateOrder';
-import OrderDetails from './pages/merch/OrderDetails';
-import CreateDyeingOrder from './pages/merch/CreateDyeingOrder';
-import AdminDashboard from './pages/admin/Dashboard';
-import HomeRouter from './components/HomeRouter';
-import GreigeInventory from './pages/yarn/GreigeInventory';
-import TransferYarn from './pages/yarn/TransferYarn';
-import DyedYarnStock from './pages/dyeing/DyedYarnStock';
-import OperationsDashboard from './pages/ops/OperationsDashboard';
-import InspectionDashboard from './pages/inspection/InspectionDashboard';
-import FinanceDashboard from './pages/finance/FinanceDashboard';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import AppLayout from './components/layout/AppLayout';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import MerchandiserDashboard from './pages/Merchandiser/Dashboard';
+import CreateOrder from './pages/Merchandiser/CreateOrder';
+import OrdersManagement from './pages/Orders/Management';
+import GreigeYarnDashboard from './pages/GreigeYarn/Dashboard';
+import ReceiptsList from './pages/GreigeYarn/ReceiptsList';
+import ReceiptForm from './pages/GreigeYarn/ReceiptForm';
+import StockManagement from './pages/GreigeYarn/StockManagement';
+import MovementTracking from './pages/GreigeYarn/MovementTracking';
+import DeliveriesList from './pages/GreigeYarn/DeliveriesList';
+import DeliverYarn from './pages/GreigeYarn/DeliverYarn';
+import NewDelivery from './pages/GreigeYarn/NewDelivery';
+import AdminApprovals from './pages/Admin/Approvals';
+import ProductionBoard from './pages/Production/Board';
+import MastersDashboard from './pages/Masters/Dashboard';
+import MasterDetail from './pages/Masters/MasterDetail';
+import DyeingFormsList from './pages/Merchandiser/DyeingFormsList';
+import CreateDyeingForm from './pages/Merchandiser/CreateDyeingForm';
+import DyeingFormView from './pages/Merchandiser/DyeingFormView';
+import DyedYarnDashboard from './pages/DyedYarn/Dashboard';
+import ReceiveYarn from './pages/DyedYarn/ReceiveYarn';
+import DeliverDyedYarn from './pages/DyedYarn/DeliverYarn';
+import DyedYarnMovement from './pages/DyedYarn/MovementLog';
+import DyedYarnOrders from './pages/DyedYarn/OrderStock';
+import { Loader } from 'lucide-react';
 
-function App() {
+function AppRoutes() {
+  const { session, profile, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '1rem' }}>
+        <Loader size={32} color="var(--color-primary)" style={{ animation: 'spin 1s linear infinite' }} />
+        <p style={{ color: 'var(--text-muted-current)' }}>Loading your portal...</p>
+      </div>
+    );
+  }
+
   return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-
-        {/* Protected Routes */}
-        <Route element={<ProtectedRoute />}>
-          <Route element={<MainLayout />}>
-            {/* Dashboard / Home */}
-            <Route path="/" element={<HomeRouter />} />
-
-            {/* Admin Routes */}
-            <Route path="/admin/dashboard" element={<AdminDashboard />} />
+    <>
+      {session && profile ? (
+        <AppLayout user={profile}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard user={profile} />} />
 
             {/* Merchandiser Routes */}
-            <Route path="/merch/orders" element={<OrderList />} />
-            <Route path="/merch/orders/new" element={<CreateOrder />} />
-            <Route path="/merch/orders/:id" element={<OrderDetails />} />
-            <Route path="/merch/orders/:orderId/items/:itemId/dyeing/new" element={<CreateDyeingOrder />} />
+            <Route path="/merchandiser">
+              <Route index element={<MerchandiserDashboard />} />
+              <Route path="orders" element={<OrdersManagement />} />
+              <Route path="create-order" element={<CreateOrder />} />
+              <Route path="edit-order/:id" element={<CreateOrder />} />
+              <Route path="dyeing-forms" element={<DyeingFormsList />} />
+              <Route path="create-dyeing-form" element={<CreateDyeingForm />} />
+              <Route path="dyeing-forms/:id" element={<DyeingFormView />} />
+            </Route>
 
-            {/* Greige Yarn Routes */}
-            <Route path="/yarn/greige" element={<GreigeInventory />} />
-            <Route path="/yarn/transfer" element={<TransferYarn />} />
+            {/* Admin Routes */}
+            <Route path="/admin">
+              <Route path="orders" element={<OrdersManagement />} />
+              <Route path="create-order" element={<CreateOrder />} />
+              <Route path="edit-order/:id" element={<CreateOrder />} />
+              <Route path="dyeing-forms" element={<DyeingFormsList />} />
+              <Route path="create-dyeing-form" element={<CreateDyeingForm />} />
+              <Route path="dyeing-forms/:id" element={<DyeingFormView />} />
+              <Route path="approvals" element={<AdminApprovals />} />
+            </Route>
 
-            {/* Dyeing Routes */}
-            <Route path="/dyeing" element={<DyedYarnStock />} />
+            {/* Inventory Routes */}
+            <Route path="/greige-yarn">
+              <Route index element={<GreigeYarnDashboard />} />
+              <Route path="receipts" element={<ReceiptsList />} />
+              <Route path="receipt" element={<ReceiptForm />} />
+              <Route path="stock" element={<StockManagement />} />
+              <Route path="movement" element={<MovementTracking />} />
+              <Route path="deliveries" element={<DeliveriesList />} />
+              <Route path="deliveries/:id" element={<DeliverYarn />} />
+              <Route path="new-delivery" element={<NewDelivery />} />
+              {/* DOF view accessible from greige yarn context */}
+              <Route path="dof-view/:id" element={<DyeingFormView />} />
+            </Route>
+            <Route path="/dyed-yarn">
+              <Route index element={<DyedYarnDashboard />} />
+              <Route path="receive" element={<ReceiveYarn />} />
+              <Route path="deliver" element={<DeliverDyedYarn />} />
+              <Route path="movement" element={<DyedYarnMovement />} />
+              <Route path="orders" element={<DyedYarnOrders />} />
+            </Route>
 
-            {/* Operations Routes */}
-            <Route path="/ops" element={<OperationsDashboard />} />
+            {/* Production Routes */}
+            <Route path="/production">
+              <Route index element={<ProductionBoard />} />
+            </Route>
+            <Route path="/warping-sizing">
+              <Route index element={<PlaceholderPage title="Warping & Sizing" />} />
+            </Route>
+            <Route path="/weaving">
+              <Route index element={<PlaceholderPage title="Weaving" />} />
+            </Route>
+            <Route path="/inspection">
+              <Route index element={<PlaceholderPage title="Inspection / QC" />} />
+            </Route>
+            {/* Masters Routing */}
+            <Route path="/masters">
+              <Route index element={<MastersDashboard />} />
+              <Route path=":type" element={<MasterDetail />} />
+            </Route>
 
-            {/* Inspection Routes */}
-            <Route path="/inspection" element={<InspectionDashboard />} />
-
-            {/* Finance Routes */}
-            <Route path="/finance" element={<FinanceDashboard />} />
-          </Route>
-        </Route>
-      </Routes>
-    </Router>
+            {/* Catch All */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </AppLayout>
+      ) : (
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      )}
+    </>
   );
 }
 
-export default App;
+function PlaceholderPage({ title }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: '1rem' }}>
+      <div style={{ fontSize: '3rem' }}>🚧</div>
+      <h2 style={{ color: 'var(--color-primary)' }}>{title}</h2>
+      <p style={{ color: 'var(--text-muted-current)' }}>This module is under development. Coming soon!</p>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}

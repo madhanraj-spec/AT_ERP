@@ -1,0 +1,183 @@
+import React from 'react';
+import { X, Printer } from 'lucide-react';
+
+export default function ReceiptPrintModal({ receipt, onClose }) {
+  if (!receipt) return null;
+
+  const handlePrint = () => {
+    // In a real app we'd trigger window.print() but it might print the whole screen without special print CSS.
+    // For this prototype, window.print() works well if we have @media print styles, 
+    // or we just pop open a distinct window. 
+    window.print();
+  };
+
+  const isSpinning = receipt.receipt_type === 'spinning_mill';
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '2rem'
+    }}>
+      <div 
+        className="print-container"
+        style={{
+          backgroundColor: '#fff',
+          borderRadius: '8px',
+          width: '100%',
+          maxWidth: '800px',
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        {/* Modal Header (Hidden on Print) */}
+        <div className="no-print" style={{ 
+          padding: '1rem 1.5rem', 
+          borderBottom: '1px solid #e5e7eb', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          backgroundColor: '#f9fafb',
+          borderTopLeftRadius: '8px',
+          borderTopRightRadius: '8px'
+        }}>
+          <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#111827' }}>AT/GYRR Digital Receipt</h2>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button onClick={handlePrint} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem' }}>
+              <Printer size={16} /> Print Receipt
+            </button>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}>
+              <X size={24} />
+            </button>
+          </div>
+        </div>
+
+        {/* Printable Invoice Body */}
+        <div style={{ padding: '3rem', color: '#000', backgroundColor: '#fff' }}>
+          
+          <div style={{ textAlign: 'center', marginBottom: '2rem', borderBottom: '2px solid #000', paddingBottom: '1rem' }}>
+            <img src="/logo.png" alt="Ashok Textiles" style={{ maxHeight: '80px', marginBottom: '0.5rem' }} onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
+            <h1 style={{ margin: '0 0 0.5rem 0', fontSize: '1.8rem', fontWeight: 'bold', textTransform: 'uppercase', display: 'none' }}>Ashok Textiles</h1>
+            <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'normal' }}>Greige Yarn Material Receipt</h2>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem' }}>
+            <div>
+              <p style={{ margin: '0 0 0.25rem 0' }}><strong>Receipt No:</strong> {receipt.receipt_no}</p>
+              <p style={{ margin: '0 0 0.25rem 0' }}><strong>Date & Time:</strong> {new Date(receipt.created_at).toLocaleString()}</p>
+              <p style={{ margin: '0 0 0.25rem 0' }}><strong>Type:</strong> {isSpinning ? 'Incoming from Spinning Mill' : 'Production Return'}</p>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              {isSpinning ? (
+                <>
+                  <p style={{ margin: '0 0 0.25rem 0' }}><strong>Mill Name:</strong> {receipt.master_partners?.partner_name || 'N/A'}</p>
+                  <p style={{ margin: '0 0 0.25rem 0' }}><strong>Invoice No:</strong> {receipt.invoice_no}</p>
+                  <p style={{ margin: '0 0 0.25rem 0' }}><strong>Invoice Date:</strong> {receipt.invoice_date}</p>
+                </>
+              ) : (
+                <p style={{ margin: '0 0 0.25rem 0' }}><strong>Order Form No:</strong> {receipt.order_form_no}</p>
+              )}
+            </div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '2rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #000' }}>
+                <th style={{ padding: '0.5rem', textAlign: 'left' }}>Description</th>
+                <th style={{ padding: '0.5rem', textAlign: 'right' }}>Weight (kg)</th>
+                <th style={{ padding: '0.5rem', textAlign: 'right' }}>Count</th>
+                <th style={{ padding: '0.5rem', textAlign: 'right' }}>Total Computed (kg)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>
+                  <strong>Yarn Count:</strong> {receipt.master_yarn_counts ? `${receipt.master_yarn_counts.count_value} ${receipt.master_yarn_counts.material}` : 'Unknown'}
+                  <br/>
+                  <span style={{ fontSize: '0.85rem', color: '#555' }}>Bags Received</span>
+                </td>
+                <td style={{ padding: '0.5rem', textAlign: 'right' }}>{Number(receipt.bag_weight || 0).toFixed(2)}</td>
+                <td style={{ padding: '0.5rem', textAlign: 'right' }}>{receipt.bag_count || 0}</td>
+                <td style={{ padding: '0.5rem', textAlign: 'right' }}>{((receipt.bag_weight || 0) * (receipt.bag_count || 0)).toFixed(2)}</td>
+              </tr>
+              {receipt.cone_count > 0 && (
+                <tr style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '0.5rem' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#555' }}>Cones Received</span>
+                  </td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right' }}>{Number(receipt.cone_weight || 0).toFixed(2)}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right' }}>{receipt.cone_count || 0}</td>
+                  <td style={{ padding: '0.5rem', textAlign: 'right' }}>{((receipt.cone_weight || 0) * (receipt.cone_count || 0)).toFixed(2)}</td>
+                </tr>
+              )}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan="3" style={{ padding: '1rem 0.5rem', textAlign: 'right', fontWeight: 'bold' }}>VERIFIED TOTAL WEIGHT (KG):</td>
+                <td style={{ padding: '1rem 0.5rem', textAlign: 'right', fontWeight: 'bold', fontSize: '1.2rem' }}>{Number(receipt.total_weight).toFixed(2)}</td>
+              </tr>
+              {isSpinning && (
+                <>
+                  <tr>
+                    <td colSpan="3" style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 'bold' }}>RATE PER KG:</td>
+                    <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 'bold' }}>₹{Number(receipt.rate_per_kg || 0).toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 'bold' }}>INVOICE AMOUNT:</td>
+                    <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 'bold' }}>₹{Number(receipt.invoice_amount || 0).toFixed(2)}</td>
+                  </tr>
+                </>
+              )}
+            </tfoot>
+          </table>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #000', paddingTop: '1rem', fontSize: '0.9rem' }}>
+            <div>
+              <p style={{ margin: '0 0 0.5rem 0' }}><strong>Vehicle No:</strong> {receipt.vehicle_no || 'N/A'}</p>
+              <p style={{ margin: '0 0 0.5rem 0' }}><strong>Storage Location:</strong> {receipt.location_name || 'Greige Warehouse'}</p>
+            </div>
+            <div>
+              <p style={{ margin: '0 0 2rem 0' }}><strong>Received By:</strong> {receipt.received_by || 'N/A'}</p>
+              <div style={{ borderTop: '1px dashed #000', width: '150px', textAlign: 'center', paddingTop: '0.5rem' }}>
+                Authorized Signature
+              </div>
+            </div>
+          </div>
+          
+        </div>
+      </div>
+      
+      {/* Global CSS injected just for print to hide non-print elements */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .print-container, .print-container * {
+            visibility: visible;
+          }
+          .print-container {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+            box-shadow: none;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
