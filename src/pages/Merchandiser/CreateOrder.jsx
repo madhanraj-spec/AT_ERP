@@ -639,39 +639,101 @@ export default function CreateOrder() {
         {currentStep === 4 && (
           <div className="fade-in">
             <h2 style={{ marginBottom: '1.5rem' }}>Enter Yarn Requirements (KG)</h2>
-            <div style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Position</th>
-                    <th>Count</th>
-                    <th>Color</th>
-                    <th>Requirement (KG)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {formData.yarn_mappings.map((m, idx) => (
-                    <tr key={idx}>
-                      <td style={{ textTransform: 'capitalize' }}>{m.type} {m.type === 'warp' ? (m.warpIdx + 1) : ''}</td>
-                      <td>{formatYarn(yarnCounts.find(y => y.id === m.countId))}</td>
-                      <td>{m.color || <span style={{ color: 'red' }}>Enter Color in prev step</span>}</td>
-                      <td>
-                        <input 
-                          type="number" 
-                          className="input-field" 
-                          style={{ maxWidth: '120px' }}
-                          value={m.kg}
-                          onChange={e => {
-                            const updated = [...formData.yarn_mappings];
-                            updated[idx].kg = e.target.value;
-                            setFormData({...formData, yarn_mappings: updated});
-                          }}
-                        />
-                      </td>
+            
+            {/* Warp Section */}
+            <div style={{ marginBottom: '2rem' }}>
+              <h3 style={{ fontSize: '1.1rem', color: 'var(--color-primary)', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>Warp</h3>
+              <div style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '20%' }}>Position</th>
+                      <th style={{ width: '40%' }}>Count</th>
+                      <th style={{ width: '20%' }}>Color</th>
+                      <th style={{ width: '20%', textAlign: 'right' }}>Requirement (KG)</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {formData.yarn_mappings.filter(m => m.type === 'warp').length === 0 ? (
+                      <tr>
+                        <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted-current)', padding: '1rem' }}>No warp yarns mapped. Go back to add warp specifications.</td>
+                      </tr>
+                    ) : (
+                      formData.yarn_mappings.map((m, idx) => {
+                        if (m.type !== 'warp') return null;
+                        return (
+                          <tr key={idx}>
+                            <td style={{ textTransform: 'capitalize' }}>Warp {m.warpIdx + 1}</td>
+                            <td>{formatYarn(yarnCounts.find(y => y.id === m.countId))}</td>
+                            <td>{m.color || <span style={{ color: 'red' }}>Enter Color in prev step</span>}</td>
+                            <td style={{ textAlign: 'right' }}>
+                              <input 
+                                type="number" 
+                                className="input-field" 
+                                style={{ maxWidth: '120px', marginLeft: 'auto' }}
+                                value={m.kg}
+                                onChange={e => {
+                                  const updated = [...formData.yarn_mappings];
+                                  updated[idx].kg = e.target.value;
+                                  setFormData({...formData, yarn_mappings: updated});
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Weft Section */}
+            <div style={{ marginBottom: '2rem' }}>
+              <h3 style={{ fontSize: '1.1rem', color: 'var(--color-primary)', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>Weft</h3>
+              <div style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '20%' }}>Position</th>
+                      <th style={{ width: '40%' }}>Count</th>
+                      <th style={{ width: '20%' }}>Color</th>
+                      <th style={{ width: '20%', textAlign: 'right' }}>Requirement (KG)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {formData.yarn_mappings.filter(m => m.type === 'weft').length === 0 ? (
+                      <tr>
+                        <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted-current)', padding: '1rem' }}>No weft yarns mapped. Go back to add weft specifications.</td>
+                      </tr>
+                    ) : (
+                      formData.yarn_mappings.map((m, idx) => {
+                        if (m.type !== 'weft') return null;
+                        return (
+                          <tr key={idx}>
+                            <td style={{ textTransform: 'capitalize' }}>Weft</td>
+                            <td>{formatYarn(yarnCounts.find(y => y.id === m.countId))}</td>
+                            <td>{m.color || <span style={{ color: 'red' }}>Enter Color in prev step</span>}</td>
+                            <td style={{ textAlign: 'right' }}>
+                              <input 
+                                type="number" 
+                                className="input-field" 
+                                style={{ maxWidth: '120px', marginLeft: 'auto' }}
+                                value={m.kg}
+                                onChange={e => {
+                                  const updated = [...formData.yarn_mappings];
+                                  updated[idx].kg = e.target.value;
+                                  setFormData({...formData, yarn_mappings: updated});
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
