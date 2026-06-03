@@ -879,10 +879,13 @@ export default function CreateOrder() {
                   }
                 }
               `}</style>
-              <div style={{ borderTop: '1px solid black', width: '200px', textAlign: 'center', paddingTop: '0.5rem' }}>
+              <div style={{ borderTop: '1px solid black', width: '250px', textAlign: 'center', paddingTop: '0.5rem' }}>
                 Prepared By
+                <div style={{ fontWeight: 'bold', marginTop: '0.5rem', fontSize: '10pt', textTransform: 'uppercase' }}>
+                  {profile?.full_name || formData.merchandiser_name || 'Logged-in Merchandiser'}
+                </div>
               </div>
-              <div style={{ borderTop: '1px solid black', width: '200px', textAlign: 'center', paddingTop: '0.5rem' }}>
+              <div style={{ borderTop: '1px solid black', width: '250px', textAlign: 'center', paddingTop: '0.5rem' }}>
                 Authorized Signatory
               </div>
             </div>
