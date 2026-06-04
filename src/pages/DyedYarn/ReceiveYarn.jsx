@@ -6,7 +6,7 @@ import {
   X, CheckCircle, Loader, User, 
   FileText, Hash, Info, ChevronRight,
   TrendingUp, Layers, Factory, Users,
-  Dna, MoveHorizontal
+  Dna, MoveHorizontal, ClipboardList, ChevronDown
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -37,6 +37,14 @@ export default function ReceiveYarn() {
   const [receiptItems, setReceiptItems] = useState([]);
   const [associatedGydrs, setAssociatedGydrs] = useState([]);
 
+  // DOF List States
+  const [allDofs, setAllDofs] = useState([]);
+  const [allOrders, setAllOrders] = useState([]);
+  const [allGydrItems, setAllGydrItems] = useState([]);
+  const [allDyrrItems, setAllDyrrItems] = useState([]);
+  const [dofsLoading, setDofsLoading] = useState(false);
+  const [expandedDofId, setExpandedDofId] = useState(null);
+
   // Final Form State
   const [logistics, setLogistics] = useState({
     dc_number: '',
@@ -48,6 +56,7 @@ export default function ReceiveYarn() {
 
   useEffect(() => {
     fetchMasters();
+    fetchAllDofsData();
   }, []);
 
   const fetchMasters = async () => {
@@ -57,6 +66,126 @@ export default function ReceiveYarn() {
     ]);
     setLocations(locRes.data || []);
     setYarnCounts(yarnRes.data || []);
+  };
+
+  const fetchAllDofsData = async () => {
+    setDofsLoading(true);
+    try {
+      const [dofsRes, ordersRes, gydiRes, dyriRes] = await Promise.all([
+        supabase
+          .from('dyeing_order_forms')
+          .select('*, dyeing_unit:master_partners(partner_name)')
+          .order('created_at', { ascending: false }),
+        supabase.from('orders').select('id, order_number, design_no, design_name'),
+        supabase.from('greige_yarn_delivery_items').select('*, receipt:greige_yarn_delivery_receipts(*)'),
+        supabase.from('dyed_yarn_receipt_items').select('*, receipt:dyed_yarn_receipts(*)')
+      ]);
+
+      setAllDofs(dofsRes.data || []);
+      setAllOrders(ordersRes.data || []);
+      setAllGydrItems(gydiRes.data || []);
+      setAllDyrrItems(dyriRes.data || []);
+    } catch (err) {
+      console.error('Error fetching all DOFs:', err);
+    } finally {
+      setDofsLoading(false);
+    }
+  };
+
+  const handleDirectReceive = async (dof) => {
+    setDofNumber(dof.dof_number);
+    setFetching(true);
+    setSelectedDof(null);
+    setAssociatedGydrs([]);
+    try {
+      const { data: orders } = await supabase
+        .from('orders')
+        .select('id, order_number, design_no, design_name')
+        .in('id', dof.order_ids);
+      
+      const oMap = {};
+      orders?.forEach(o => oMap[o.id] = o);
+      setOrderMap(oMap);
+
+      const { data: gydrs } = await supabase
+        .from('greige_yarn_delivery_receipts')
+        .select('id, gydr_number, delivered_by, vehicle_no, remarks, created_at')
+        .eq('dof_id', dof.id)
+        .order('created_at', { ascending: false });
+      
+      setAssociatedGydrs(gydrs || []);
+      const gydrIds = gydrs?.map(g => g.id) || [];
+      const sMap = {}; 
+      const fallbackMap = {}; 
+
+      if (gydrIds.length > 0) {
+        const { data: sentItems } = await supabase
+          .from('greige_yarn_delivery_items')
+          .select('order_id, yarn_count_id, colour, quantity_kg, yarn_type')
+          .in('receipt_id', gydrIds);
+        
+        sentItems?.forEach(item => {
+          const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}-${item.yarn_type}`;
+          const fKey = `${item.yarn_count_id}-${item.colour}-${item.yarn_type}`;
+          
+          sMap[key] = (sMap[key] || 0) + parseFloat(item.quantity_kg);
+          fallbackMap[fKey] = (fallbackMap[fKey] || 0) + parseFloat(item.quantity_kg);
+        });
+      }
+
+      const { data: dyrrs } = await supabase
+        .from('dyed_yarn_receipts')
+        .select('id').eq('dof_id', dof.id);
+      
+      const dyrrIds = dyrrs?.map(d => d.id) || [];
+      const hMap = {}; 
+
+      if (dyrrIds.length > 0) {
+        const { data: recItems } = await supabase
+          .from('dyed_yarn_receipt_items')
+          .select('order_id, yarn_count_id, colour, quantity_kg')
+          .in('receipt_id', dyrrIds);
+        
+        recItems?.forEach(item => {
+          const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}`;
+          hMap[key] = (hMap[key] || 0) + parseFloat(item.quantity_kg);
+        });
+      }
+
+      const initialItems = dof.yarn_allocations.map(alloc => {
+        const key = `${alloc.orderId}-${alloc.countId}-${alloc.colour}-${alloc.type}`;
+        
+        const sentValue = (sMap[key] || 0) + 
+                          (sMap[`${alloc.orderId}-${alloc.countId}-${alloc.colour}-null`] || 0) +
+                          (sMap[`null-${alloc.countId}-${alloc.colour}-${alloc.type}`] || 0) +
+                          (sMap[`null-${alloc.countId}-${alloc.colour}-null`] || 0);
+        const histValue = hMap[key] || 0;
+
+        return {
+          order_id: alloc.orderId,
+          yarn_count_id: alloc.countId,
+          colour: alloc.colour,
+          type: alloc.type || 'warp',
+          required_qty: parseFloat(alloc.base_kg || alloc.total_kg || 0),
+          sent_qty: sentValue,
+          historical_qty: histValue, 
+          received_weight: '',
+          lot_number: '',
+          location_id: locations[0]?.id || '',
+          order_number: oMap[alloc.orderId]?.order_number || '',
+          design_info: `${oMap[alloc.orderId]?.design_no || ''} / ${oMap[alloc.orderId]?.design_name || ''}`,
+          isSplit: false
+        };
+      });
+
+      setSelectedDof(dof);
+      setReceiptItems(initialItems);
+    } catch (err) {
+      console.error(err);
+      alert('Error fetching details.');
+    } finally {
+      setFetching(false);
+    }
   };
 
   const handleSearchDof = async (e) => {
@@ -371,6 +500,200 @@ export default function ReceiveYarn() {
               <input type="text" className="form-input" placeholder="Enter DOF Number..." value={dofNumber} onChange={e => setDofNumber(e.target.value)} style={{ fontWeight: '800' }} />
               <button disabled={fetching} type="submit" className="btn btn-primary">{fetching ? <Loader size={18} className="spin" /> : 'Fetch Details'}</button>
             </form>
+
+            {!selectedDof && (
+              <div style={{ marginTop: '2rem' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '800', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <ClipboardList size={18} color="var(--color-primary)" /> Dyeing Order Forms List
+                </h3>
+                
+                {dofsLoading ? (
+                  <div style={{ textAlign: 'center', padding: '3rem 0' }}>
+                    <Loader size={28} className="spin" color="var(--color-primary)" />
+                    <p style={{ marginTop: '0.75rem', color: '#666', fontSize: '0.85rem' }}>Loading Dyeing Order Forms...</p>
+                  </div>
+                ) : allDofs.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8', fontSize: '0.85rem', border: '1px dashed #e2e8f0', borderRadius: '8px' }}>
+                    No Dyeing Order Forms found.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    {allDofs.map(dof => {
+                      const isExpanded = expandedDofId === dof.id;
+                      
+                      const allocationsStatus = dof.yarn_allocations.map(alloc => {
+                        // Greige Sent for this allocation
+                        const sentValue = allGydrItems
+                          .filter(item => item.receipt?.dof_id === dof.id && 
+                            item.yarn_count_id === alloc.countId && 
+                            item.colour === alloc.colour && 
+                            (item.order_id === alloc.orderId || !item.order_id)
+                          )
+                          .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+                        // Dyed Received for this allocation
+                        const recValue = allDyrrItems
+                          .filter(item => item.receipt?.dof_id === dof.id && 
+                            item.yarn_count_id === alloc.countId && 
+                            item.colour === alloc.colour && 
+                            (item.order_id === alloc.orderId || !item.order_id)
+                          )
+                          .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+                        const matchedOrder = allOrders.find(o => o.id === alloc.orderId);
+
+                        return {
+                          ...alloc,
+                          orderNumber: matchedOrder?.order_number || 'MISC',
+                          designInfo: matchedOrder ? `${matchedOrder.design_no} / ${matchedOrder.design_name}` : '-',
+                          sent: sentValue,
+                          received: recValue
+                        };
+                      });
+
+                      const formatCountVal = (id) => {
+                        const y = yarnCounts.find(c => c.id === id);
+                        return y ? `${y.count_value} ${y.material}` : '-';
+                      };
+
+                      return (
+                        <div key={dof.id} style={{ 
+                          backgroundColor: '#fff', 
+                          border: '1px solid #e2e8f0', 
+                          borderRadius: '12px',
+                          overflow: 'hidden',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+                        }}>
+                          {/* Header Summary Row */}
+                          <div style={{ 
+                            padding: '1.25rem', 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center',
+                            cursor: 'pointer',
+                            backgroundColor: isExpanded ? '#f8fafc' : '#fff'
+                          }} onClick={() => setExpandedDofId(isExpanded ? null : dof.id)}>
+                            
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                              <ChevronRight size={18} style={{ 
+                                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.2s',
+                                color: '#94a3b8'
+                              }} />
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                  <span style={{ fontWeight: '900', fontSize: '1rem', color: 'var(--color-primary)' }}>
+                                    {dof.dof_number}
+                                  </span>
+                                  <span style={{ 
+                                    padding: '0.15rem 0.5rem', 
+                                    borderRadius: '4px', 
+                                    fontSize: '0.7rem', 
+                                    fontWeight: '800',
+                                    textTransform: 'capitalize',
+                                    backgroundColor: dof.status === 'approved' || dof.status === 'partially_received' || dof.status === 'received' ? '#dcfce7' : '#fef9c3',
+                                    color: dof.status === 'approved' || dof.status === 'partially_received' || dof.status === 'received' ? '#15803d' : '#854d0e'
+                                  }}>
+                                    {dof.status}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', fontWeight: '500' }}>
+                                  Partner: <strong style={{ color: '#334155' }}>{dof.dyeing_unit?.partner_name || 'N/A'}</strong> | Target Delivery: <strong style={{ color: '#334155' }}>{dof.expected_delivery_date || 'N/A'}</strong>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDirectReceive(dof);
+                                }}
+                                className="btn"
+                                style={{ 
+                                  padding: '0.5rem 1rem', 
+                                  fontSize: '0.8rem', 
+                                  fontWeight: '800',
+                                  backgroundColor: '#7f1d1d',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 4px 6px rgba(127, 29, 29, 0.15)'
+                                }}
+                              >
+                                Receive Yarn
+                              </button>
+                            </div>
+
+                          </div>
+
+                          {/* Expanded Table */}
+                          {isExpanded && (
+                            <div style={{ 
+                              padding: '1.25rem', 
+                              backgroundColor: '#fff', 
+                              borderTop: '1px solid #f1f5f9' 
+                            }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead>
+                                  <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #cbd5e1' }}>
+                                    <th style={subThStyle}>Order / Design</th>
+                                    <th style={subThStyle}>Count</th>
+                                    <th style={subThStyle}>Colour</th>
+                                    <th style={subThStyle}>Type</th>
+                                    <th style={subNumericThStyle}>Allocated (kg)</th>
+                                    <th style={subNumericThStyle}>Greige Sent</th>
+                                    <th style={subNumericThStyle}>Dyed Received</th>
+                                    <th style={subNumericThStyle}>Balance to Rec.</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {allocationsStatus.map((alloc, idx) => {
+                                    const balance = Math.max(0, alloc.sent - alloc.received);
+                                    return (
+                                      <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                        <td style={subTdStyle}>
+                                          <div style={{ fontWeight: '700', color: '#1e293b' }}>{alloc.orderNumber}</div>
+                                          <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>{alloc.designInfo}</div>
+                                        </td>
+                                        <td style={subTdStyle}>{formatCountVal(alloc.countId)}</td>
+                                        <td style={{ ...subTdStyle, fontWeight: '700', color: 'var(--color-primary)' }}>{alloc.colour}</td>
+                                        <td style={subTdStyle}>
+                                          <span style={{ 
+                                            padding: '0.15rem 0.4rem', 
+                                            borderRadius: '4px', 
+                                            fontSize: '0.65rem', 
+                                            fontWeight: '800',
+                                            textTransform: 'uppercase',
+                                            backgroundColor: alloc.type === 'warp' ? '#eff6ff' : '#ecfdf5',
+                                            color: alloc.type === 'warp' ? '#1e40af' : '#047857'
+                                          }}>
+                                            {alloc.type}
+                                          </span>
+                                        </td>
+                                        <td style={subNumericTdStyle}>{(alloc.total_kg || alloc.base_kg || 0).toFixed(1)}</td>
+                                        <td style={subNumericTdStyle}>{alloc.sent.toFixed(1)}</td>
+                                        <td style={subNumericTdStyle}>{alloc.received.toFixed(1)}</td>
+                                        <td style={{ ...subNumericTdStyle, color: balance > 0 ? '#b45309' : '#16a34a', fontWeight: '800', fontSize: '0.85rem' }}>
+                                          {balance.toFixed(1)}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {selectedDof && (
               <div style={{ 
                 marginTop: '1.5rem', 
@@ -741,3 +1064,32 @@ function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLo
     </tr>
   );
 }
+
+const subThStyle = {
+  padding: '0.6rem 0.8rem',
+  textAlign: 'left',
+  fontSize: '0.75rem',
+  fontWeight: '800',
+  color: '#475569',
+  textTransform: 'uppercase',
+  letterSpacing: '0.5px'
+};
+
+const subNumericThStyle = {
+  ...subThStyle,
+  textAlign: 'right'
+};
+
+const subTdStyle = {
+  padding: '0.6rem 0.8rem',
+  fontSize: '0.75rem',
+  color: '#334155',
+  fontWeight: '500'
+};
+
+const subNumericTdStyle = {
+  ...subTdStyle,
+  textAlign: 'right',
+  fontWeight: '700'
+};
+
