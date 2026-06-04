@@ -143,11 +143,11 @@ export default function ReceiveYarn() {
       if (dyrrIds.length > 0) {
         const { data: recItems } = await supabase
           .from('dyed_yarn_receipt_items')
-          .select('order_id, yarn_count_id, colour, quantity_kg')
+          .select('order_id, yarn_count_id, colour, quantity_kg, yarn_type')
           .in('receipt_id', dyrrIds);
         
         recItems?.forEach(item => {
-          const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}`;
+          const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}`;
           hMap[key] = (hMap[key] || 0) + parseFloat(item.quantity_kg);
         });
       }
@@ -253,11 +253,11 @@ export default function ReceiveYarn() {
       if (dyrrIds.length > 0) {
         const { data: recItems } = await supabase
           .from('dyed_yarn_receipt_items')
-          .select('order_id, yarn_count_id, colour, quantity_kg')
+          .select('order_id, yarn_count_id, colour, quantity_kg, yarn_type')
           .in('receipt_id', dyrrIds);
         
         recItems?.forEach(item => {
-          const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}`;
+          const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}`;
           hMap[key] = (hMap[key] || 0) + parseFloat(item.quantity_kg);
         });
       }
@@ -340,6 +340,26 @@ export default function ReceiveYarn() {
     if (!valid) return alert('Enter received weight for at least one item.');
     
     if (sourceType === 'partner') {
+      // Group inputs by allocation key: order_id-yarn_count_id-colour-type to handle split lots
+      const groupedInputs = {};
+      receiptItems.forEach(item => {
+        const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}-${item.type}`;
+        groupedInputs[key] = (groupedInputs[key] || 0) + (parseFloat(item.received_weight) || 0);
+      });
+
+      // Validate that total weight doesn't exceed the balance
+      for (const item of receiptItems) {
+        if (item.isSplit) continue; // check grouping
+        const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}-${item.type}`;
+        const totalInput = groupedInputs[key] || 0;
+        const balance = Math.max(0, item.sent_qty - item.historical_qty);
+        if (totalInput > balance + 0.001) {
+          const countLabel = yarnCounts.find(yc => yc.id === item.yarn_count_id)?.count_value || 'Unknown';
+          alert(`Received quantity for ${item.colour} (${countLabel}) of ${totalInput.toFixed(2)} kg exceeds the remaining balance of ${balance.toFixed(2)} kg!`);
+          return;
+        }
+      }
+
       const totalRequired = receiptItems
         .filter(i => !i.isSplit)
         .reduce((s, i) => s + parseFloat(i.required_qty), 0);
@@ -527,6 +547,7 @@ export default function ReceiveYarn() {
                           .filter(item => item.receipt?.dof_id === dof.id && 
                             item.yarn_count_id === alloc.countId && 
                             item.colour === alloc.colour && 
+                            (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
                             (item.order_id === alloc.orderId || !item.order_id)
                           )
                           .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
@@ -536,6 +557,7 @@ export default function ReceiveYarn() {
                           .filter(item => item.receipt?.dof_id === dof.id && 
                             item.yarn_count_id === alloc.countId && 
                             item.colour === alloc.colour && 
+                            (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
                             (item.order_id === alloc.orderId || !item.order_id)
                           )
                           .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
