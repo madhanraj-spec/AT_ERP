@@ -149,7 +149,7 @@ export default function ReceiveYarn() {
           yarn_count_id: alloc.countId,
           colour: alloc.colour,
           type: alloc.type || 'warp',
-          required_qty: alloc.total_kg,
+          required_qty: parseFloat(alloc.base_kg || alloc.total_kg || 0),
           sent_qty: sentValue,
           historical_qty: histValue, 
           received_weight: '',
@@ -312,18 +312,34 @@ export default function ReceiveYarn() {
     }
   };
 
-  const groupedItems = () => {
-    const groups = {};
-    receiptItems.forEach((item, index) => {
-      const oid = item.order_number || 'manual';
-      if (!groups[oid]) groups[oid] = { info: { number: item.order_number, design: item.design_info }, warp: [], weft: [] };
-      
-      const itemWithIndex = { ...item, originalIndex: index };
-      if (item.type === 'warp') groups[oid].warp.push(itemWithIndex);
-      else groups[oid].weft.push(itemWithIndex);
+  const getSummaryItems = () => {
+    const summaryMap = {};
+    receiptItems.forEach(item => {
+      if (item.isSplit) return;
+      const key = `${item.yarn_count_id}-${item.colour}-${item.type}`;
+      if (!summaryMap[key]) {
+        summaryMap[key] = {
+          countId: item.yarn_count_id,
+          colour: item.colour,
+          type: item.type,
+          required: 0,
+          sent: 0,
+          received: 0
+        };
+      }
+      summaryMap[key].required += parseFloat(item.required_qty) || 0;
+      summaryMap[key].sent += parseFloat(item.sent_qty) || 0;
+      summaryMap[key].received += parseFloat(item.historical_qty) || 0;
     });
-    return groups;
+    return Object.values(summaryMap);
   };
+
+  const warpItems = receiptItems
+    .map((item, idx) => ({ ...item, originalIndex: idx }))
+    .filter(item => item.type === 'warp');
+  const weftItems = receiptItems
+    .map((item, idx) => ({ ...item, originalIndex: idx }))
+    .filter(item => item.type === 'weft');
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1.5rem' }}>
@@ -486,64 +502,127 @@ export default function ReceiveYarn() {
 
         {(selectedDof || sourceType === 'production') && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            {Object.entries(groupedItems()).map(([oid, group]) => (
-              <div key={oid} className="glass-panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid #eee' }}>
-                <div style={{ padding: '1.25rem 1.5rem', backgroundColor: '#fcfaf9', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <div style={{ backgroundColor: '#7f1d1d', color: '#fff', padding: '6px 14px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: '800' }}>
-                    ORDER: {group.info.number} {group.info.design && `· ${group.info.design}`}
-                  </div>
+            
+            {/* Summary Table Card */}
+            {sourceType === 'partner' && selectedDof && receiptItems.length > 0 && (
+              <div className="glass-panel" style={{ padding: '1.5rem', border: '1px solid #eee' }}>
+                <h3 style={{ margin: '0 0 1.25rem 0', fontSize: '1.1rem', fontWeight: '900', color: '#7f1d1d', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  Dyeing & Receipt Summary
+                </h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="item-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
+                        <th style={{ textAlign: 'left', padding: '12px 10px', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: '800' }}>Yarn Count</th>
+                        <th style={{ textAlign: 'left', padding: '12px 10px', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: '800' }}>Colour</th>
+                        <th style={{ textAlign: 'center', padding: '12px 10px', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: '800' }}>Type</th>
+                        <th style={{ textAlign: 'right', padding: '12px 10px', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: '800' }}>Required (kg)</th>
+                        <th style={{ textAlign: 'right', padding: '12px 10px', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: '800' }}>Qty Sent (kg)</th>
+                        <th style={{ textAlign: 'right', padding: '12px 10px', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: '800' }}>Qty Received (kg)</th>
+                        <th style={{ textAlign: 'right', padding: '12px 10px', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: '800', color: '#7f1d1d' }}>Balance to Receive (kg)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {getSummaryItems().map((s, idx) => {
+                        const countObj = yarnCounts.find(y => y.id === s.countId);
+                        const balance = Math.max(0, s.sent - s.received);
+                        return (
+                          <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
+                            <td style={{ padding: '12px 10px', fontWeight: '800', fontSize: '0.9rem' }}>{countObj?.count_value || '-'}</td>
+                            <td style={{ padding: '12px 10px', fontWeight: '700', color: '#7f1d1d', fontSize: '0.9rem' }}>{s.colour}</td>
+                            <td style={{ padding: '12px 10px', textAlign: 'center', textTransform: 'capitalize', fontWeight: '700', fontSize: '0.9rem' }}>{s.type}</td>
+                            <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: '600', fontSize: '0.9rem' }}>{s.required.toFixed(2)}</td>
+                            <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: '600', fontSize: '0.9rem' }}>{s.sent.toFixed(2)}</td>
+                            <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: '600', color: '#16a34a', fontSize: '0.9rem' }}>{s.received.toFixed(2)}</td>
+                            <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: '800', color: '#b91c1c', fontSize: '0.95rem' }}>{balance.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-                
+              </div>
+            )}
+
+            {/* Warp Details Table */}
+            {warpItems.length > 0 && (
+              <div className="glass-panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid #eee' }}>
+                <div style={{ padding: '1.25rem 1.5rem', backgroundColor: '#fdfbfb', borderBottom: '1px solid #eee' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#7f1d1d', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    WARP DETAILS
+                  </h3>
+                </div>
                 <table className="item-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={{ width: '20%' }}>Yarn Count & Colour</th>
-                      <th style={{ width: '10%' }}>Type</th>
-                      <th style={{ width: '12%', textAlign: 'right' }}>Required (kg)</th>
-                      <th style={{ width: '13%', textAlign: 'right' }}>Sent / Prev.Rec (kg)</th>
-                      <th style={{ width: '13%' }}>Received Weight (kg)</th>
-                      <th style={{ width: '15%' }}>Lot Number</th>
-                      <th style={{ width: '17%' }}>Location</th>
+                      <th style={{ width: '15%' }}>Order</th>
+                      <th style={{ width: '12%' }}>Count</th>
+                      <th style={{ width: '13%' }}>Colour</th>
+                      <th style={{ width: '10%', textAlign: 'right' }}>Required (kg)</th>
+                      <th style={{ width: '10%', textAlign: 'right' }}>Sent (kg)</th>
+                      <th style={{ width: '10%', textAlign: 'right' }}>Prev. Rec (kg)</th>
+                      <th style={{ width: '10%' }}>Received Qty (kg)</th>
+                      <th style={{ width: '10%' }}>Lot Number</th>
+                      <th style={{ width: '10%' }}>Location</th>
                       <th style={{ width: '10%', textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {group.warp.length > 0 && (
-                      <React.Fragment>
-                        <tr className="section-row"><td colSpan="8">WARP DETAILS</td></tr>
-                        {group.warp.map((item, idx) => (
-                          <DataRow 
-                            key={`warp-${idx}`} 
-                            item={item} 
-                            yarnCounts={yarnCounts} 
-                            locations={locations} 
-                            updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
-                            onAddLot={() => addLotSplit(item.originalIndex)}
-                            onRemoveLot={() => removeLotSplit(item.originalIndex)}
-                          />
-                        ))}
-                      </React.Fragment>
-                    )}
-                    {group.weft.length > 0 && (
-                      <React.Fragment>
-                        <tr className="section-row" style={{ color: '#0d9488' }}><td colSpan="8">WEFT DETAILS</td></tr>
-                        {group.weft.map((item, idx) => (
-                          <DataRow 
-                            key={`weft-${idx}`} 
-                            item={item} 
-                            yarnCounts={yarnCounts} 
-                            locations={locations} 
-                            updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
-                            onAddLot={() => addLotSplit(item.originalIndex)}
-                            onRemoveLot={() => removeLotSplit(item.originalIndex)}
-                          />
-                        ))}
-                      </React.Fragment>
-                    )}
+                    {warpItems.map((item, idx) => (
+                      <DataRow 
+                        key={`warp-${idx}`} 
+                        item={item} 
+                        yarnCounts={yarnCounts} 
+                        locations={locations} 
+                        updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
+                        onAddLot={() => addLotSplit(item.originalIndex)}
+                        onRemoveLot={() => removeLotSplit(item.originalIndex)}
+                      />
+                    ))}
                   </tbody>
                 </table>
               </div>
-            ))}
+            )}
+
+            {/* Weft Details Table */}
+            {weftItems.length > 0 && (
+              <div className="glass-panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid #eee' }}>
+                <div style={{ padding: '1.25rem 1.5rem', backgroundColor: '#f0fdf4', borderBottom: '1px solid #eee' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#0d9488', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    WEFT DETAILS
+                  </h3>
+                </div>
+                <table className="item-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '15%' }}>Order</th>
+                      <th style={{ width: '12%' }}>Count</th>
+                      <th style={{ width: '13%' }}>Colour</th>
+                      <th style={{ width: '10%', textAlign: 'right' }}>Required (kg)</th>
+                      <th style={{ width: '10%', textAlign: 'right' }}>Sent (kg)</th>
+                      <th style={{ width: '10%', textAlign: 'right' }}>Prev. Rec (kg)</th>
+                      <th style={{ width: '10%' }}>Received Qty (kg)</th>
+                      <th style={{ width: '10%' }}>Lot Number</th>
+                      <th style={{ width: '10%' }}>Location</th>
+                      <th style={{ width: '10%', textAlign: 'center' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weftItems.map((item, idx) => (
+                      <DataRow 
+                        key={`weft-${idx}`} 
+                        item={item} 
+                        yarnCounts={yarnCounts} 
+                        locations={locations} 
+                        updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
+                        onAddLot={() => addLotSplit(item.originalIndex)}
+                        onRemoveLot={() => removeLotSplit(item.originalIndex)}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {sourceType === 'production' && <button onClick={addManualItem} className="btn btn-secondary" style={{ width: 'fit-content' }}>+ Add Return Order</button>}
 
@@ -604,32 +683,44 @@ function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLo
   const countObj = yarnCounts.find(y => y.id === item.yarn_count_id);
   
   return (
-    <tr>
+    <tr style={{ backgroundColor: item.isSplit ? '#f8fafc' : 'transparent' }}>
+      <td>
+        {item.isSplit ? '' : (
+          <span style={{ 
+            backgroundColor: '#f1f5f9', 
+            color: '#334155', 
+            padding: '4px 8px', 
+            borderRadius: '4px', 
+            fontWeight: '800', 
+            fontSize: '0.8rem' 
+          }}>
+            {item.order_number}
+          </span>
+        )}
+      </td>
       <td>
         {item.isSplit ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#64748b', paddingLeft: '1rem', fontWeight: '700' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#64748b', fontWeight: '700', fontSize: '0.85rem' }}>
             <MoveHorizontal size={14} />
             <span>↳ Lot Split</span>
           </div>
         ) : (
-          <>
-            <div style={{ fontWeight: '800', color: '#1e293b' }}>{countObj?.count_value || 'Select Count...'}</div>
-            <div style={{ fontSize: '0.75rem', color: '#7f1d1d', fontWeight: '700', marginTop: '2px' }}>{item.colour}</div>
-          </>
+          <span style={{ fontWeight: '800', color: '#1e293b' }}>
+            {countObj?.count_value || '-'}
+          </span>
         )}
       </td>
-      <td style={{ textTransform: 'capitalize', fontWeight: '700', color: '#64748b' }}>
-        {item.isSplit ? '' : item.type}
+      <td style={{ fontWeight: '700', color: '#7f1d1d' }}>
+        {item.isSplit ? '' : item.colour}
       </td>
       <td style={{ textAlign: 'right', fontWeight: '600' }}>
         {item.isSplit ? '' : item.required_qty.toFixed(2)}
       </td>
-      <td style={{ textAlign: 'right', fontWeight: '700', color: '#334155' }}>
-        {item.isSplit ? '' : (
-          <>
-            {item.sent_qty.toFixed(2)} / <span style={{ color: '#16a34a' }}>{item.historical_qty.toFixed(2)}</span>
-          </>
-        )}
+      <td style={{ textAlign: 'right', fontWeight: '600' }}>
+        {item.isSplit ? '' : item.sent_qty.toFixed(2)}
+      </td>
+      <td style={{ textAlign: 'right', fontWeight: '700', color: '#16a34a' }}>
+        {item.isSplit ? '' : item.historical_qty.toFixed(2)}
       </td>
       <td>
         <input 
@@ -677,8 +768,7 @@ function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLo
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              borderRadius: '4px',
-              transition: 'background-color 0.2s'
+              borderRadius: '4px'
             }}
             title="Remove Lot Split"
           >
