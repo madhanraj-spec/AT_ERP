@@ -32,7 +32,8 @@ export default function MovementTracking() {
         *,
         master_yarn_counts (count_value, material, product_type),
         master_partners (partner_name),
-        master_locations (location_name)
+        master_locations (location_name),
+        orders (order_number)
       `)
       .order('created_at', { ascending: false });
 
@@ -48,7 +49,8 @@ export default function MovementTracking() {
           *,
           orders(order_number, design_no, design_name),
           master_yarn_counts(count_value, material, product_type),
-          master_locations(location_name)
+          master_locations(location_name),
+          spinning_mill:master_partners(partner_name)
         )
       `)
       .order('created_at', { ascending: false });
@@ -67,33 +69,136 @@ export default function MovementTracking() {
     setLoading(false);
   };
 
-  // Flatten GYDR receipts to individual line item rows for table display
-  const flatDeliveryRows = React.useMemo(() => {
-    return deliveries.flatMap(r => {
-      const items = r.greige_yarn_delivery_items || [];
-      if (items.length === 0) {
-        return [{
-          id: r.id, gydr_number: r.gydr_number, dof_number: r.dof_number,
-          delivered_by: r.delivered_by, vehicle_no: r.vehicle_no, created_at: r.created_at,
-          yarn_label: '-', colour: '-', quantity_kg: 0, location_name: '-',
-          isFirstItem: true, receiptObj: r,
-        }];
+  const [expandedOutputs, setExpandedOutputs] = useState({});
+
+  const toggleExpandOutput = (key) => {
+    setExpandedOutputs(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // Group spinning receipts by receipt_no
+  const groupedSpinningReceipts = React.useMemo(() => {
+    const groups = {};
+    spinningReceipts.forEach(r => {
+      const key = r.receipt_no;
+      if (!groups[key]) {
+        groups[key] = {
+          receipt_no: r.receipt_no,
+          created_at: r.created_at,
+          invoice_no: r.invoice_no,
+          invoice_date: r.invoice_date,
+          partner_name: r.master_partners?.partner_name || '-',
+          items: [],
+          rawReceipts: []
+        };
       }
-      return items.map((item, idx) => ({
-        id: `${r.id}-${idx}`, gydr_number: r.gydr_number, dof_number: r.dof_number,
-        delivered_by: r.delivered_by, vehicle_no: r.vehicle_no, created_at: r.created_at,
-        yarn_label: item.master_yarn_counts
-          ? `${item.master_yarn_counts.count_value} - ${item.master_yarn_counts.material} - ${item.master_yarn_counts.product_type}`
-          : '-',
-        colour: item.colour,
-        quantity_kg: parseFloat(item.quantity_kg || 0),
-        location_name: item.master_locations?.location_name || '-',
-        partner_name: r.dyeing_order_forms?.master_partners?.partner_name || '-',
-        order_info: item.orders ? `${item.orders.order_number} (${item.orders.design_no})` : '-',
-        isFirstItem: idx === 0,
-        receiptObj: r,
-      }));
+      groups[key].items.push({
+        yarn_label: r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}` : '-',
+        bag_count: r.bag_count || 0,
+        cone_count: r.cone_count || 0,
+        bag_weight: Number(r.bag_weight || 0).toFixed(2),
+        cone_weight: Number(r.cone_weight || 0).toFixed(2),
+        total_weight: Number(r.total_weight || 0).toFixed(2),
+        rate_per_kg: Number(r.rate_per_kg || 0).toFixed(2),
+        location_name: r.master_locations?.location_name || '-'
+      });
+      groups[key].rawReceipts.push(r);
     });
+    return Object.values(groups);
+  }, [spinningReceipts]);
+
+  // Group production receipts by receipt_no
+  const groupedProductionReceipts = React.useMemo(() => {
+    const groups = {};
+    productionReceipts.forEach(r => {
+      const key = r.receipt_no;
+      if (!groups[key]) {
+        groups[key] = {
+          receipt_no: r.receipt_no,
+          created_at: r.created_at,
+          order_form_no: r.order_form_no || '-',
+          items: [],
+          rawReceipts: []
+        };
+      }
+      groups[key].items.push({
+        yarn_label: r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}` : '-',
+        yarn_type: r.yarn_type || '',
+        colour: r.colour || '',
+        order_no: r.orders?.order_number || '',
+        bag_count: r.bag_count || 0,
+        cone_count: r.cone_count || 0,
+        bag_weight: Number(r.bag_weight || 0).toFixed(2),
+        cone_weight: Number(r.cone_weight || 0).toFixed(2),
+        total_weight: Number(r.total_weight || 0).toFixed(2),
+        location_name: r.master_locations?.location_name || '-'
+      });
+      groups[key].rawReceipts.push(r);
+    });
+    return Object.values(groups);
+  }, [productionReceipts]);
+
+  // Group deliveries (greige yarn output) by receipt and countId
+  const groupedDeliveries = React.useMemo(() => {
+    const list = [];
+    deliveries.forEach(r => {
+      const countGroups = {};
+      (r.greige_yarn_delivery_items || []).forEach(item => {
+        const countId = item.yarn_count_id;
+        if (!countGroups[countId]) {
+          countGroups[countId] = {
+            countId,
+            yarn_label: item.master_yarn_counts
+              ? `${item.master_yarn_counts.count_value} - ${item.master_yarn_counts.material} - ${item.master_yarn_counts.product_type}`
+              : '-',
+            total_qty: 0,
+            locations: [],
+            items: []
+          };
+        }
+        countGroups[countId].total_qty += parseFloat(item.quantity_kg || 0);
+        const loc = item.master_locations?.location_name || '-';
+        if (loc !== '-' && !countGroups[countId].locations.includes(loc)) {
+          countGroups[countId].locations.push(loc);
+        }
+        countGroups[countId].items.push(item);
+      });
+
+      if (Object.keys(countGroups).length === 0) {
+        list.push({
+          receiptId: r.id,
+          gydr_number: r.gydr_number,
+          dof_number: r.dof_number,
+          partner_name: r.dyeing_order_forms?.master_partners?.partner_name || '-',
+          created_at: r.created_at,
+          countId: 'empty',
+          yarn_label: '-',
+          total_qty: 0,
+          locations_str: '-',
+          items: [],
+          receiptObj: r
+        });
+      } else {
+        Object.values(countGroups).forEach(g => {
+          list.push({
+            receiptId: r.id,
+            gydr_number: r.gydr_number,
+            dof_number: r.dof_number,
+            partner_name: r.dyeing_order_forms?.master_partners?.partner_name || '-',
+            created_at: r.created_at,
+            countId: g.countId,
+            yarn_label: g.yarn_label,
+            total_qty: g.total_qty,
+            locations_str: g.locations.join(', ') || '-',
+            items: g.items,
+            receiptObj: r
+          });
+        });
+      }
+    });
+    return list;
   }, [deliveries]);
 
   return (
@@ -162,91 +267,159 @@ export default function MovementTracking() {
                   </>)}
                   {activeTab === 'output' && (<>
                     <th>GYDR Number</th><th>Date & Time</th><th>Partner / Unit</th><th>DOF #</th>
-                    <th>Order & Design</th><th>Count</th><th>Colour</th>
-                    <th style={{ color: '#dc2626', textAlign: 'right' }}>Qty Issued (kg)</th>
-                    <th>Location</th><th style={{ textAlign: 'center' }}>Receipt</th>
+                    <th>Count</th><th style={{ color: '#dc2626', textAlign: 'right' }}>Qty Issued (kg)</th>
+                    <th>Location</th><th style={{ textAlign: 'center' }}>Details</th><th style={{ textAlign: 'center' }}>Receipt</th>
                   </>)}
                 </tr>
               </thead>
               <tbody>
                 {/* ── Spinning Mill Input ── */}
                 {activeTab === 'input_mill' && (
-                  spinningReceipts.length === 0
+                  groupedSpinningReceipts.length === 0
                     ? <tr><td colSpan={14} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>No incoming mill receipts found</td></tr>
-                    : spinningReceipts.map(row => (
-                      <tr key={row.id}>
-                        <td style={{ fontWeight: 'bold' }}>{row.receipt_no}</td>
-                        <td>{new Date(row.created_at).toLocaleString()}</td>
-                        <td>{row.invoice_no || '-'}</td>
-                        <td>{row.invoice_date || '-'}</td>
-                        <td>{row.master_partners?.partner_name || '-'}</td>
-                        <td>{row.master_yarn_counts ? `${row.master_yarn_counts.count_value} - ${row.master_yarn_counts.material} - ${row.master_yarn_counts.product_type}` : '-'}</td>
-                        <td>{row.bag_count || 0}</td>
-                        <td>{row.cone_count || 0}</td>
-                        <td>{Number(row.bag_weight || 0).toFixed(2)}</td>
-                        <td>{Number(row.cone_weight || 0).toFixed(2)}</td>
-                        <td style={{ fontWeight: 'bold', color: '#16a34a', textAlign: 'center' }}>{Number(row.total_weight).toFixed(2)}</td>
-                        <td>₹{Number(row.rate_per_kg || 0).toFixed(2)}</td>
-                        <td>{row.master_locations?.location_name || '-'}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          <button onClick={() => setSelectedReceipt(row)} style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0 }}>View</button>
-                        </td>
-                      </tr>
-                    ))
+                    : groupedSpinningReceipts.map(group => {
+                        return group.items.map((item, idx) => (
+                          <tr key={`${group.receipt_no}-${idx}`} style={{ borderBottom: idx === group.items.length - 1 ? '1px solid var(--border-current)' : 'none' }}>
+                            {idx === 0 && (
+                              <>
+                                <td rowSpan={group.items.length} style={{ fontWeight: 'bold', verticalAlign: 'middle' }}>{group.receipt_no}</td>
+                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{new Date(group.created_at).toLocaleString()}</td>
+                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{group.invoice_no || '-'}</td>
+                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{group.invoice_date || '-'}</td>
+                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{group.partner_name}</td>
+                              </>
+                            )}
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.yarn_label}</td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.bag_count}</td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.cone_count}</td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.bag_weight}</td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.cone_weight}</td>
+                            <td style={{ fontWeight: 'bold', color: '#16a34a', textAlign: 'center', borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.total_weight}</td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>₹{item.rate_per_kg}</td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.location_name}</td>
+                            {idx === 0 && (
+                              <td rowSpan={group.items.length} style={{ textAlign: 'right', verticalAlign: 'middle' }}>
+                                <button onClick={() => setSelectedReceipt(group.rawReceipts[0])} style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0 }}>View</button>
+                              </td>
+                            )}
+                          </tr>
+                        ));
+                      })
                 )}
 
                 {/* ── Production Input ── */}
                 {activeTab === 'input_prod' && (
-                  productionReceipts.length === 0
+                  groupedProductionReceipts.length === 0
                     ? <tr><td colSpan={11} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>No incoming production receipts found</td></tr>
-                    : productionReceipts.map(row => (
-                      <tr key={row.id}>
-                        <td style={{ fontWeight: 'bold' }}>{row.receipt_no}</td>
-                        <td>{new Date(row.created_at).toLocaleString()}</td>
-                        <td>{row.order_form_no || '-'}</td>
-                        <td>{row.master_yarn_counts ? `${row.master_yarn_counts.count_value} - ${row.master_yarn_counts.material} - ${row.master_yarn_counts.product_type}` : '-'}</td>
-                        <td>{row.bag_count || 0}</td>
-                        <td>{row.cone_count || 0}</td>
-                        <td>{Number(row.bag_weight || 0).toFixed(2)}</td>
-                        <td>{Number(row.cone_weight || 0).toFixed(2)}</td>
-                        <td style={{ fontWeight: 'bold', color: '#16a34a', textAlign: 'center' }}>{Number(row.total_weight).toFixed(2)}</td>
-                        <td>{row.master_locations?.location_name || '-'}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          <button onClick={() => setSelectedReceipt(row)} style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0 }}>View</button>
-                        </td>
-                      </tr>
-                    ))
+                    : groupedProductionReceipts.map(group => {
+                        return group.items.map((item, idx) => (
+                          <tr key={`${group.receipt_no}-${idx}`} style={{ borderBottom: idx === group.items.length - 1 ? '1px solid var(--border-current)' : 'none' }}>
+                            {idx === 0 && (
+                              <>
+                                <td rowSpan={group.items.length} style={{ fontWeight: 'bold', verticalAlign: 'middle' }}>{group.receipt_no}</td>
+                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{new Date(group.created_at).toLocaleString()}</td>
+                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{group.order_form_no}</td>
+                              </>
+                            )}
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>
+                              <div>{item.yarn_label}</div>
+                              {(item.colour || item.yarn_type || item.order_no) && (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
+                                  {[item.yarn_type, item.colour, item.order_no].filter(Boolean).join(' • ')}
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.bag_count}</td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.cone_count}</td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.bag_weight}</td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.cone_weight}</td>
+                            <td style={{ fontWeight: 'bold', color: '#16a34a', textAlign: 'center', borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.total_weight}</td>
+                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.location_name}</td>
+                            {idx === 0 && (
+                              <td rowSpan={group.items.length} style={{ textAlign: 'right', verticalAlign: 'middle' }}>
+                                <button onClick={() => setSelectedReceipt(group.rawReceipts[0])} style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0 }}>View</button>
+                              </td>
+                            )}
+                          </tr>
+                        ));
+                      })
                 )}
 
                 {/* ── GYDR Output ── */}
                 {activeTab === 'output' && (
-                  flatDeliveryRows.length === 0
-                    ? <tr><td colSpan={10} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>No greige yarn deliveries logged yet. Run the DB setup SQL first.</td></tr>
-                    : flatDeliveryRows.map(row => (
-                      <tr key={row.id} style={{ backgroundColor: !row.isFirstItem ? '#fafafa' : undefined }}>
-                        <td style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>
-                          {row.isFirstItem ? row.gydr_number : <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>↳</span>}
-                        </td>
-                        <td style={{ fontSize: '0.8rem' }}>{row.isFirstItem ? new Date(row.created_at).toLocaleString() : ''}</td>
-                        <td style={{ fontWeight: row.isFirstItem ? '700' : '400' }}>{row.isFirstItem ? row.partner_name : ''}</td>
-                        <td style={{ fontWeight: row.isFirstItem ? '700' : '400' }}>{row.isFirstItem ? row.dof_number : ''}</td>
-                        <td style={{ fontSize: '0.8rem' }}>{row.order_info}</td>
-                        <td style={{ fontSize: '0.8rem' }}>{row.yarn_label}</td>
-                        <td>{row.colour}</td>
-                        <td style={{ fontWeight: 'bold', color: '#dc2626', textAlign: 'right' }}>{row.quantity_kg.toFixed(2)}</td>
-                        <td>{row.location_name}</td>
-                        <td style={{ textAlign: 'center' }}>
-                          {row.isFirstItem && (
-                            <button
-                              onClick={() => setSelectedGYDR(row.receiptObj)}
-                              style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
-                            >
-                              View Receipt
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
+                  groupedDeliveries.length === 0
+                    ? <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>No greige yarn deliveries logged yet.</td></tr>
+                    : groupedDeliveries.map(row => {
+                        const expandKey = `${row.receiptId}-${row.countId}`;
+                        const isExpanded = !!expandedOutputs[expandKey];
+                        
+                        return (
+                          <React.Fragment key={expandKey}>
+                            <tr style={{ backgroundColor: isExpanded ? 'rgba(var(--color-primary-rgb, 128,0,0), 0.02)' : undefined, borderBottom: '1px solid var(--border-current)' }}>
+                              <td style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{row.gydr_number}</td>
+                              <td>{new Date(row.created_at).toLocaleString()}</td>
+                              <td>{row.partner_name}</td>
+                              <td>{row.dof_number}</td>
+                              <td style={{ fontWeight: '600' }}>{row.yarn_label}</td>
+                              <td style={{ fontWeight: 'bold', color: '#dc2626', textAlign: 'right' }}>{row.total_qty.toFixed(2)}</td>
+                              <td>{row.locations_str}</td>
+                              <td style={{ textAlign: 'center' }}>
+                                {row.items.length > 0 ? (
+                                  <button
+                                    onClick={() => toggleExpandOutput(expandKey)}
+                                    className="btn btn-secondary"
+                                    style={{ padding: '0.2rem 0.6rem', fontSize: '0.75rem', fontWeight: '700' }}
+                                  >
+                                    {isExpanded ? 'Hide Details' : 'Show Details'} ({row.items.length})
+                                  </button>
+                                ) : '-'}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <button
+                                  onClick={() => setSelectedGYDR(row.receiptObj)}
+                                  style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
+                                >
+                                  View Receipt
+                                </button>
+                              </td>
+                            </tr>
+                            
+                            {isExpanded && row.items.length > 0 && (
+                              <tr>
+                                <td colSpan={9} style={{ padding: '0.5rem 1.5rem', backgroundColor: '#fcfaf9' }}>
+                                  <div style={{
+                                    padding: '0.5rem 1rem',
+                                    border: '1px solid var(--border-current)',
+                                    borderRadius: 'var(--radius-md)',
+                                    backgroundColor: 'var(--surface-current)'
+                                  }}>
+                                    <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
+                                      <thead>
+                                        <tr style={{ borderBottom: '1px solid var(--border-current)', color: 'var(--text-muted-current)', textAlign: 'left' }}>
+                                          <th style={{ padding: '6px 8px' }}>Order & Design</th>
+                                          <th style={{ padding: '6px 8px' }}>Colour</th>
+                                          <th style={{ padding: '6px 8px' }}>Issued From Location</th>
+                                          <th style={{ padding: '6px 8px', textAlign: 'right' }}>Qty Issued (kg)</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {row.items.map((item, i) => (
+                                          <tr key={item.id || i} style={{ borderBottom: i === row.items.length - 1 ? 'none' : '1px solid var(--border-current)' }}>
+                                            <td style={{ padding: '6px 8px' }}>{item.orders ? `${item.orders.order_number} (${item.orders.design_no} / ${item.orders.design_name})` : '-'}</td>
+                                            <td style={{ padding: '6px 8px', fontWeight: '700', color: 'var(--color-primary)' }}>{item.colour}</td>
+                                            <td style={{ padding: '6px 8px' }}>{item.master_locations?.location_name || '-'}</td>
+                                            <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700' }}>{parseFloat(item.quantity_kg).toFixed(2)} kg</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
                 )}
               </tbody>
             </table>
@@ -296,6 +469,7 @@ function GYDRQuickView({ receipt, onClose }) {
               <tr style={{ backgroundColor: '#7f1d1d', color: '#fff' }}>
                 <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px' }}>Count</th>
                 <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px' }}>Colour</th>
+                <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px' }}>Spinning Mill</th>
                 <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px' }}>Location</th>
                 <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: '11px' }}>Qty (kg)</th>
               </tr>
@@ -309,12 +483,15 @@ function GYDRQuickView({ receipt, onClose }) {
                       : '-'}
                   </td>
                   <td style={{ padding: '6px 10px', fontSize: '12px' }}>{item.colour}</td>
+                  <td style={{ padding: '6px 10px', fontSize: '12px' }}>
+                    {item.spinning_mill?.partner_name || (item.spinning_mill_id ? 'Unknown Mill' : 'Production Returns')}
+                  </td>
                   <td style={{ padding: '6px 10px', fontSize: '12px' }}>{item.master_locations?.location_name || '-'}</td>
                   <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: '700', fontSize: '12px' }}>{parseFloat(item.quantity_kg).toFixed(2)}</td>
                 </tr>
               ))}
               <tr style={{ backgroundColor: '#f3f4f6', borderTop: '2px solid #7f1d1d' }}>
-                <td colSpan={3} style={{ padding: '6px 10px', textAlign: 'right', fontWeight: '800', fontSize: '12px' }}>TOTAL:</td>
+                <td colSpan={4} style={{ padding: '6px 10px', textAlign: 'right', fontWeight: '800', fontSize: '12px' }}>TOTAL:</td>
                 <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: '800', color: '#7f1d1d' }}>{total.toFixed(2)} kg</td>
               </tr>
             </tbody>

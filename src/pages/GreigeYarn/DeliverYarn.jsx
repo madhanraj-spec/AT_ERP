@@ -31,6 +31,8 @@ export default function DeliverYarn() {
   const [locations, setLocations] = useState([]);
   const [existingDeliveries, setExistingDeliveries] = useState([]); // delivery items already made
   const [existingReceipts, setExistingReceipts] = useState([]); // GYDR receipts for this DOF
+  const [existingReturns, setExistingReturns] = useState([]); // GYPRR receipts/returns for this DOF
+  const [millNames, setMillNames] = useState({}); // { spinningMillId: partner_name }
   const [globalStock, setGlobalStock] = useState({}); // { countId: availableWgt }
   const [locStock, setLocStock] = useState({}); // { countId: { locationId: quantity } }
 
@@ -89,13 +91,27 @@ export default function DeliverYarn() {
           greige_yarn_delivery_items(
             *,
             master_yarn_counts(*),
-            master_locations(*)
+            master_locations(*),
+            spinning_mill:master_partners(partner_name)
           )
         `)
         .eq('dof_id', dofId)
         .order('created_at', { ascending: false });
 
       setExistingReceipts(receiptsData || []);
+
+      // 5b) Fetch returns for this DOF
+      const { data: returnsData } = await supabase
+        .from('greige_yarn_receipts')
+        .select(`
+          *,
+          orders (order_number)
+        `)
+        .eq('receipt_type', 'production')
+        .eq('order_form_no', dofData.dof_number)
+        .order('created_at', { ascending: false });
+
+      setExistingReturns(returnsData || []);
 
       // Flatten all delivery items for this DOF
       const allItems = (receiptsData || []).flatMap(r => r.greige_yarn_delivery_items || []);
@@ -107,33 +123,50 @@ export default function DeliverYarn() {
       if (countIds.length > 0) {
         const { data: globalRec } = await supabase
           .from('greige_yarn_receipts')
-          .select('yarn_count_id, location_id, total_weight')
+          .select('yarn_count_id, location_id, total_weight, spinning_mill_id, master_partners(partner_name)')
           .in('yarn_count_id', countIds);
         
         const { data: globalDel } = await supabase
           .from('greige_yarn_delivery_items')
-          .select('yarn_count_id, location_id, quantity_kg')
+          .select('yarn_count_id, location_id, quantity_kg, spinning_mill_id')
           .in('yarn_count_id', countIds);
 
         const stockMap = {};
-        const lStockMap = {}; // { countId: { locId: qty } }
+        const lStockMap = {}; // { countId: { spinningMillId_locationId: qty } }
+        const mNames = {};
 
         (globalRec || []).forEach(r => {
           const w = parseFloat(r.total_weight || 0);
-          stockMap[r.yarn_count_id] = (stockMap[r.yarn_count_id] || 0) + w;
+          const millId = r.spinning_mill_id || 'null';
           
+          if (r.spinning_mill_id && r.master_partners?.partner_name) {
+            mNames[r.spinning_mill_id] = r.master_partners.partner_name;
+          }
+
           if (!lStockMap[r.yarn_count_id]) lStockMap[r.yarn_count_id] = {};
-          lStockMap[r.yarn_count_id][r.location_id] = (lStockMap[r.yarn_count_id][r.location_id] || 0) + w;
+          const combKey = `${millId}_${r.location_id}`;
+          lStockMap[r.yarn_count_id][combKey] = (lStockMap[r.yarn_count_id][combKey] || 0) + w;
         });
 
         (globalDel || []).forEach(d => {
           const w = parseFloat(d.quantity_kg || 0);
-          stockMap[d.yarn_count_id] = (stockMap[d.yarn_count_id] || 0) - w;
+          const millId = d.spinning_mill_id || 'null';
           
           if (!lStockMap[d.yarn_count_id]) lStockMap[d.yarn_count_id] = {};
-          lStockMap[d.yarn_count_id][d.location_id] = (lStockMap[d.yarn_count_id][d.location_id] || 0) - w;
+          const combKey = `${millId}_${d.location_id}`;
+          lStockMap[d.yarn_count_id][combKey] = (lStockMap[d.yarn_count_id][combKey] || 0) - w;
         });
 
+        // Compute global stock per count (summing all combinations)
+        Object.entries(lStockMap).forEach(([countId, combMap]) => {
+          let totalForCount = 0;
+          Object.values(combMap).forEach(qty => {
+            totalForCount += qty;
+          });
+          stockMap[countId] = totalForCount;
+        });
+
+        setMillNames(mNames);
         setGlobalStock(stockMap);
         setLocStock(lStockMap);
       }
@@ -157,9 +190,15 @@ export default function DeliverYarn() {
       const required = parseFloat(s.total_kg || 0);
 
       // Sum already sent for this count + colour
-      const sent = existingDeliveries
+      const sentDeliveries = existingDeliveries
         .filter(d => d.yarn_count_id === s.countId && d.colour === s.colour)
         .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+
+      const returned = (existingReturns || [])
+        .filter(r => r.yarn_count_id === s.countId && r.colour === s.colour)
+        .reduce((sum, r) => sum + parseFloat(r.total_weight || 0), 0);
+
+      const sent = Math.max(0, sentDeliveries - returned);
 
       const balance = Math.max(0, required - sent);
       const isComplete = balance <= 0;
@@ -175,7 +214,7 @@ export default function DeliverYarn() {
         stock_available: globalStock[s.countId] || 0,
       };
     });
-  }, [dof, yarnCounts, existingDeliveries, globalStock]);
+  }, [dof, yarnCounts, existingDeliveries, existingReturns, globalStock]);
 
   // ── Step 1 → Step 2 ──
   const startAllocation = () => {
@@ -192,14 +231,43 @@ export default function DeliverYarn() {
         
         // Find best initial location with stock
         const sMap = locStock[a.countId] || {};
-        const availableLocs = locations.filter(l => (sMap[l.id] || 0) > 0.01);
+        
+        const availableMills = [];
+        const seenMills = new Set();
+        Object.keys(sMap).forEach(combKey => {
+          const [millId] = combKey.split('_');
+          const qty = sMap[combKey] || 0;
+          if (qty > 0.01) {
+            if (!seenMills.has(millId)) {
+              seenMills.add(millId);
+              availableMills.push({
+                id: millId === 'null' ? '' : millId,
+                name: millId === 'null' ? 'Production Returns' : (millNames[millId] || 'Unknown Mill')
+              });
+            }
+          }
+        });
+
+        const defaultMill = availableMills[0]?.id || '';
+        const availableLocs = locations.filter(l => {
+          const key = `${defaultMill || 'null'}_${l.id}`;
+          return (sMap[key] || 0) > 0.01;
+        });
+        const defaultLoc = availableLocs[0]?.id || '';
 
         // 1. Process match (Order + Type)
-        const typeMatch = existingDeliveries.filter(d => d.order_id === order.id && d.yarn_count_id === a.countId && d.colour === a.colour && d.yarn_type === a.type).reduce((s, d) => s + parseFloat(d.quantity_kg || 0), 0);
+        const typeMatchDeliveries = existingDeliveries.filter(d => d.order_id === order.id && d.yarn_count_id === a.countId && d.colour === a.colour && d.yarn_type === a.type).reduce((s, d) => s + parseFloat(d.quantity_kg || 0), 0);
+        const typeMatchReturns = (existingReturns || []).filter(r => r.order_id === order.id && r.yarn_count_id === a.countId && r.colour === a.colour && r.yarn_type === a.type).reduce((s, r) => s + parseFloat(r.total_weight || 0), 0);
+        const typeMatch = Math.max(0, typeMatchDeliveries - typeMatchReturns);
+
         // 2. Legacy Order match (Order + No Type)
-        const legacyMatch = existingDeliveries.filter(d => d.order_id === order.id && d.yarn_count_id === a.countId && d.colour === a.colour && !d.yarn_type).reduce((s, d) => s + parseFloat(d.quantity_kg || 0), 0);
+        const legacyMatchDeliveries = existingDeliveries.filter(d => d.order_id === order.id && d.yarn_count_id === a.countId && d.colour === a.colour && !d.yarn_type).reduce((s, d) => s + parseFloat(d.quantity_kg || 0), 0);
+        const legacyMatch = Math.max(0, legacyMatchDeliveries);
+
         // 3. Unassigned Match (No Order)
-        const unassignedMatch = existingDeliveries.filter(d => !d.order_id && d.yarn_count_id === a.countId && d.colour === a.colour).reduce((s, d) => s + parseFloat(d.quantity_kg || 0), 0);
+        const unassignedMatchDeliveries = existingDeliveries.filter(d => !d.order_id && d.yarn_count_id === a.countId && d.colour === a.colour).reduce((s, d) => s + parseFloat(d.quantity_kg || 0), 0);
+        const unassignedMatchReturns = (existingReturns || []).filter(r => !r.order_id && r.yarn_count_id === a.countId && r.colour === a.colour).reduce((s, r) => s + parseFloat(r.total_weight || 0), 0);
+        const unassignedMatch = Math.max(0, unassignedMatchDeliveries - unassignedMatchReturns);
 
         fullAllocList.push({
           orderId: order.id,
@@ -211,7 +279,8 @@ export default function DeliverYarn() {
           required_kg: parseFloat(a.total_kg || 0),
           already_allocated_kg: typeMatch + legacyMatch + unassignedMatch,
           delivered_qty: '',
-          location_id: availableLocs[0]?.id || '',
+          spinning_mill_id: defaultMill,
+          location_id: defaultLoc,
         });
       });
     });
@@ -229,16 +298,48 @@ export default function DeliverYarn() {
       if (diff > 0.01) {
         const count = yarnCounts.find(c => c.id === s.countId);
         const sMap = locStock[s.countId] || {};
-        const availableLocs = locations.filter(l => (sMap[l.id] || 0) > 0.01);
+
+        const availableMills = [];
+        const seenMills = new Set();
+        Object.keys(sMap).forEach(combKey => {
+          const [millId] = combKey.split('_');
+          const qty = sMap[combKey] || 0;
+          if (qty > 0.01) {
+            if (!seenMills.has(millId)) {
+              seenMills.add(millId);
+              availableMills.push({
+                id: millId === 'null' ? '' : millId,
+                name: millId === 'null' ? 'Production Returns' : (millNames[millId] || 'Unknown Mill')
+              });
+            }
+          }
+        });
+
+        const defaultMill = availableMills[0]?.id || '';
+        const availableLocs = locations.filter(l => {
+          const key = `${defaultMill || 'null'}_${l.id}`;
+          return (sMap[key] || 0) > 0.01;
+        });
+        const defaultLoc = availableLocs[0]?.id || '';
 
         // Calculate historical for General items
-        const alreadyAllocated = existingDeliveries
+        const alreadyAllocatedDeliveries = existingDeliveries
           .filter(d => 
             d.order_id === null && 
             d.yarn_count_id === s.countId && 
             d.colour === s.colour
           )
           .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+
+        const alreadyAllocatedReturns = (existingReturns || [])
+          .filter(r => 
+            r.order_id === null && 
+            r.yarn_count_id === s.countId && 
+            r.colour === s.colour
+          )
+          .reduce((sum, r) => sum + parseFloat(r.total_weight || 0), 0);
+
+        const alreadyAllocated = Math.max(0, alreadyAllocatedDeliveries - alreadyAllocatedReturns);
 
         fullAllocList.push({
           orderId: null,
@@ -250,7 +351,8 @@ export default function DeliverYarn() {
           required_kg: diff,
           already_allocated_kg: alreadyAllocated,
           delivered_qty: '',
-          location_id: availableLocs[0]?.id || '',
+          spinning_mill_id: defaultMill,
+          location_id: defaultLoc,
         });
       }
     });
@@ -269,7 +371,19 @@ export default function DeliverYarn() {
   };
 
   const updateAllocItem = (idx, field, value) => {
-    setAllAllocItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+    setAllAllocItems(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      const updated = { ...item, [field]: value };
+      if (field === 'spinning_mill_id') {
+        const sMap = locStock[item.countId] || {};
+        const availableLocs = locations.filter(l => {
+          const key = `${value || 'null'}_${l.id}`;
+          return (sMap[key] || 0) > 0.01;
+        });
+        updated.location_id = availableLocs[0]?.id || '';
+      }
+      return updated;
+    }));
     setAllocError('');
   };
 
@@ -297,7 +411,8 @@ export default function DeliverYarn() {
       }
     }
 
-    // Validate locations AND per-location stock
+    // Validate locations AND per-location stock (summed across all rows with the same count/mill/location)
+    const allocatedByCombo = {}; // { countId_millId_locationId: total_qty }
     for (const item of allAllocItems) {
       const qty = parseFloat(item.delivered_qty || 0);
       if (qty <= 0) continue;
@@ -307,10 +422,20 @@ export default function DeliverYarn() {
         return false;
       }
 
-      const availableInLoc = (locStock[item.countId] || {})[item.location_id] || 0;
+      const key = `${item.spinning_mill_id || 'null'}_${item.location_id}`;
+      const comboKey = `${item.countId}_${key}`;
+      allocatedByCombo[comboKey] = (allocatedByCombo[comboKey] || 0) + qty;
+    }
+
+    for (const [comboKey, qty] of Object.entries(allocatedByCombo)) {
+      const [countId, millId, locationId] = comboKey.split('_');
+      const key = `${millId}_${locationId}`;
+      const availableInLoc = (locStock[countId] || {})[key] || 0;
       if (qty > availableInLoc + 0.001) {
-        const loc = locations.find(l => l.id === item.location_id);
-        setAllocError(`${item.countLabel} (${item.colour}): Qty (${qty.toFixed(2)}kg) exceeds stock available at ${loc?.location_name || 'selected location'} (${availableInLoc.toFixed(2)}kg).`);
+        const item = allAllocItems.find(i => i.countId === countId);
+        const loc = locations.find(l => l.id === locationId);
+        const millName = millId === 'null' ? 'Production Returns' : (millNames[millId] || 'Selected Mill');
+        setAllocError(`${item?.countLabel || 'Yarn'} (${item?.colour || ''}): Total allocated qty (${qty.toFixed(2)}kg) from ${millName} at ${loc?.location_name || 'selected location'} exceeds available stock (${availableInLoc.toFixed(2)}kg).`);
         return false;
       }
     }
@@ -364,6 +489,7 @@ export default function DeliverYarn() {
         colour: item.colour,
         quantity_kg: item.quantity_kg,
         location_id: item.location_id || null,
+        spinning_mill_id: item.spinning_mill_id || null,
         order_id: item.orderId || null,
         yarn_type: item.type,
       }));
@@ -381,18 +507,32 @@ export default function DeliverYarn() {
 
       const allDeliveryItems = (allReceiptsData || []).flatMap(r => r.greige_yarn_delivery_items || []);
 
+      // Fetch all returns for this DOF
+      const { data: returnedItems } = await supabase
+        .from('greige_yarn_receipts')
+        .select('yarn_count_id, colour, total_weight')
+        .eq('receipt_type', 'production')
+        .eq('order_form_no', dof.dof_number);
+
       // Compare with DOF summary
       const dofSummary = dof.summary || [];
       let allFullySent = true;
       let anySent = false;
 
       for (const s of dofSummary) {
-        const totalSentForThis = allDeliveryItems
+        const totalDelivered = allDeliveryItems
           .filter(d => d.yarn_count_id === s.countId && d.colour === s.colour)
           .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+
+        const totalReturned = (returnedItems || [])
+          .filter(r => r.yarn_count_id === s.countId && r.colour === s.colour)
+          .reduce((sum, r) => sum + parseFloat(r.total_weight || 0), 0);
+
+        const netSentForThis = Math.max(0, totalDelivered - totalReturned);
         const required = parseFloat(s.total_kg || 0);
-        if (totalSentForThis > 0) anySent = true;
-        if (totalSentForThis < required - 0.001) allFullySent = false;
+
+        if (netSentForThis > 0.001) anySent = true;
+        if (netSentForThis < required - 0.001) allFullySent = false;
       }
 
       const newStatus = allFullySent ? 'fully_sent' : anySent ? 'partially_sent' : 'approved';
@@ -557,6 +697,54 @@ export default function DeliverYarn() {
               </div>
             </div>
           )}
+
+          {/* ── Production Return History ── */}
+          {existingReturns.length > 0 && (
+            <div className="glass-panel" style={{ padding: 0, marginTop: '2rem' }}>
+              <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-current)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <FileText size={20} color="var(--color-primary)" />
+                <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>Production Return History</h2>
+              </div>
+              <div className="table-container" style={{ border: 'none', borderRadius: '0' }}>
+                <table className="table" style={{ fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr>
+                      <th>GYPRR No.</th>
+                      <th>Date</th>
+                      <th>Yarn Count</th>
+                      <th>Colour</th>
+                      <th>Yarn Type</th>
+                      <th>Order</th>
+                      <th style={{ textAlign: 'right' }}>Returned Weight (kg)</th>
+                      <th>Location</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {existingReturns.map(r => {
+                      const count = yarnCounts.find(c => c.id === r.yarn_count_id);
+                      const countLabel = count ? `${count.count_value} ${count.material}` : 'Unknown';
+                      const location = locations.find(l => l.id === r.location_id);
+                      
+                      return (
+                        <tr key={r.id}>
+                          <td style={{ fontWeight: '700', color: 'var(--color-primary)' }}>{r.receipt_no}</td>
+                          <td>{new Date(r.created_at).toLocaleDateString()}</td>
+                          <td>{countLabel}</td>
+                          <td>{r.colour || '-'}</td>
+                          <td style={{ textTransform: 'capitalize' }}>{r.yarn_type || '-'}</td>
+                          <td>{r.orders?.order_number || r.order_id || '-'}</td>
+                          <td style={{ textAlign: 'right', fontWeight: '700', color: '#b45309' }}>
+                            {Number(r.total_weight || 0).toFixed(2)} kg
+                          </td>
+                          <td>{location?.location_name || '-'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         /* ── NEXT PAGE: ALLOCATION STEP ── */
@@ -601,16 +789,39 @@ export default function DeliverYarn() {
                           <th style={{ textAlign: 'right', width: '120px' }}>Required (kg)</th>
                           <th style={{ textAlign: 'right', width: '120px', color: '#64748b' }}>Already Allocated</th>
                           <th style={{ width: '180px' }}>Qty to Deliver (kg)</th>
-                          <th style={{ width: '280px' }}>From Location (Available Stock)</th>
+                          <th style={{ width: '200px' }}>Spinning Mill</th>
+                          <th style={{ width: '220px' }}>From Location (Available Stock)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {allAllocItems.map((item, aIdx) => {
                           if (item.orderNumber !== ordNum) return null;
                           
-                          // Filter locations for this specific count
                           const sMap = locStock[item.countId] || {};
-                          const availableLocs = locations.filter(l => (sMap[l.id] || 0) > 0.001);
+                          
+                          // Find available spinning mills for this count
+                          const availableMills = [];
+                          const seenMills = new Set();
+                          Object.keys(sMap).forEach(combKey => {
+                            const [millId] = combKey.split('_');
+                            const qty = sMap[combKey] || 0;
+                            if (qty > 0.01) {
+                              if (!seenMills.has(millId)) {
+                                seenMills.add(millId);
+                                availableMills.push({
+                                  id: millId === 'null' ? '' : millId,
+                                  name: millId === 'null' ? 'Production Returns' : (millNames[millId] || 'Unknown Mill')
+                                });
+                              }
+                            }
+                          });
+
+                          // Filter locations for the selected mill
+                          const selectedMillId = item.spinning_mill_id || 'null';
+                          const availableLocs = locations.filter(l => {
+                            const key = `${selectedMillId}_${l.id}`;
+                            return (sMap[key] || 0) > 0.01;
+                          });
 
                           return (
                             <tr key={aIdx}>
@@ -636,13 +847,34 @@ export default function DeliverYarn() {
                               <td>
                                 <select
                                   className="input-field"
+                                  value={item.spinning_mill_id}
+                                  onChange={(e) => updateAllocItem(aIdx, 'spinning_mill_id', e.target.value)}
+                                  style={{ width: '100%', padding: '6px 12px', borderColor: availableMills.length === 0 ? '#fca5a5' : 'var(--border-current)' }}
+                                >
+                                  <option value="">Select Mill</option>
+                                  {availableMills.map(mill => (
+                                    <option key={mill.id} value={mill.id}>
+                                      {mill.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                {availableMills.length === 0 && (
+                                  <div style={{ fontSize: '0.7rem', color: '#b91c1c', marginTop: '4px', fontWeight: '700' }}>
+                                    ⚠ Out of stock
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                <select
+                                  className="input-field"
                                   value={item.location_id}
                                   onChange={(e) => updateAllocItem(aIdx, 'location_id', e.target.value)}
-                                  style={{ width: '100%', padding: '6px 12px', borderColor: availableLocs.length === 0 ? '#fca5a5' : 'var(--border-current)' }}
+                                  style={{ width: '100%', padding: '6px 12px', borderColor: (!item.location_id && parseFloat(item.delivered_qty || 0) > 0) ? '#fca5a5' : 'var(--border-current)' }}
                                 >
                                   <option value="">Select Location</option>
                                   {availableLocs.map(loc => {
-                                    const stockAtLoc = sMap[loc.id] || 0;
+                                    const key = `${selectedMillId}_${loc.id}`;
+                                    const stockAtLoc = sMap[key] || 0;
                                     return (
                                       <option key={loc.id} value={loc.id}>
                                         {loc.location_name} ({stockAtLoc.toFixed(2)} kg)
@@ -650,9 +882,9 @@ export default function DeliverYarn() {
                                     );
                                   })}
                                 </select>
-                                {availableLocs.length === 0 && (
+                                {availableLocs.length === 0 && item.spinning_mill_id !== undefined && (
                                   <div style={{ fontSize: '0.7rem', color: '#b91c1c', marginTop: '4px', fontWeight: '700' }}>
-                                    ⚠ Out of stock in all locations
+                                    ⚠ No location with stock for this mill
                                   </div>
                                 )}
                               </td>
@@ -878,6 +1110,7 @@ function GYDRReceiptModal({ receiptId, dof, orders, allReceipts, onClose }) {
                 <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: '700' }}>S.No</th>
                 <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: '700' }}>Yarn Count</th>
                 <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: '700' }}>Colour</th>
+                <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: '700' }}>Spinning Mill</th>
                 <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: '700' }}>Location</th>
                 <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: '11px', fontWeight: '700' }}>Quantity (kg)</th>
               </tr>
@@ -892,12 +1125,15 @@ function GYDRReceiptModal({ receiptId, dof, orders, allReceipts, onClose }) {
                       : '-'}
                   </td>
                   <td style={{ padding: '6px 10px', fontSize: '12px' }}>{item.colour}</td>
+                  <td style={{ padding: '6px 10px', fontSize: '12px' }}>
+                    {item.spinning_mill?.partner_name || (item.spinning_mill_id ? 'Unknown Mill' : 'Production Returns')}
+                  </td>
                   <td style={{ padding: '6px 10px', fontSize: '12px' }}>{item.master_locations?.location_name || '-'}</td>
                   <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: '700', fontSize: '12px' }}>{parseFloat(item.quantity_kg).toFixed(2)}</td>
                 </tr>
               ))}
               <tr style={{ backgroundColor: '#f3f4f6', borderTop: '2px solid #7f1d1d' }}>
-                <td colSpan={4} style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '800', fontSize: '12px' }}>TOTAL:</td>
+                <td colSpan={5} style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '800', fontSize: '12px' }}>TOTAL:</td>
                 <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '800', color: '#7f1d1d', fontSize: '13px' }}>{totalQty.toFixed(2)} kg</td>
               </tr>
             </tbody>

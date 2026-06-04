@@ -43,16 +43,36 @@ export default function CreateDyeingForm() {
       const yarnReq = (order?.yarn_requirements || []).find(
         yr => yr.type === sc.type && yr.countId === sc.countId && yr.color === sc.colour
       );
-      const base_kg = parseFloat(yarnReq?.kg || 0);
+      const original_required_kg = parseFloat(yarnReq?.kg || 0);
+
+      // Look up already allotted from the conflict map
+      const key = `${sc.orderId}|${sc.type}|${sc.countId}|${sc.colour}`;
+      const conflict = allocatedColours[key];
+      const already_allotted = conflict ? conflict.already_allotted_base : 0;
+      const remaining_kg = Math.max(0, original_required_kg - already_allotted);
+
+      // Preserve user state if already existing in allocations list
       const existing = allocations.find(
         a => a.orderId === sc.orderId && a.countId === sc.countId && a.colour === sc.colour && a.type === sc.type
       );
+
+      const base_kg = existing !== undefined ? existing.base_kg : remaining_kg;
       const excess_pct = existing?.excess_pct ?? 0;
-      const total_kg = base_kg + (base_kg * excess_pct / 100);
-      return { ...sc, base_kg, excess_pct, total_kg };
+      const parsedBase = parseFloat(base_kg) || 0;
+      const total_kg = parsedBase + (parsedBase * excess_pct / 100);
+
+      return {
+        ...sc,
+        original_required_kg,
+        already_allotted,
+        remaining_kg,
+        base_kg,
+        excess_pct,
+        total_kg
+      };
     });
     setAllocations(newAllocations);
-  }, [selectedColours]);
+  }, [selectedColours, allocatedColours, myOrders]);
 
   const fetchMasterData = async () => {
     setFetching(true);
@@ -70,20 +90,31 @@ export default function CreateDyeingForm() {
         supabase
           .from('dyeing_order_forms')
           .select('dof_number, yarn_allocations')
-          .in('status', ['pending', 'approved']),
+          .neq('status', 'rejected'),
       ]);
 
       setMyOrders(ordersRes.data || []);
       setDyeingUnits(partnersRes.data || []);
       setYarnCounts(countsRes.data || []);
 
-      // Build conflict map from existing DOFs
+      // Build conflict map from existing DOFs by aggregating allocated base weights
       const conflictMap = {};
       (dofsRes.data || []).forEach(dof => {
         (dof.yarn_allocations || []).forEach(alloc => {
           const key = `${alloc.orderId}|${alloc.type}|${alloc.countId}|${alloc.colour}`;
+          const allocBase = parseFloat(alloc.base_kg || 0);
           if (!conflictMap[key]) {
-            conflictMap[key] = { dofNumber: dof.dof_number, totalKg: alloc.total_kg };
+            conflictMap[key] = {
+              dofNumbers: [dof.dof_number],
+              already_allotted_base: allocBase,
+              already_allotted_total: parseFloat(alloc.total_kg || 0)
+            };
+          } else {
+            if (!conflictMap[key].dofNumbers.includes(dof.dof_number)) {
+              conflictMap[key].dofNumbers.push(dof.dof_number);
+            }
+            conflictMap[key].already_allotted_base += allocBase;
+            conflictMap[key].already_allotted_total += parseFloat(alloc.total_kg || 0);
           }
         });
       });
@@ -130,13 +161,25 @@ export default function CreateDyeingForm() {
     const alreadySelected = selectedColours.some(c => key(c) === eKey);
 
     if (!alreadySelected && conflict) {
-      // Show warning and ask for confirmation before allowing selection
-      const confirmed = window.confirm(
-        `⚠️ This colour has already been allocated!\n\n` +
-        `DOF: ${conflict.dofNumber}\nQty Allocated: ${parseFloat(conflict.totalKg || 0).toFixed(2)} kg\n\n` +
-        `Do you still want to select this colour for the new DOF?`
+      // Calculate remaining quantity
+      const order = myOrders.find(o => o.id === entry.orderId);
+      const yarnReq = (order?.yarn_requirements || []).find(
+        yr => yr.type === entry.type && yr.countId === entry.countId && yr.color === entry.colour
       );
-      if (!confirmed) return;
+      const original_base = parseFloat(yarnReq?.kg || 0);
+      const already_allotted = conflict.already_allotted_base;
+      const remaining = Math.max(0, original_base - already_allotted);
+
+      if (remaining <= 0) {
+        // Show warning if user attempts to select a fully allotted colour
+        const confirmed = window.confirm(
+          `⚠️ This colour has already been FULLY allotted!\n\n` +
+          `DOF(s): ${conflict.dofNumbers.join(', ')}\n` +
+          `Qty Already Allotted: ${already_allotted.toFixed(2)} kg / ${original_base.toFixed(2)} kg\n\n` +
+          `Do you still want to select it anyway? (Remaining amount is 0 kg)`
+        );
+        if (!confirmed) return;
+      }
     }
 
     setSelectedColours(prev =>
@@ -153,10 +196,28 @@ export default function CreateDyeingForm() {
     );
   };
 
+  const updateBaseQty = (idx, val) => {
+    setAllocations(prev => {
+      const updated = [...prev];
+      if (val === '') {
+        updated[idx] = { ...updated[idx], base_kg: '', total_kg: 0 };
+        return updated;
+      }
+      let base_kg = parseFloat(val);
+      if (isNaN(base_kg)) base_kg = 0;
+      if (base_kg < 0) base_kg = 0;
+
+      const excess_pct = updated[idx].excess_pct;
+      const total_kg = base_kg + (base_kg * excess_pct / 100);
+      updated[idx] = { ...updated[idx], base_kg, total_kg };
+      return updated;
+    });
+  };
+
   const updateExcess = (idx, val) => {
     setAllocations(prev => {
       const updated = [...prev];
-      const base_kg = updated[idx].base_kg;
+      const base_kg = parseFloat(updated[idx].base_kg) || 0;
       const excess_pct = parseFloat(val) || 0;
       const total_kg = base_kg + (base_kg * excess_pct / 100);
       updated[idx] = { ...updated[idx], excess_pct, total_kg };
@@ -170,6 +231,14 @@ export default function CreateDyeingForm() {
     }
     if (currentStep === 1 && !dyeingUnitId) {
       alert('Please select a Dyeing Unit.'); return;
+    }
+    if (currentStep === 2) {
+      if (allocations.length === 0) {
+        alert('Please select at least one color/yarn to allocate.'); return;
+      }
+      if (allocations.some(a => !a.base_kg || parseFloat(a.base_kg) <= 0)) {
+        alert('Please enter a valid allotted base quantity greater than 0 for all selected items.'); return;
+      }
     }
     setCurrentStep(s => s + 1);
   };
@@ -188,19 +257,34 @@ export default function CreateDyeingForm() {
   };
 
   const handleSubmit = async () => {
+    if (allocations.some(a => !a.base_kg || parseFloat(a.base_kg) <= 0)) {
+      alert('Please enter a valid base quantity greater than 0 for all selected items.');
+      return;
+    }
     setLoading(true);
     try {
       const { data: dofNumber, error: numErr } = await supabase.rpc('get_next_dof_number', { p_year: currentYear });
       if (numErr) throw numErr;
 
       const summary = buildSummary();
+      // Prepare clean allocation payload matching JSONB schema
+      const sanitizedAllocations = allocations.map(a => ({
+        orderId: a.orderId,
+        type: a.type,
+        countId: a.countId,
+        colour: a.colour,
+        base_kg: parseFloat(a.base_kg) || 0,
+        excess_pct: parseFloat(a.excess_pct) || 0,
+        total_kg: parseFloat(a.total_kg) || 0
+      }));
+
       const payload = {
         dof_number: dofNumber,
         created_by: profile.id,
         dyeing_unit_id: dyeingUnitId,
         expected_delivery_date: deliveryDate || null,
         order_ids: selectedOrderIds,
-        yarn_allocations: allocations,
+        yarn_allocations: sanitizedAllocations,
         summary,
         status: 'pending',
       };
@@ -226,6 +310,13 @@ export default function CreateDyeingForm() {
     const selected = isColourSelected(entry);
     const conflict = getConflict(entry);
 
+    const original_base = parseFloat(req.kg || 0);
+    const already_allotted = conflict ? conflict.already_allotted_base : 0;
+    const remaining = Math.max(0, original_base - already_allotted);
+
+    const isFullyAllocated = conflict && remaining <= 0;
+    const isPartiallyAllocated = conflict && remaining > 0;
+
     return (
       <div
         key={`${type}-${req.countId}-${req.color}`}
@@ -233,10 +324,10 @@ export default function CreateDyeingForm() {
         style={{
           padding: '0.6rem 0.75rem',
           borderRadius: 'var(--radius-sm)',
-          border: `1px solid ${selected ? 'var(--color-primary)' : conflict ? '#f59e0b' : 'var(--border-current)'}`,
+          border: `1px solid ${selected ? 'var(--color-primary)' : isFullyAllocated ? '#f59e0b' : isPartiallyAllocated ? '#3b82f6' : 'var(--border-current)'}`,
           backgroundColor: selected
             ? 'rgba(var(--color-primary-rgb, 128,0,0), 0.05)'
-            : conflict ? '#fffbeb' : 'transparent',
+            : isFullyAllocated ? '#fffbeb' : isPartiallyAllocated ? '#eff6ff' : 'transparent',
           cursor: 'pointer',
           marginBottom: '0.5rem',
         }}
@@ -244,31 +335,31 @@ export default function CreateDyeingForm() {
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
           {selected
             ? <CheckSquare size={16} color="var(--color-primary)" style={{ marginTop: '2px', flexShrink: 0 }} />
-            : <Square size={16} color={conflict ? '#f59e0b' : 'var(--text-muted-current)'} style={{ marginTop: '2px', flexShrink: 0 }} />}
+            : <Square size={16} color={isFullyAllocated ? '#f59e0b' : isPartiallyAllocated ? '#3b82f6' : 'var(--text-muted-current)'} style={{ marginTop: '2px', flexShrink: 0 }} />}
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: '600', fontSize: '0.8125rem' }}>{req.color}</div>
-            <div style={{ color: 'var(--text-muted-current)', fontSize: '0.75rem' }}>
-              {formatYarn(yarn)} — {req.kg} kg
+            <div style={{ fontWeight: '600', fontSize: '0.8125rem', display: 'flex', justifyContent: 'space-between' }}>
+              <span>{req.color}</span>
+              {remaining > 0 && remaining < original_base && (
+                <span style={{ color: '#2563eb', fontSize: '0.75rem', fontWeight: 'bold' }}>{remaining.toFixed(2)} kg left</span>
+              )}
+              {isFullyAllocated && (
+                <span style={{ color: '#d97706', fontSize: '0.75rem', fontWeight: 'bold' }}>Fully Allotted</span>
+              )}
             </div>
-            {conflict && !selected && (
+            <div style={{ color: 'var(--text-muted-current)', fontSize: '0.75rem', marginTop: '2px' }}>
+              {formatYarn(yarn)} — Total: {original_base.toFixed(2)} kg
+            </div>
+            {conflict && (
               <div style={{
                 marginTop: '0.3rem',
-                display: 'flex', alignItems: 'center', gap: '0.3rem',
-                color: '#92400e', fontSize: '0.7rem', fontWeight: '600',
-                backgroundColor: '#fef3c7', padding: '2px 6px', borderRadius: '3px'
+                display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.3rem',
+                color: isFullyAllocated ? '#92400e' : '#1e3a8a', fontSize: '0.7rem', fontWeight: '600',
+                backgroundColor: isFullyAllocated ? '#fef3c7' : '#dbeafe', padding: '2px 6px', borderRadius: '3px'
               }}>
                 <AlertTriangle size={10} />
-                Already in {conflict.dofNumber} ({parseFloat(conflict.totalKg || 0).toFixed(2)} kg)
-              </div>
-            )}
-            {conflict && selected && (
-              <div style={{
-                marginTop: '0.3rem',
-                display: 'flex', alignItems: 'center', gap: '0.3rem',
-                color: '#92400e', fontSize: '0.7rem',
-                backgroundColor: '#fef3c7', padding: '2px 6px', borderRadius: '3px'
-              }}>
-                ⚠️ Duplicate of {conflict.dofNumber}
+                <span>
+                  Allotted: {already_allotted.toFixed(2)} kg in {conflict.dofNumbers.join(', ')}
+                </span>
               </div>
             )}
           </div>
@@ -472,7 +563,10 @@ export default function CreateDyeingForm() {
                         <th>Type</th>
                         <th>Yarn Count</th>
                         <th>Colour</th>
-                        <th style={{ textAlign: 'right' }}>Base Qty (kg)</th>
+                        <th style={{ textAlign: 'right' }}>Req Qty (kg)</th>
+                        <th style={{ textAlign: 'right' }}>Already Allotted (kg)</th>
+                        <th style={{ textAlign: 'right' }}>Remaining (kg)</th>
+                        <th style={{ textAlign: 'center', width: '130px' }}>Allotted Base Qty (kg)</th>
                         <th style={{ textAlign: 'center' }}>Excess %</th>
                         <th style={{ textAlign: 'right' }}>Total Qty (kg)</th>
                       </tr>
@@ -481,13 +575,41 @@ export default function CreateDyeingForm() {
                       {allocations.map((a, idx) => {
                         const order = myOrders.find(o => o.id === a.orderId);
                         const yarn = yarnCounts.find(y => y.id === a.countId);
+                        const isExceeded = parseFloat(a.base_kg || 0) > a.remaining_kg;
                         return (
                           <tr key={idx}>
                             <td style={{ fontWeight: '600', color: 'var(--color-primary)' }}>{order?.order_number}</td>
                             <td style={{ textTransform: 'capitalize' }}>{a.type}</td>
                             <td>{formatYarn(yarn)}</td>
                             <td>{a.colour}</td>
-                            <td style={{ textAlign: 'right' }}>{a.base_kg.toFixed(2)}</td>
+                            <td style={{ textAlign: 'right' }}>{a.original_required_kg.toFixed(2)}</td>
+                            <td style={{ textAlign: 'right', color: a.already_allotted > 0 ? '#b45309' : '' }}>
+                              {a.already_allotted.toFixed(2)}
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: '600', color: a.remaining_kg > 0 ? '#1d4ed8' : '#6b7280' }}>
+                              {a.remaining_kg.toFixed(2)}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={a.base_kg}
+                                onChange={e => updateBaseQty(idx, e.target.value)}
+                                className="input-field"
+                                style={{
+                                  maxWidth: '110px',
+                                  textAlign: 'center',
+                                  padding: '0.3rem 0.5rem',
+                                  fontWeight: 'bold',
+                                  borderColor: isExceeded ? '#dc2626' : '',
+                                  backgroundColor: isExceeded ? '#fef2f2' : ''
+                                }}
+                              />
+                              {isExceeded && (
+                                <div style={{ color: '#dc2626', fontSize: '0.7rem', marginTop: '2px', fontWeight: '600' }}>
+                                  Exceeds remaining ({a.remaining_kg.toFixed(2)} kg)
+                                </div>
+                              )}
+                            </td>
                             <td style={{ textAlign: 'center' }}>
                               <input
                                 type="number" min="0" max="100" step="0.5"
@@ -498,15 +620,15 @@ export default function CreateDyeingForm() {
                               />
                             </td>
                             <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>
-                              {a.total_kg.toFixed(2)}
+                              {(parseFloat(a.total_kg) || 0).toFixed(2)}
                             </td>
                           </tr>
                         );
                       })}
                       <tr style={{ backgroundColor: 'var(--surface-current)' }}>
-                        <td colSpan={6} style={{ textAlign: 'right', fontWeight: '700' }}>Grand Total:</td>
+                        <td colSpan={9} style={{ textAlign: 'right', fontWeight: '700' }}>Grand Total:</td>
                         <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--color-primary)' }}>
-                          {allocations.reduce((s, a) => s + (a.total_kg || 0), 0).toFixed(2)} kg
+                          {allocations.reduce((s, a) => s + (parseFloat(a.total_kg) || 0), 0).toFixed(2)} kg
                         </td>
                       </tr>
                     </tbody>
@@ -561,7 +683,7 @@ export default function CreateDyeingForm() {
                   <thead>
                     <tr>
                       <th>Order No.</th><th>Type</th><th>Yarn Count</th><th>Colour</th>
-                      <th style={{ textAlign: 'right' }}>Base (kg)</th>
+                      <th style={{ textAlign: 'right' }}>Allotted Base (kg)</th>
                       <th style={{ textAlign: 'center' }}>Excess %</th>
                       <th style={{ textAlign: 'right' }}>Total (kg)</th>
                     </tr>
@@ -576,9 +698,9 @@ export default function CreateDyeingForm() {
                           <td style={{ textTransform: 'capitalize' }}>{a.type}</td>
                           <td>{formatYarn(yarn)}</td>
                           <td>{a.colour}</td>
-                          <td style={{ textAlign: 'right' }}>{a.base_kg.toFixed(2)}</td>
+                          <td style={{ textAlign: 'right' }}>{(parseFloat(a.base_kg) || 0).toFixed(2)}</td>
                           <td style={{ textAlign: 'center' }}>{a.excess_pct}%</td>
-                          <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{a.total_kg.toFixed(2)}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{(parseFloat(a.total_kg) || 0).toFixed(2)}</td>
                         </tr>
                       );
                     })}

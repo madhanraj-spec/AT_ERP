@@ -233,6 +233,7 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR }) {
   const [dyrrs, setDyrrs] = useState([]);
   const [deliveryItems, setDeliveryItems] = useState([]);
   const [receiptItems, setReceiptItems] = useState([]);
+  const [returns, setReturns] = useState([]);
   const [loading, setLoading] = useState(true);
   const { profile } = useAuth();
 
@@ -310,6 +311,15 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR }) {
         setReceiptItems(dyriData || []);
         const uniqueDyrr = Array.from(new Set(dyriData?.map(i => i.receipt?.id))).map(id => dyriData.find(i => i.receipt?.id === id).receipt);
         setDyrrs(uniqueDyrr.filter(Boolean));
+
+        // 4. Fetch returns for this order
+        const { data: returnData } = await supabase
+          .from('greige_yarn_receipts')
+          .select('*')
+          .eq('receipt_type', 'production')
+          .eq('order_id', order.id);
+        
+        setReturns(returnData || []);
         
       } catch (err) {
         console.error('Error fetching dyeing details:', err);
@@ -325,12 +335,36 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR }) {
     const allocations = (dofs || []).flatMap(d => (d.yarn_allocations || []).filter(a => a.orderId === order.id));
     
     const summary = {};
+
+    // 1. Initialize summary with all yarn requirements entered during order creation
+    (order.yarn_requirements || []).forEach(yr => {
+      const key = `${yr.countId}-${yr.color}-${yr.type}`;
+      summary[key] = { 
+        countId: yr.countId, 
+        colour: yr.color, 
+        type: yr.type, 
+        netRequired: parseFloat(yr.kg || 0), 
+        dyeingReq: 0, 
+        sent: 0, 
+        received: 0,
+        dyeingUnit: '-',
+        expectedDate: '-'
+      };
+    });
+
+    // 2. Process allocations from DOFs
     allocations.forEach(a => {
       const key = `${a.countId}-${a.colour}-${a.type}`;
       // Find the parent DOF to get unit/date
-      const parentDof = dofs.find(d => (d.yarn_allocations || []).some(alloc => alloc === a));
+      const parentDof = dofs.find(d => (d.yarn_allocations || []).some(alloc => 
+        alloc.orderId === a.orderId && 
+        alloc.type === a.type && 
+        alloc.countId === a.countId && 
+        alloc.colour === a.colour
+      ));
       
       if (!summary[key]) {
+        // Fallback for allocations not present in yarn_requirements
         summary[key] = { 
           countId: a.countId, 
           colour: a.colour, 
@@ -343,12 +377,28 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR }) {
           expectedDate: parentDof?.expected_delivery_date || '-'
         };
       } else {
-        // If already exists, and different units/dates, we could append but usually 1 order-item = 1 DOF.
-        if (parentDof && !summary[key].dyeingUnit.includes(parentDof.dyeing_unit?.partner_name)) {
-          summary[key].dyeingUnit += `, ${parentDof.dyeing_unit?.partner_name}`;
+        if (parentDof && parentDof.dyeing_unit?.partner_name) {
+          if (summary[key].dyeingUnit === '-') {
+            summary[key].dyeingUnit = parentDof.dyeing_unit.partner_name;
+          } else if (!summary[key].dyeingUnit.includes(parentDof.dyeing_unit.partner_name)) {
+            summary[key].dyeingUnit += `, ${parentDof.dyeing_unit.partner_name}`;
+          }
+        }
+        if (parentDof && parentDof.expected_delivery_date) {
+          if (summary[key].expectedDate === '-') {
+            summary[key].expectedDate = parentDof.expected_delivery_date;
+          } else if (!summary[key].expectedDate.includes(parentDof.expected_delivery_date)) {
+            summary[key].expectedDate += `, ${parentDof.expected_delivery_date}`;
+          }
         }
       }
-      summary[key].netRequired += parseFloat(a.base_kg || a.total_kg || 0);
+
+      // If this was a fallback key (not in original yarn_requirements), accumulate the base_kg to netRequired.
+      const hasRequirement = (order.yarn_requirements || []).some(yr => `${yr.countId}-${yr.color}-${yr.type}` === key);
+      if (!hasRequirement) {
+        summary[key].netRequired += parseFloat(a.base_kg || a.total_kg || 0);
+      }
+      
       summary[key].dyeingReq += parseFloat(a.total_kg || 0);
     });
 
@@ -356,13 +406,14 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR }) {
       const key = `${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}`;
       if (summary[key]) {
         summary[key].sent += parseFloat(item.quantity_kg || 0);
-      } else {
-        // Fallback for items without explicit yarn_type: attempt to find a match
-        Object.keys(summary).forEach(sKey => {
-          if (sKey.startsWith(`${item.yarn_count_id}-${item.colour}-`)) {
-            // For older data without type, we might still have ambiguity, but we'll stick to strict if possible
-          }
-        });
+      }
+    });
+
+    // Deduct returns from sent quantities
+    (returns || []).forEach(ret => {
+      const key = `${ret.yarn_count_id}-${ret.colour}-${ret.yarn_type || 'warp'}`;
+      if (summary[key]) {
+        summary[key].sent = Math.max(0, summary[key].sent - parseFloat(ret.total_weight || 0));
       }
     });
     
@@ -379,7 +430,20 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR }) {
       if (a.type !== 'warp' && b.type === 'warp') return 1;
       return 0;
     });
-  }, [dofs, deliveryItems, receiptItems]);
+  }, [dofs, deliveryItems, receiptItems, returns, order.yarn_requirements, order.id]);
+
+  // Group returns by receipt_no
+  const uniqueReturns = React.useMemo(() => {
+    const unique = [];
+    const seen = new Set();
+    (returns || []).forEach(r => {
+      if (!seen.has(r.receipt_no)) {
+        seen.add(r.receipt_no);
+        unique.push(r);
+      }
+    });
+    return unique;
+  }, [returns]);
 
   const formatYarnDisplay = (id) => {
     const y = yarnCounts.find(c => c.id === id);
@@ -450,7 +514,7 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR }) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
         {/* DOFs List */}
         <section>
           <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em' }}>Dyeing Order Forms</h5>
@@ -509,6 +573,25 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR }) {
               </div>
             ))}
             {dyrrs.length === 0 && <p style={{ fontSize: '0.8rem', color: '#999' }}>No receipts found.</p>}
+          </div>
+        </section>
+
+        {/* GYPRR List */}
+        <section>
+          <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em' }}>Greige Return from Dyeing</h5>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {uniqueReturns.map(r => (
+              <div key={r.id} style={{ padding: '0.75rem', backgroundColor: '#fff', border: '1px solid #eee', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: '700', fontSize: '0.8rem' }}>{r.receipt_no}</div>
+                  <div style={{ fontSize: '0.7rem', color: '#666' }}>{new Date(r.created_at).toLocaleDateString()}</div>
+                </div>
+                <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#b45309' }}>
+                  {r.total_weight ? `${Number(r.total_weight).toFixed(1)} kg` : '-'}
+                </div>
+              </div>
+            ))}
+            {uniqueReturns.length === 0 && <p style={{ fontSize: '0.8rem', color: '#999' }}>No returns found.</p>}
           </div>
         </section>
       </div>

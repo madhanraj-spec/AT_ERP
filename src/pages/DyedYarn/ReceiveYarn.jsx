@@ -35,6 +35,7 @@ export default function ReceiveYarn() {
   const [selectedDof, setSelectedDof] = useState(null);
   const [orderMap, setOrderMap] = useState({});
   const [receiptItems, setReceiptItems] = useState([]);
+  const [associatedGydrs, setAssociatedGydrs] = useState([]);
 
   // Final Form State
   const [logistics, setLogistics] = useState({
@@ -63,10 +64,12 @@ export default function ReceiveYarn() {
     if (!dofNumber.trim()) return;
 
     setFetching(true);
+    setSelectedDof(null);
+    setAssociatedGydrs([]);
     try {
       const { data: dof, error: dofError } = await supabase
         .from('dyeing_order_forms')
-        .select('*, master_partners(partner_name)')
+        .select('*, dyeing_unit:master_partners(partner_name)')
         .eq('dof_number', dofNumber.trim())
         .single();
 
@@ -86,8 +89,11 @@ export default function ReceiveYarn() {
 
       const { data: gydrs } = await supabase
         .from('greige_yarn_delivery_receipts')
-        .select('id').eq('dof_id', dof.id);
+        .select('id, gydr_number, delivered_by, vehicle_no, remarks, created_at')
+        .eq('dof_id', dof.id)
+        .order('created_at', { ascending: false });
       
+      setAssociatedGydrs(gydrs || []);
       const gydrIds = gydrs?.map(g => g.id) || [];
       const sMap = {}; // order-count-color
       const fallbackMap = {}; // count-color
@@ -147,9 +153,11 @@ export default function ReceiveYarn() {
           sent_qty: sentValue,
           historical_qty: histValue, 
           received_weight: '',
+          lot_number: '',
           location_id: locations[0]?.id || '',
           order_number: oMap[alloc.orderId]?.order_number || '',
-          design_info: `${oMap[alloc.orderId]?.design_no || ''} / ${oMap[alloc.orderId]?.design_name || ''}`
+          design_info: `${oMap[alloc.orderId]?.design_no || ''} / ${oMap[alloc.orderId]?.design_name || ''}`,
+          isSplit: false
         };
       });
 
@@ -168,7 +176,9 @@ export default function ReceiveYarn() {
       order_id: null, order_number: 'MISC', design_info: '',
       yarn_count_id: '', colour: '', type: 'warp',
       required_qty: 0, sent_qty: 0, historical_qty: 0, received_weight: '',
-      location_id: locations[0]?.id || ''
+      lot_number: '',
+      location_id: locations[0]?.id || '',
+      isSplit: false
     }]);
   };
 
@@ -178,14 +188,38 @@ export default function ReceiveYarn() {
     setReceiptItems(newItems);
   };
 
+  const addLotSplit = (index) => {
+    const parentItem = receiptItems[index];
+    const newItems = [...receiptItems];
+    newItems.splice(index + 1, 0, {
+      ...parentItem,
+      received_weight: '',
+      lot_number: '',
+      isSplit: true
+    });
+    setReceiptItems(newItems);
+  };
+
+  const removeLotSplit = (index) => {
+    const newItems = [...receiptItems];
+    newItems.splice(index, 1);
+    setReceiptItems(newItems);
+  };
+
   const handleProceed = () => {
     const valid = receiptItems.some(i => parseFloat(i.received_weight) > 0);
     if (!valid) return alert('Enter received weight for at least one item.');
     
     if (sourceType === 'partner') {
-      const totalRequired = receiptItems.reduce((s, i) => s + parseFloat(i.required_qty), 0);
-      const totalNow = receiptItems.reduce((s, i) => s + (parseFloat(i.historical_qty) || 0) + (parseFloat(i.received_weight) || 0), 0);
-      const perc = (totalNow / totalRequired) * 100;
+      const totalRequired = receiptItems
+        .filter(i => !i.isSplit)
+        .reduce((s, i) => s + parseFloat(i.required_qty), 0);
+      const totalHist = receiptItems
+        .filter(i => !i.isSplit)
+        .reduce((s, i) => s + (parseFloat(i.historical_qty) || 0), 0);
+      const totalReceivedNow = receiptItems.reduce((s, i) => s + (parseFloat(i.received_weight) || 0), 0);
+      const totalNow = totalHist + totalReceivedNow;
+      const perc = totalRequired > 0 ? (totalNow / totalRequired) * 100 : 0;
       setDofProgress(perc);
     }
     
@@ -225,7 +259,8 @@ export default function ReceiveYarn() {
           quantity_kg: parseFloat(i.received_weight),
           location_id: i.location_id,
           is_excess: sourceType === 'production',
-          yarn_type: i.type
+          yarn_type: i.type,
+          lot_number: i.lot_number
         }));
 
       const { error: itemsError } = await supabase.from('dyed_yarn_receipt_items').insert(itemsToInsert);
@@ -247,28 +282,27 @@ export default function ReceiveYarn() {
 
       const printObj = {
         receiptNumber: dyrrNumber,
-        dof_number: selectedDof.dof_number,
+        dof_number: selectedDof?.dof_number || 'PRODUCTION_RETURN',
         date: new Date().toLocaleString(),
         source: sourceType === 'partner' ? 'Partner Receipt' : 'Production Return',
-        partner_name: sourceType === 'partner' ? selectedDof?.master_partners?.partner_name : 'N/A',
-        items: itemsToInsert.map(item => {
-          const original = receiptItems.find(ri => ri.yarn_count_id === item.yarn_count_id && ri.colour === item.colour);
-          return {
-            orderNo: original?.order_number || '-',
-            design: original?.design_info || '-',
+        partner_name: sourceType === 'partner' ? selectedDof?.dyeing_unit?.partner_name : 'N/A',
+        items: receiptItems
+          .filter(i => parseFloat(i.received_weight) > 0)
+          .map(item => ({
+            orderNo: item.order_number || '-',
+            design: item.design_info || '-',
             count: yarnCounts.find(y => y.id === item.yarn_count_id)?.count_value,
             colour: item.colour,
-            type: original?.type,
-            weight: item.quantity_kg,
-            location: locations.find(l => l.id === item.location_id)?.location_name
-          };
-        }),
+            type: item.type,
+            weight: parseFloat(item.received_weight),
+            location: locations.find(l => l.id === item.location_id)?.location_name || '-',
+            lot_number: item.lot_number
+          })),
         logistics
       };
 
       setPrintData(printObj);
       setStep(1); // Hide the finalize modal
-      // Removed the immediate window.print() call as the modal will handle it.
 
     } catch (err) {
       console.error(err);
@@ -280,11 +314,13 @@ export default function ReceiveYarn() {
 
   const groupedItems = () => {
     const groups = {};
-    receiptItems.forEach(item => {
+    receiptItems.forEach((item, index) => {
       const oid = item.order_number || 'manual';
       if (!groups[oid]) groups[oid] = { info: { number: item.order_number, design: item.design_info }, warp: [], weft: [] };
-      if (item.type === 'warp') groups[oid].warp.push(item);
-      else groups[oid].weft.push(item);
+      
+      const itemWithIndex = { ...item, originalIndex: index };
+      if (item.type === 'warp') groups[oid].warp.push(itemWithIndex);
+      else groups[oid].weft.push(itemWithIndex);
     });
     return groups;
   };
@@ -327,9 +363,122 @@ export default function ReceiveYarn() {
               <button disabled={fetching} type="submit" className="btn btn-primary">{fetching ? <Loader size={18} className="spin" /> : 'Fetch Details'}</button>
             </form>
             {selectedDof && (
-              <div style={{ marginTop: '1.5rem', display: 'flex', gap: '2rem', padding: '1.25rem', backgroundColor: '#7f1d1d', borderRadius: '10px', color: '#fff' }}>
-                <div><div style={{ fontSize: '0.65rem', fontWeight: '800', opacity: 0.8 }}>PARTNER</div><div style={{ fontWeight: '900' }}>{selectedDof.dyeing_unit?.partner_name}</div></div>
-                <div style={{ borderLeft: '1px solid rgba(255,255,255,0.3)', paddingLeft: '2rem' }}><div style={{ fontSize: '0.65rem', fontWeight: '800', opacity: 0.8 }}>EXPECTED</div><div style={{ fontWeight: '900' }}>{selectedDof.expected_delivery_date}</div></div>
+              <div style={{ 
+                marginTop: '1.5rem', 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
+                gap: '1.5rem' 
+              }}>
+                {/* Card 1: DOF Details */}
+                <div style={{ 
+                  backgroundColor: 'var(--surface-current, #fff)', 
+                  border: '1px solid var(--border-current, #eee)', 
+                  borderRadius: '12px', 
+                  padding: '1.5rem',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+                }}>
+                  <h4 style={{ 
+                    margin: '0 0 1rem 0', 
+                    fontSize: '0.9rem', 
+                    fontWeight: '900', 
+                    color: '#7f1d1d', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: '1px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <FileText size={16} /> Dyeing Order Form Details
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.875rem' }}>
+                    <div>
+                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>DOF NUMBER</div>
+                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{selectedDof.dof_number}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>STATUS</div>
+                      <div style={{ marginTop: '2px' }}>
+                        <span style={{ 
+                          padding: '0.15rem 0.5rem', 
+                          borderRadius: '4px', 
+                          fontSize: '0.75rem', 
+                          fontWeight: '800',
+                          backgroundColor: selectedDof.status === 'approved' || selectedDof.status === 'partially_received' || selectedDof.status === 'received' ? '#dcfce7' : '#fef9c3',
+                          color: selectedDof.status === 'approved' || selectedDof.status === 'partially_received' || selectedDof.status === 'received' ? '#15803d' : '#854d0e',
+                          textTransform: 'capitalize'
+                        }}>
+                          {selectedDof.status}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>DYEING PARTNER</div>
+                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{selectedDof.dyeing_unit?.partner_name || 'N/A'}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>EXPECTED DELIVERY</div>
+                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{selectedDof.expected_delivery_date || 'N/A'}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>CREATED AT</div>
+                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{new Date(selectedDof.created_at).toLocaleDateString()}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card 2: Associated GYDRs */}
+                <div style={{ 
+                  backgroundColor: 'var(--surface-current, #fff)', 
+                  border: '1px solid var(--border-current, #eee)', 
+                  borderRadius: '12px', 
+                  padding: '1.5rem',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+                }}>
+                  <h4 style={{ 
+                    margin: '0 0 1rem 0', 
+                    fontSize: '0.9rem', 
+                    fontWeight: '900', 
+                    color: '#7f1d1d', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: '1px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <Truck size={16} /> Associated Greige Deliveries (GYDR)
+                  </h4>
+                  {associatedGydrs.length === 0 ? (
+                    <div style={{ color: '#64748b', fontSize: '0.875rem', padding: '1rem', backgroundColor: '#f8fafc', borderRadius: '8px', textAlign: 'center' }}>
+                      No greige yarn delivery receipts found for this DOF.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                      {associatedGydrs.map((g, i) => (
+                        <div key={i} style={{ 
+                          padding: '0.75rem', 
+                          backgroundColor: '#f8fafc', 
+                          border: '1px solid #e2e8f0', 
+                          borderRadius: '8px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: '0.825rem'
+                        }}>
+                          <div>
+                            <div style={{ fontWeight: '800', color: '#1e293b' }}>{g.gydr_number}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                              Date: {new Date(g.created_at).toLocaleDateString()} | Veh: {g.vehicle_no || 'N/A'}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: '700', color: '#475569', fontSize: '0.75rem' }}>DELIVERED BY</div>
+                            <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.75rem' }}>{g.delivered_by}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -348,34 +497,46 @@ export default function ReceiveYarn() {
                 <table className="item-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={{ width: '25%' }}>Yarn Count & Colour</th>
+                      <th style={{ width: '20%' }}>Yarn Count & Colour</th>
                       <th style={{ width: '10%' }}>Type</th>
-                      <th style={{ width: '15%', textAlign: 'right' }}>Required (kg)</th>
-                      <th style={{ width: '15%', textAlign: 'right' }}>Sent / Prev.Rec (kg)</th>
-                      <th style={{ width: '15%' }}>Received Weight (kg)</th>
-                      <th style={{ width: '20%' }}>Location</th>
+                      <th style={{ width: '12%', textAlign: 'right' }}>Required (kg)</th>
+                      <th style={{ width: '13%', textAlign: 'right' }}>Sent / Prev.Rec (kg)</th>
+                      <th style={{ width: '13%' }}>Received Weight (kg)</th>
+                      <th style={{ width: '15%' }}>Lot Number</th>
+                      <th style={{ width: '17%' }}>Location</th>
+                      <th style={{ width: '10%', textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {group.warp.length > 0 && (
                       <React.Fragment>
-                        <tr className="section-row"><td colSpan="6">WARP DETAILS</td></tr>
+                        <tr className="section-row"><td colSpan="8">WARP DETAILS</td></tr>
                         {group.warp.map((item, idx) => (
-                          <DataRow key={`warp-${idx}`} item={item} yarnCounts={yarnCounts} locations={locations} updateItem={(f, v) => {
-                            const realIdx = receiptItems.findIndex(ri => ri === item);
-                            updateItem(realIdx, f, v);
-                          }} />
+                          <DataRow 
+                            key={`warp-${idx}`} 
+                            item={item} 
+                            yarnCounts={yarnCounts} 
+                            locations={locations} 
+                            updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
+                            onAddLot={() => addLotSplit(item.originalIndex)}
+                            onRemoveLot={() => removeLotSplit(item.originalIndex)}
+                          />
                         ))}
                       </React.Fragment>
                     )}
                     {group.weft.length > 0 && (
                       <React.Fragment>
-                        <tr className="section-row" style={{ color: '#0d9488' }}><td colSpan="6">WEFT DETAILS</td></tr>
+                        <tr className="section-row" style={{ color: '#0d9488' }}><td colSpan="8">WEFT DETAILS</td></tr>
                         {group.weft.map((item, idx) => (
-                          <DataRow key={`weft-${idx}`} item={item} yarnCounts={yarnCounts} locations={locations} updateItem={(f, v) => {
-                            const realIdx = receiptItems.findIndex(ri => ri === item);
-                            updateItem(realIdx, f, v);
-                          }} />
+                          <DataRow 
+                            key={`weft-${idx}`} 
+                            item={item} 
+                            yarnCounts={yarnCounts} 
+                            locations={locations} 
+                            updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
+                            onAddLot={() => addLotSplit(item.originalIndex)}
+                            onRemoveLot={() => removeLotSplit(item.originalIndex)}
+                          />
                         ))}
                       </React.Fragment>
                     )}
@@ -439,19 +600,36 @@ export default function ReceiveYarn() {
   );
 }
 
-function DataRow({ item, yarnCounts, locations, updateItem }) {
+function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLot }) {
   const countObj = yarnCounts.find(y => y.id === item.yarn_count_id);
   
   return (
     <tr>
       <td>
-        <div style={{ fontWeight: '800', color: '#1e293b' }}>{countObj?.count_value || 'Select Count...'}</div>
-        <div style={{ fontSize: '0.75rem', color: '#7f1d1d', fontWeight: '700', marginTop: '2px' }}>{item.colour}</div>
+        {item.isSplit ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#64748b', paddingLeft: '1rem', fontWeight: '700' }}>
+            <MoveHorizontal size={14} />
+            <span>↳ Lot Split</span>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontWeight: '800', color: '#1e293b' }}>{countObj?.count_value || 'Select Count...'}</div>
+            <div style={{ fontSize: '0.75rem', color: '#7f1d1d', fontWeight: '700', marginTop: '2px' }}>{item.colour}</div>
+          </>
+        )}
       </td>
-      <td style={{ textTransform: 'capitalize', fontWeight: '700', color: '#64748b' }}>{item.type}</td>
-      <td style={{ textAlign: 'right', fontWeight: '600' }}>{item.required_qty.toFixed(2)}</td>
+      <td style={{ textTransform: 'capitalize', fontWeight: '700', color: '#64748b' }}>
+        {item.isSplit ? '' : item.type}
+      </td>
+      <td style={{ textAlign: 'right', fontWeight: '600' }}>
+        {item.isSplit ? '' : item.required_qty.toFixed(2)}
+      </td>
       <td style={{ textAlign: 'right', fontWeight: '700', color: '#334155' }}>
-        {item.sent_qty.toFixed(2)} / <span style={{ color: '#16a34a' }}>{item.historical_qty.toFixed(2)}</span>
+        {item.isSplit ? '' : (
+          <>
+            {item.sent_qty.toFixed(2)} / <span style={{ color: '#16a34a' }}>{item.historical_qty.toFixed(2)}</span>
+          </>
+        )}
       </td>
       <td>
         <input 
@@ -465,6 +643,16 @@ function DataRow({ item, yarnCounts, locations, updateItem }) {
         />
       </td>
       <td>
+        <input 
+          type="text" 
+          className="form-input" 
+          style={{ fontWeight: '700', fontSize: '0.875rem', padding: '6px 12px' }} 
+          value={item.lot_number || ''} 
+          onChange={e => updateItem('lot_number', e.target.value)} 
+          placeholder="e.g. Lot 1" 
+        />
+      </td>
+      <td>
         <select 
           className="form-input" 
           style={{ fontWeight: '700', fontSize: '0.85rem' }} 
@@ -474,6 +662,46 @@ function DataRow({ item, yarnCounts, locations, updateItem }) {
           <option value="">Select Location</option>
           {locations.map(l => <option key={l.id} value={l.id}>{l.location_name}</option>)}
         </select>
+      </td>
+      <td style={{ textAlign: 'center' }}>
+        {item.isSplit ? (
+          <button 
+            type="button"
+            onClick={onRemoveLot}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: '#ef4444', 
+              cursor: 'pointer',
+              padding: '0.25rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '4px',
+              transition: 'background-color 0.2s'
+            }}
+            title="Remove Lot Split"
+          >
+            <X size={18} />
+          </button>
+        ) : (
+          <button 
+            type="button"
+            onClick={onAddLot}
+            className="btn btn-secondary"
+            style={{ 
+              padding: '4px 10px', 
+              fontSize: '0.75rem', 
+              fontWeight: '800', 
+              borderRadius: '6px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.25rem'
+            }}
+          >
+            + Add Lot
+          </button>
+        )}
       </td>
     </tr>
   );

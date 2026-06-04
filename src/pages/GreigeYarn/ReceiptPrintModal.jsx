@@ -20,7 +20,8 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
         *,
         master_yarn_counts (count_value, material, product_type),
         master_partners (partner_name),
-        master_locations (location_name)
+        master_locations (location_name),
+        orders (order_number)
       `)
       .eq('receipt_no', receipt.receipt_no);
 
@@ -76,7 +77,9 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
           borderTopLeftRadius: '8px',
           borderTopRightRadius: '8px'
         }}>
-          <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#111827' }}>AT/GYRR Digital Receipt</h2>
+          <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#111827' }}>
+            {receipt.receipt_no?.includes('GYPRR') ? 'AT/GYPRR Digital Receipt' : 'AT/GYRR Digital Receipt'}
+          </h2>
           <div style={{ display: 'flex', gap: '1rem' }}>
             <button onClick={handlePrint} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem' }}>
               <Printer size={16} /> Print Receipt
@@ -132,8 +135,9 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
                 </thead>
                 <tbody>
                   {items.map((item, index) => {
+                    const detailsStr = [item.yarn_type, item.colour, item.orders?.order_number].filter(Boolean).join(' • ');
                     const countLabel = item.master_yarn_counts
-                      ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} (${item.master_yarn_counts.product_type || ''})`
+                      ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} (${item.master_yarn_counts.product_type || ''})${detailsStr ? ` [ ${detailsStr} ]` : ''}`
                       : 'Unknown Count';
                     const locationLabel = item.master_locations?.location_name || 'Greige Warehouse';
                     
@@ -161,6 +165,18 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>{Number(item.cone_weight || 0).toFixed(2)}</td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>{item.cone_count || 0}</td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>{((item.cone_weight || 0) * (item.cone_count || 0)).toFixed(2)}</td>
+                          </tr>
+                        )}
+                        {/* If both are 0 or empty (as in production returns) */}
+                        {(!item.bag_count || item.bag_count === 0) && (!item.cone_count || item.cone_count === 0) && (
+                          <tr style={{ borderBottom: '1px solid #eee' }}>
+                            <td style={{ padding: '0.5rem' }}>
+                              <strong>{countLabel}</strong>
+                              <div style={{ fontSize: '0.85rem', color: '#555' }}>Production Return (Stored in: {locationLabel})</div>
+                            </td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>-</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>-</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>{Number(item.total_weight || 0).toFixed(2)}</td>
                           </tr>
                         )}
                       </React.Fragment>

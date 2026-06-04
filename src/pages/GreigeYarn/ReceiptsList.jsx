@@ -27,7 +27,8 @@ export default function ReceiptsList() {
         *,
         master_partners (partner_name),
         master_yarn_counts (count_value, material, product_type),
-        master_locations!location_id (location_name)
+        master_locations!location_id (location_name),
+        orders (order_number)
       `)
       .eq('receipt_type', typeQuery)
       .order('created_at', { ascending: false });
@@ -159,7 +160,14 @@ export default function ReceiptsList() {
                     ) : (
                       <>
                         <td>{row.order_form_no || '-'}</td>
-                        <td>{row.master_yarn_counts ? `${row.master_yarn_counts.count_value} ${row.master_yarn_counts.material} ${row.master_yarn_counts.product_type || ''}` : '-'}</td>
+                        <td>
+                          {row.master_yarn_counts ? `${row.master_yarn_counts.count_value} ${row.master_yarn_counts.material} ${row.master_yarn_counts.product_type || ''}` : '-'}
+                          {(row.yarn_type || row.colour || row.orders?.order_number) && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
+                              {[row.yarn_type, row.colour, row.orders?.order_number].filter(Boolean).join(' • ')}
+                            </div>
+                          )}
+                        </td>
                         <td>{row.master_locations?.location_name || '-'}</td>
                       </>
                     )}

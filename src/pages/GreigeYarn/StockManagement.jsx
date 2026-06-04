@@ -20,7 +20,7 @@ export default function StockManagement() {
 
   // Accordion & Tabs State
   const [expandedCountId, setExpandedCountId] = useState(null);
-  const [activeTabByGroup, setActiveTabByGroup] = useState({}); // { yarn_count_id: 'mill' | 'production' }
+  const [expandedCombos, setExpandedCombos] = useState({}); // { [combKey]: boolean }
 
   useEffect(() => {
     fetchData();
@@ -54,7 +54,7 @@ export default function StockManagement() {
     // Fetch all GYDR delivery items for stock deduction
     const { data: gydrItems, error: gydrErr } = await supabase
       .from('greige_yarn_delivery_items')
-      .select('yarn_count_id, quantity_kg');
+      .select('yarn_count_id, quantity_kg, spinning_mill_id, location_id');
 
     if (recData) setReceipts(recData);
     if (gydrItems) setDeliveryItems(gydrItems);
@@ -123,21 +123,52 @@ export default function StockManagement() {
     );
   };
 
-  // Overall Total based on filters (net = receipts - deliveries)
-  const totalStock = useMemo(() => {
-    const totalIn = filteredReceipts.reduce((sum, r) => sum + parseFloat(r.total_weight || 0), 0);
-    // Deduct deliveries for counts in the filtered set
-    const filteredCountIds = new Set(filteredReceipts.map(r => r.yarn_count_id));
-    const totalOut = deliveryItems
-      .filter(d => filteredCountIds.size === 0 || filteredCountIds.has(d.yarn_count_id))
-      .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
-    return Math.max(0, totalIn - totalOut);
-  }, [filteredReceipts, deliveryItems]);
-
-  // Group filtered receipts by Yarn Count ID
+  // Group filtered receipts by Yarn Count ID and run FIFO deduction
   const groupedData = useMemo(() => {
+    // 1) Clone receipts and initialize available_weight
+    const receiptsClone = receipts.map(r => ({
+      ...r,
+      available_weight: parseFloat(r.total_weight || 0)
+    }));
+
+    // 2) Run FIFO stock deduction per combination of count + mill + location
+    const comboKeys = {};
+    receiptsClone.forEach(r => {
+      const key = `${r.yarn_count_id}_${r.spinning_mill_id || 'null'}_${r.location_id}`;
+      comboKeys[key] = {
+        yarn_count_id: r.yarn_count_id,
+        spinning_mill_id: r.spinning_mill_id,
+        location_id: r.location_id
+      };
+    });
+
+    Object.values(comboKeys).forEach(({ yarn_count_id, spinning_mill_id, location_id }) => {
+      // Get all receipts for this combo, sorted oldest first (FIFO)
+      const comboReceipts = receiptsClone
+        .filter(r => r.yarn_count_id === yarn_count_id && r.spinning_mill_id === spinning_mill_id && r.location_id === location_id)
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+      // Get total delivered for this combo
+      let totalDeliveredForCombo = deliveryItems
+        .filter(d => d.yarn_count_id === yarn_count_id && d.spinning_mill_id === spinning_mill_id && d.location_id === location_id)
+        .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+
+      // Deduct from oldest first
+      for (const rec of comboReceipts) {
+        if (totalDeliveredForCombo <= 0) break;
+        const deduct = Math.min(rec.available_weight, totalDeliveredForCombo);
+        rec.available_weight -= deduct;
+        totalDeliveredForCombo -= deduct;
+      }
+    });
+
+    // 3) Group filtered receipts by count ID
     const groups = {};
-    filteredReceipts.forEach(r => {
+    receiptsClone.forEach(r => {
+      if (filterCount.length > 0 && !filterCount.includes(r.yarn_count_id)) return;
+      if (filterMill.length > 0 && !filterMill.includes(r.spinning_mill_id)) return;
+      if (filterLocation.length > 0 && !filterLocation.includes(r.location_id)) return;
+
       const cid = r.yarn_count_id || 'unknown';
       if (!groups[cid]) {
         groups[cid] = {
@@ -146,56 +177,89 @@ export default function StockManagement() {
             : 'Unknown Count',
           total_weight: 0,
           receipt_count: 0,
-          mill_receipts: [],
-          prod_receipts: [],
-          total_mill_weight: 0,
-          total_prod_weight: 0,
-          total_delivered: 0, // GYDR deliveries
+          total_delivered: 0,
+          available_weight: 0,
+          raw_receipts: []
         };
       }
 
       groups[cid].total_weight += parseFloat(r.total_weight || 0);
       groups[cid].receipt_count += 1;
-
-      if (r.receipt_type === 'spinning_mill') {
-        groups[cid].mill_receipts.push(r);
-        groups[cid].total_mill_weight += parseFloat(r.total_weight || 0);
-      } else {
-        groups[cid].prod_receipts.push(r);
-        groups[cid].total_prod_weight += parseFloat(r.total_weight || 0);
-      }
+      groups[cid].available_weight += r.available_weight;
+      groups[cid].raw_receipts.push(r);
     });
 
-    // Subtract GYDR deliveries from totals
-    deliveryItems.forEach(d => {
-      const cid = d.yarn_count_id;
-      if (groups[cid]) {
-        groups[cid].total_delivered += parseFloat(d.quantity_kg || 0);
-      }
+    // Calculate total delivered per count group based on active filters
+    Object.entries(groups).forEach(([cid, group]) => {
+      group.total_delivered = deliveryItems
+        .filter(d => {
+          if (d.yarn_count_id !== cid) return false;
+          if (filterMill.length > 0 && !filterMill.includes(d.spinning_mill_id)) return false;
+          if (filterLocation.length > 0 && !filterLocation.includes(d.location_id)) return false;
+          return true;
+        })
+        .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
     });
 
+    // 4) For each group, construct the aggregated Mill combinations
     return Object.entries(groups)
-      .map(([id, data]) => ({
-        id,
-        ...data,
-        available_weight: Math.max(0, data.total_weight - data.total_delivered),
-      }))
+      .map(([id, data]) => {
+        const millGroupsMap = {};
+        data.raw_receipts.forEach(r => {
+          const millId = r.spinning_mill_id || 'null';
+
+          if (!millGroupsMap[millId]) {
+            millGroupsMap[millId] = {
+              millId,
+              spinning_mill_id: r.spinning_mill_id,
+              mill_name: r.spinning_mill_id ? (r.master_partners?.partner_name || 'Unknown Mill') : 'Production Returns',
+              total_received: 0,
+              total_available: 0,
+              receipts: []
+            };
+          }
+
+          millGroupsMap[millId].total_received += parseFloat(r.total_weight || 0);
+          millGroupsMap[millId].total_available += r.available_weight;
+          millGroupsMap[millId].receipts.push(r);
+        });
+
+        const millGroupsList = Object.values(millGroupsMap).sort((a, b) => b.total_available - a.total_available);
+        
+        // Sort receipts in each mill group by created_at descending (latest first)
+        millGroupsList.forEach(g => {
+          g.receipts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        });
+
+        return {
+          id,
+          ...data,
+          mill_groups: millGroupsList
+        };
+      })
       .sort((a, b) => b.available_weight - a.available_weight);
-  }, [filteredReceipts, deliveryItems]);
+  }, [receipts, deliveryItems, filterCount, filterMill, filterLocation]);
+
+  // Overall Total based on filtered groups (sum of available weights)
+  const totalStock = useMemo(() => {
+    return groupedData.reduce((sum, g) => sum + g.available_weight, 0);
+  }, [groupedData]);
 
   const toggleAccordion = (id) => {
-    if (expandedCountId === id) setExpandedCountId(null);
-    else {
+    if (expandedCountId === id) {
+      setExpandedCountId(null);
+      setExpandedCombos({});
+    } else {
       setExpandedCountId(id);
-      // Initialize tab string default to 'mill' if not hit yet
-      if (!activeTabByGroup[id]) {
-        setActiveTabByGroup(prev => ({ ...prev, [id]: 'mill' }));
-      }
+      setExpandedCombos({});
     }
   };
 
-  const handleTabToggle = (groupId, tabString) => {
-    setActiveTabByGroup(prev => ({ ...prev, [groupId]: tabString }));
+  const toggleCombo = (combKey) => {
+    setExpandedCombos(prev => ({
+      ...prev,
+      [combKey]: !prev[combKey]
+    }));
   };
 
   return (
@@ -327,101 +391,76 @@ export default function StockManagement() {
                           <td colSpan="6" style={{ padding: '0 1.5rem 1.5rem 3rem' }}>
                             <div style={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', marginTop: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }} className="fade-in">
                               
-                              {/* Sub Header & Tabs */}
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
-                                <h4 style={{ margin: 0, color: '#475569', fontSize: '0.9rem' }}>Receipt Details</h4>
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                  <button 
-                                    onClick={(e) => { e.stopPropagation(); handleTabToggle(group.id, 'mill'); }}
-                                    style={{
-                                      padding: '0.35rem 0.75rem', fontSize: '0.75rem', fontWeight: 'bold', borderRadius: '4px', cursor: 'pointer',
-                                      backgroundColor: activeTabByGroup[group.id] === 'mill' ? '#2563eb' : '#e2e8f0',
-                                      color: activeTabByGroup[group.id] === 'mill' ? '#fff' : '#475569',
-                                      border: 'none', transition: 'all 0.2s'
-                                    }}
-                                  >
-                                    Received from Mill ({group.mill_receipts.length})
-                                  </button>
-                                  <button 
-                                    onClick={(e) => { e.stopPropagation(); handleTabToggle(group.id, 'prod'); }}
-                                    style={{
-                                      padding: '0.35rem 0.75rem', fontSize: '0.75rem', fontWeight: 'bold', borderRadius: '4px', cursor: 'pointer',
-                                      backgroundColor: activeTabByGroup[group.id] === 'prod' ? '#2563eb' : '#e2e8f0',
-                                      color: activeTabByGroup[group.id] === 'prod' ? '#fff' : '#475569',
-                                      border: 'none', transition: 'all 0.2s'
-                                    }}
-                                  >
-                                    Received from Production ({group.prod_receipts.length})
-                                  </button>
-                                </div>
-                              </div>
+                              <h4 style={{ margin: '0 0 1rem 0', color: '#475569', fontSize: '0.9rem', fontWeight: '700' }}>Stock by Mill</h4>
 
-                              {/* Selected Sub-Tab Data Table */}
-                              {activeTabByGroup[group.id] === 'mill' ? (
-                                <div>
-                                  <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b' }}>
-                                    Mill Receipts • Total {parseFloat(group.total_mill_weight).toFixed(2)} kg
-                                  </p>
-                                  <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
-                                    <thead>
-                                      <tr style={{ color: '#64748b', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
-                                        <th style={{ padding: '0.5rem', fontWeight: '600' }}>Receipt No</th>
-                                        <th style={{ padding: '0.5rem', fontWeight: '600' }}>Mill</th>
-                                        <th style={{ padding: '0.5rem', fontWeight: '600' }}>Location</th>
-                                        <th style={{ padding: '0.5rem', fontWeight: '600', textAlign: 'right' }}>Available (kg)</th>
-                                        <th style={{ padding: '0.5rem', fontWeight: '600' }}>Received Date</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {group.mill_receipts.length === 0 ? (
-                                        <tr><td colSpan="5" style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8' }}>No mill receipts under this category</td></tr>
-                                      ) : (
-                                        group.mill_receipts.map((r) => (
-                                          <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                            <td style={{ padding: '0.75rem 0.5rem' }}>{r.receipt_no}</td>
-                                            <td style={{ padding: '0.75rem 0.5rem' }}>{r.master_partners?.partner_name || '-'}</td>
-                                            <td style={{ padding: '0.75rem 0.5rem' }}>{r.master_locations?.location_name || '-'}</td>
-                                            <td style={{ padding: '0.75rem 0.5rem', fontWeight: 'bold', textAlign: 'right' }}>{parseFloat(r.total_weight).toFixed(2)}</td>
-                                            <td style={{ padding: '0.75rem 0.5rem' }}>{new Date(r.created_at).toLocaleDateString()}</td>
+                              <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                                <thead>
+                                  <tr style={{ color: '#64748b', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
+                                    <th style={{ width: '40px', padding: '0.5rem' }}></th>
+                                    <th style={{ padding: '0.5rem', fontWeight: '600' }}>Spinning Mill</th>
+                                    <th style={{ padding: '0.5rem', fontWeight: '600', textAlign: 'right' }}>Received Qty (kg)</th>
+                                    <th style={{ padding: '0.5rem', fontWeight: '600', textAlign: 'right', color: '#16a34a' }}>Available Qty (kg)</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {group.mill_groups.length === 0 ? (
+                                    <tr><td colSpan="4" style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8' }}>No mill stock groups found</td></tr>
+                                  ) : (
+                                    group.mill_groups.map((g) => {
+                                      const isMillExpanded = !!expandedCombos[g.millId];
+                                      return (
+                                        <React.Fragment key={g.millId}>
+                                          <tr 
+                                            onClick={(e) => { e.stopPropagation(); toggleCombo(g.millId); }}
+                                            style={{ borderBottom: '1px solid #e2e8f0', cursor: 'pointer', backgroundColor: isMillExpanded ? '#f8fafc' : 'transparent' }}
+                                          >
+                                            <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center', color: '#94a3b8' }}>
+                                              {isMillExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                            </td>
+                                            <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600' }}>{g.mill_name}</td>
+                                            <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right' }}>{g.total_received.toFixed(2)}</td>
+                                            <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right', fontWeight: 'bold', color: '#16a34a' }}>{g.total_available.toFixed(2)}</td>
                                           </tr>
-                                        ))
-                                      )}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              ) : (
-                                <div>
-                                  <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b' }}>
-                                    Production Receipts • Total {parseFloat(group.total_prod_weight).toFixed(2)} kg
-                                  </p>
-                                  <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
-                                    <thead>
-                                      <tr style={{ color: '#64748b', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
-                                        <th style={{ padding: '0.5rem', fontWeight: '600' }}>Receipt No</th>
-                                        <th style={{ padding: '0.5rem', fontWeight: '600' }}>Order Form No</th>
-                                        <th style={{ padding: '0.5rem', fontWeight: '600' }}>Location</th>
-                                        <th style={{ padding: '0.5rem', fontWeight: '600', textAlign: 'right' }}>Available (kg)</th>
-                                        <th style={{ padding: '0.5rem', fontWeight: '600' }}>Received Date</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {group.prod_receipts.length === 0 ? (
-                                        <tr><td colSpan="5" style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8' }}>No production receipts under this category</td></tr>
-                                      ) : (
-                                        group.prod_receipts.map((r) => (
-                                          <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                            <td style={{ padding: '0.75rem 0.5rem' }}>{r.receipt_no}</td>
-                                            <td style={{ padding: '0.75rem 0.5rem' }}>{r.order_form_no || '-'}</td>
-                                            <td style={{ padding: '0.75rem 0.5rem' }}>{r.master_locations?.location_name || '-'}</td>
-                                            <td style={{ padding: '0.75rem 0.5rem', fontWeight: 'bold', textAlign: 'right' }}>{parseFloat(r.total_weight).toFixed(2)}</td>
-                                            <td style={{ padding: '0.75rem 0.5rem' }}>{new Date(r.created_at).toLocaleDateString()}</td>
-                                          </tr>
-                                        ))
-                                      )}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
+
+                                          {/* Nested Receipts Table */}
+                                          {isMillExpanded && (
+                                            <tr style={{ backgroundColor: '#fafafa' }}>
+                                              <td colSpan="4" style={{ padding: '0.5rem 1rem 1rem 2rem' }}>
+                                                <div style={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.75rem', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.03)' }} className="fade-in">
+                                                  <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.72rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Receipt Details</p>
+                                                  <table style={{ width: '100%', fontSize: '0.78rem', borderCollapse: 'collapse' }}>
+                                                    <thead>
+                                                      <tr style={{ color: '#64748b', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                                                        <th style={{ padding: '0.4rem 0.5rem', fontWeight: '600' }}>Receipt No</th>
+                                                        <th style={{ padding: '0.4rem 0.5rem', fontWeight: '600' }}>Received Date</th>
+                                                        <th style={{ padding: '0.4rem 0.5rem', fontWeight: '600', textAlign: 'right' }}>Received Qty (kg)</th>
+                                                        <th style={{ padding: '0.4rem 0.5rem', fontWeight: '600', textAlign: 'right', color: '#16a34a' }}>Available Qty (kg)</th>
+                                                        <th style={{ padding: '0.4rem 0.5rem', fontWeight: '600' }}>Location</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {g.receipts.map((r) => (
+                                                        <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                          <td style={{ padding: '0.5rem', fontWeight: '600', color: 'var(--color-primary)' }}>{r.receipt_no}</td>
+                                                          <td style={{ padding: '0.5rem' }}>{new Date(r.created_at).toLocaleDateString()}</td>
+                                                          <td style={{ padding: '0.5rem', textAlign: 'right' }}>{parseFloat(r.total_weight).toFixed(2)}</td>
+                                                          <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '700', color: r.available_weight > 0 ? '#16a34a' : '#64748b' }}>{r.available_weight.toFixed(2)}</td>
+                                                          <td style={{ padding: '0.5rem', fontWeight: '600' }}>{r.master_locations?.location_name || '-'}</td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          )}
+                                        </React.Fragment>
+                                      );
+                                    })
+                                  )}
+                                </tbody>
+                              </table>
+
                             </div>
                           </td>
                         </tr>

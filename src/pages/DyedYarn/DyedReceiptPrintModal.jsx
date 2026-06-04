@@ -112,6 +112,7 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
                 <th style={thStyle}>Order / Design</th>
                 <th style={thStyle}>Yarn Description</th>
                 <th style={{ ...thStyle, textAlign: 'center' }}>Type</th>
+                <th style={thStyle}>Lot Number</th>
                 <th style={thStyle}>Location</th>
                 <th style={{ ...thStyle, textAlign: 'right' }}>Quantity (kg)</th>
               </tr>
@@ -142,6 +143,7 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
                       {it.type || it.yarn_type || '-'}
                     </span>
                   </td>
+                  <td style={{ ...tdStyle, fontWeight: '700', color: '#1f2937' }}>{it.lot_number || '-'}</td>
                   <td style={{ ...tdStyle, fontWeight: '600' }}>{it.location || it.master_locations?.location_name || '-'}</td>
                   <td style={{ ...tdStyle, textAlign: 'right', fontWeight: '900', fontSize: '1.25rem', color: '#111827' }}>
                     {Number(it.weight ?? it.quantity_kg ?? 0).toFixed(2)}
@@ -151,7 +153,7 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan="5" style={{ padding: '2.5rem 1rem', textAlign: 'right', fontWeight: '900', color: '#4b5563', fontSize: '1rem' }}>GRAND TOTAL RECEIVED WEIGHT:</td>
+                <td colSpan="6" style={{ padding: '2.5rem 1rem', textAlign: 'right', fontWeight: '900', color: '#4b5563', fontSize: '1rem' }}>GRAND TOTAL RECEIVED WEIGHT:</td>
                 <td style={{ padding: '2.5rem 1rem', textAlign: 'right', fontWeight: '900', fontSize: '2.25rem', borderBottom: '6px double #1a1a1a', color: '#111827' }}>
                   {receipt.items.reduce((sum, it) => sum + Number(it.weight ?? it.quantity_kg ?? 0), 0).toFixed(2)} <span style={{ fontSize: '1.1rem' }}>kg</span>
                 </td>
