@@ -12,6 +12,78 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import DyedReceiptPrintModal from './DyedReceiptPrintModal';
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Helpers for Expected Delivery Dates & Warning Alerts
+// ──────────────────────────────────────────────────────────────────────────────
+const getTodayString = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getDofAlertInfo = (dof, dyrrs) => {
+  const today = getTodayString();
+  const expected = dof.expected_delivery_date;
+
+  if (dof.status === 'received') {
+    const dofReceipts = (dyrrs || []).filter(r => r.dof_id === dof.id);
+    if (dofReceipts.length > 0 && expected) {
+      const maxReceiptDate = dofReceipts.reduce((max, r) => {
+        return (!max || r.received_date > max) ? r.received_date : max;
+      }, null);
+
+      if (maxReceiptDate && maxReceiptDate <= expected) {
+        return {
+          type: 'received_on_time',
+          label: 'Received On Time',
+          color: '#475569',
+          bgColor: '#f1f5f9',
+          borderColor: '#cbd5e1'
+        };
+      } else {
+        return {
+          type: 'received_late',
+          label: 'Received Late',
+          color: '#475569',
+          bgColor: '#f1f5f9',
+          borderColor: '#cbd5e1'
+        };
+      }
+    }
+    return {
+      type: 'received_on_time',
+      label: 'Received On Time',
+      color: '#475569',
+      bgColor: '#f1f5f9',
+      borderColor: '#cbd5e1'
+    };
+  }
+
+  if (!expected) return null;
+
+  if (expected === today) {
+    return {
+      type: 'expected_today',
+      label: 'Expected Today',
+      color: '#b45309',
+      bgColor: '#fef3c7',
+      borderColor: '#fcd34d'
+    };
+  } else if (expected < today) {
+    return {
+      type: 'late',
+      label: 'Late',
+      color: '#b91c1c',
+      bgColor: '#fee2e2',
+      borderColor: '#fca5a5'
+    };
+  }
+
+  return null;
+};
+
 export default function ReceiveYarn() {
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -42,6 +114,7 @@ export default function ReceiveYarn() {
   const [allOrders, setAllOrders] = useState([]);
   const [allGydrItems, setAllGydrItems] = useState([]);
   const [allDyrrItems, setAllDyrrItems] = useState([]);
+  const [allDyrrs, setAllDyrrs] = useState([]);
   const [dofsLoading, setDofsLoading] = useState(false);
   const [expandedDofId, setExpandedDofId] = useState(null);
 
@@ -53,6 +126,8 @@ export default function ReceiveYarn() {
   });
 
   const [printData, setPrintData] = useState(null);
+
+  const activeDofAlert = selectedDof ? getDofAlertInfo(selectedDof, allDyrrs) : null;
 
   useEffect(() => {
     fetchMasters();
@@ -71,20 +146,22 @@ export default function ReceiveYarn() {
   const fetchAllDofsData = async () => {
     setDofsLoading(true);
     try {
-      const [dofsRes, ordersRes, gydiRes, dyriRes] = await Promise.all([
+      const [dofsRes, ordersRes, gydiRes, dyriRes, dyrrsRes] = await Promise.all([
         supabase
           .from('dyeing_order_forms')
           .select('*, dyeing_unit:master_partners(partner_name)')
           .order('created_at', { ascending: false }),
         supabase.from('orders').select('id, order_number, design_no, design_name'),
         supabase.from('greige_yarn_delivery_items').select('*, receipt:greige_yarn_delivery_receipts(*)'),
-        supabase.from('dyed_yarn_receipt_items').select('*, receipt:dyed_yarn_receipts(*)')
+        supabase.from('dyed_yarn_receipt_items').select('*, receipt:dyed_yarn_receipts(*)'),
+        supabase.from('dyed_yarn_receipts').select('*')
       ]);
 
       setAllDofs(dofsRes.data || []);
       setAllOrders(ordersRes.data || []);
       setAllGydrItems(gydiRes.data || []);
       setAllDyrrItems(dyriRes.data || []);
+      setAllDyrrs(dyrrsRes.data || []);
     } catch (err) {
       console.error('Error fetching all DOFs:', err);
     } finally {
@@ -578,10 +655,14 @@ export default function ReceiveYarn() {
                         return y ? `${y.count_value} ${y.material}` : '-';
                       };
 
+                      const alertInfo = getDofAlertInfo(dof, allDyrrs);
+                      const cardBg = alertInfo ? alertInfo.bgColor : '#fff';
+                      const cardBorder = alertInfo ? `1px solid ${alertInfo.borderColor}` : '1px solid #e2e8f0';
+
                       return (
                         <div key={dof.id} style={{ 
-                          backgroundColor: '#fff', 
-                          border: '1px solid #e2e8f0', 
+                          backgroundColor: cardBg, 
+                          border: cardBorder, 
                           borderRadius: '12px',
                           overflow: 'hidden',
                           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
@@ -593,7 +674,7 @@ export default function ReceiveYarn() {
                             justifyContent: 'space-between', 
                             alignItems: 'center',
                             cursor: 'pointer',
-                            backgroundColor: isExpanded ? '#f8fafc' : '#fff'
+                            backgroundColor: isExpanded ? (alertInfo && ['received_on_time', 'received_late'].includes(alertInfo.type) ? '#e2e8f0' : '#f8fafc') : 'transparent'
                           }} onClick={() => setExpandedDofId(isExpanded ? null : dof.id)}>
                             
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -603,7 +684,7 @@ export default function ReceiveYarn() {
                                 color: '#94a3b8'
                               }} />
                               <div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                                   <span style={{ fontWeight: '900', fontSize: '1rem', color: 'var(--color-primary)' }}>
                                     {dof.dof_number}
                                   </span>
@@ -618,6 +699,20 @@ export default function ReceiveYarn() {
                                   }}>
                                     {dof.status}
                                   </span>
+                                  {alertInfo && (
+                                    <span style={{ 
+                                      padding: '0.15rem 0.5rem', 
+                                      borderRadius: '4px', 
+                                      fontSize: '0.7rem', 
+                                      fontWeight: '800',
+                                      textTransform: 'capitalize',
+                                      backgroundColor: alertInfo.bgColor,
+                                      color: alertInfo.color,
+                                      border: `1px solid ${alertInfo.borderColor}`
+                                    }}>
+                                      {alertInfo.label}
+                                    </span>
+                                  )}
                                 </div>
                                 <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', fontWeight: '500' }}>
                                   Partner: <strong style={{ color: '#334155' }}>{dof.dyeing_unit?.partner_name || 'N/A'}</strong> | Target Delivery: <strong style={{ color: '#334155' }}>{dof.expected_delivery_date || 'N/A'}</strong>
@@ -725,8 +820,8 @@ export default function ReceiveYarn() {
               }}>
                 {/* Card 1: DOF Details */}
                 <div style={{ 
-                  backgroundColor: 'var(--surface-current, #fff)', 
-                  border: '1px solid var(--border-current, #eee)', 
+                  backgroundColor: activeDofAlert ? activeDofAlert.bgColor : 'var(--surface-current, #fff)', 
+                  border: activeDofAlert ? `1px solid ${activeDofAlert.borderColor}` : '1px solid var(--border-current, #eee)', 
                   borderRadius: '12px', 
                   padding: '1.5rem',
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
@@ -751,7 +846,7 @@ export default function ReceiveYarn() {
                     </div>
                     <div>
                       <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>STATUS</div>
-                      <div style={{ marginTop: '2px' }}>
+                      <div style={{ marginTop: '2px', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span style={{ 
                           padding: '0.15rem 0.5rem', 
                           borderRadius: '4px', 
@@ -763,6 +858,19 @@ export default function ReceiveYarn() {
                         }}>
                           {selectedDof.status}
                         </span>
+                        {activeDofAlert && (
+                          <span style={{ 
+                            padding: '0.15rem 0.5rem', 
+                            borderRadius: '4px', 
+                            fontSize: '0.75rem', 
+                            fontWeight: '800',
+                            backgroundColor: activeDofAlert.bgColor,
+                            color: activeDofAlert.color,
+                            border: `1px solid ${activeDofAlert.borderColor}`
+                          }}>
+                            {activeDofAlert.label}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div style={{ gridColumn: 'span 2' }}>

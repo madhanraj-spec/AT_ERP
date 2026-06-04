@@ -11,9 +11,81 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Helpers for Expected Delivery Dates & Warning Alerts
+// ──────────────────────────────────────────────────────────────────────────────
+const getTodayString = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getDofAlertInfo = (dof, dyrrs) => {
+  const today = getTodayString();
+  const expected = dof.expected_delivery_date;
+
+  if (dof.status === 'received') {
+    const dofReceipts = (dyrrs || []).filter(r => r.dof_id === dof.id);
+    if (dofReceipts.length > 0 && expected) {
+      const maxReceiptDate = dofReceipts.reduce((max, r) => {
+        return (!max || r.received_date > max) ? r.received_date : max;
+      }, null);
+
+      if (maxReceiptDate && maxReceiptDate <= expected) {
+        return {
+          type: 'received_on_time',
+          label: 'Received On Time',
+          color: '#475569',
+          bgColor: '#f1f5f9',
+          borderColor: '#cbd5e1'
+        };
+      } else {
+        return {
+          type: 'received_late',
+          label: 'Received Late',
+          color: '#475569',
+          bgColor: '#f1f5f9',
+          borderColor: '#cbd5e1'
+        };
+      }
+    }
+    return {
+      type: 'received_on_time',
+      label: 'Received On Time',
+      color: '#475569',
+      bgColor: '#f1f5f9',
+      borderColor: '#cbd5e1'
+    };
+  }
+
+  if (!expected) return null;
+
+  if (expected === today) {
+    return {
+      type: 'expected_today',
+      label: 'Expected Today',
+      color: '#b45309',
+      bgColor: '#fef3c7',
+      borderColor: '#fcd34d'
+    };
+  } else if (expected < today) {
+    return {
+      type: 'late',
+      label: 'Late',
+      color: '#b91c1c',
+      bgColor: '#fee2e2',
+      borderColor: '#fca5a5'
+    };
+  }
+
+  return null;
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
 // OrderCard Sub-component
 // ──────────────────────────────────────────────────────────────────────────────
-function OrderCard({ order, basePath, onDelete, yarnCounts, onViewDOF, onViewGYDR }) {
+function OrderCard({ order, basePath, onDelete, yarnCounts, onViewDOF, onViewGYDR, orderDofs = [], allDyrrs = [] }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState('order_info');
   const navigate = useNavigate();
@@ -65,7 +137,7 @@ function OrderCard({ order, basePath, onDelete, yarnCounts, onViewDOF, onViewGYD
               <Package size={20} />
             </div>
             <div>
-              <div style={{ fontWeight: '800', fontSize: '1.125rem', color: 'var(--text-current)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ fontWeight: '800', fontSize: '1.125rem', color: 'var(--text-current)', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 {order.order_number}
                 <span style={{ 
                   backgroundColor: statusStyle.bg, 
@@ -79,6 +151,56 @@ function OrderCard({ order, basePath, onDelete, yarnCounts, onViewDOF, onViewGYD
                 }}>
                   {statusStyle.label}
                 </span>
+                {(() => {
+                  let expectedTodayCount = 0;
+                  const lateDofNumbers = [];
+
+                  (orderDofs || []).forEach(dof => {
+                    const alertInfo = getDofAlertInfo(dof, allDyrrs);
+                    if (alertInfo) {
+                      if (alertInfo.type === 'expected_today') {
+                        expectedTodayCount++;
+                      } else if (alertInfo.type === 'late') {
+                        lateDofNumbers.push(dof.dof_number);
+                      }
+                    }
+                  });
+
+                  return (
+                    <>
+                      {expectedTodayCount > 0 && (
+                        <span style={{ 
+                          backgroundColor: '#fef3c7', 
+                          color: '#b45309', 
+                          border: '1px solid #fcd34d',
+                          padding: '2px 10px', 
+                          borderRadius: '20px', 
+                          fontSize: '0.7rem', 
+                          fontWeight: '700',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.025em'
+                        }}>
+                          {expectedTodayCount === 1 ? '1 DOF expected today' : `${expectedTodayCount} DOFs expected today`}
+                        </span>
+                      )}
+                      {lateDofNumbers.length > 0 && (
+                        <span style={{ 
+                          backgroundColor: '#fee2e2', 
+                          color: '#b91c1c', 
+                          border: '1px solid #fca5a5',
+                          padding: '2px 10px', 
+                          borderRadius: '20px', 
+                          fontSize: '0.7rem', 
+                          fontWeight: '700',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.025em'
+                        }}>
+                          Late: {lateDofNumbers.join(', ')}
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
               <div style={{ color: 'var(--text-muted-current)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <span style={{ textTransform: 'capitalize' }}>{order.order_type} Order</span>
@@ -519,20 +641,54 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR }) {
         <section>
           <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em' }}>Dyeing Order Forms</h5>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {dofs.map(d => (
-              <div key={d.id} style={{ padding: '0.75rem', backgroundColor: '#fff', border: '1px solid #eee', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: '700', fontSize: '0.8rem' }}>{d.dof_number}</div>
-                  <div style={{ fontSize: '0.7rem', color: '#666' }}>{d.dyeing_unit?.partner_name}</div>
+            {dofs.map(d => {
+              const alertInfo = getDofAlertInfo(d, dyrrs);
+              const cardBg = alertInfo ? alertInfo.bgColor : '#fff';
+              const cardBorder = alertInfo ? `1px solid ${alertInfo.borderColor}` : '1px solid #eee';
+              const badgeColor = alertInfo ? alertInfo.color : '#666';
+              const badgeBg = alertInfo ? alertInfo.bgColor : '#f1f5f9';
+
+              return (
+                <div key={d.id} style={{ 
+                  padding: '0.75rem', 
+                  backgroundColor: cardBg, 
+                  border: cardBorder, 
+                  borderRadius: '8px', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center' 
+                }}>
+                  <div>
+                    <div style={{ fontWeight: '700', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {d.dof_number}
+                      {alertInfo && (
+                        <span style={{
+                          backgroundColor: badgeBg,
+                          color: alertInfo.color,
+                          border: `1px solid ${alertInfo.borderColor}`,
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          fontSize: '0.6rem',
+                          fontWeight: '800'
+                        }}>
+                          {alertInfo.label}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '2px' }}>{d.dyeing_unit?.partner_name}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '2px' }}>
+                      Expected: <strong>{d.expected_delivery_date || 'N/A'}</strong>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => onViewDOF(d.id)}
+                    style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  >
+                    <ExternalLink size={14} />
+                  </button>
                 </div>
-                <button 
-                  onClick={() => onViewDOF(d.id)}
-                  style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                >
-                  <ExternalLink size={14} />
-                </button>
-              </div>
-            ))}
+              );
+            })}
             {dofs.length === 0 && <p style={{ fontSize: '0.8rem', color: '#999' }}>No forms found.</p>}
           </div>
         </section>
@@ -615,6 +771,8 @@ export default function OrdersManagement() {
   const [loading, setLoading] = useState(true);
   const [yarnCounts, setYarnCounts] = useState([]);
   const [brands, setBrands] = useState([]);
+  const [allDofs, setAllDofs] = useState([]);
+  const [allDyrrs, setAllDyrrs] = useState([]);
   
   // Modal tracking
   const [viewDofData, setViewDofData] = useState(null);
@@ -633,13 +791,17 @@ export default function OrdersManagement() {
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      // Fetch Masters for display names
-      const [yarnRes, brandRes] = await Promise.all([
+      // Fetch Masters for display names and all DOFs/Receipts for warnings
+      const [yarnRes, brandRes, dofsRes, dyrrsRes] = await Promise.all([
         supabase.from('master_yarn_counts').select('*'),
-        supabase.from('master_brands').select('*')
+        supabase.from('master_brands').select('*'),
+        supabase.from('dyeing_order_forms').select('id, dof_number, expected_delivery_date, order_ids, status'),
+        supabase.from('dyed_yarn_receipts').select('id, dof_id, received_date')
       ]);
       setYarnCounts(yarnRes.data || []);
       setBrands(brandRes.data || []);
+      setAllDofs(dofsRes.data || []);
+      setAllDyrrs(dyrrsRes.data || []);
 
       let query = supabase
         .from('orders')
@@ -819,17 +981,22 @@ export default function OrdersManagement() {
             <p style={{ color: 'var(--text-muted-current)' }}>No orders found for this filter.</p>
           </div>
         ) : (
-          orders.map(order => (
-            <OrderCard 
-              key={order.id} 
-              order={order} 
-              basePath={basePath} 
-              onDelete={() => deleteOrder(order.id)}
-              yarnCounts={yarnCounts}
-              onViewDOF={fetchDOFDetail}
-              onViewGYDR={fetchGYDRDetail}
-            />
-          ))
+          orders.map(order => {
+            const orderDofs = allDofs.filter(d => d.order_ids && d.order_ids.includes(order.id));
+            return (
+              <OrderCard 
+                key={order.id} 
+                order={order} 
+                basePath={basePath} 
+                onDelete={() => deleteOrder(order.id)}
+                yarnCounts={yarnCounts}
+                onViewDOF={fetchDOFDetail}
+                onViewGYDR={fetchGYDRDetail}
+                orderDofs={orderDofs}
+                allDyrrs={allDyrrs}
+              />
+            );
+          })
         )}
       </div>
 
