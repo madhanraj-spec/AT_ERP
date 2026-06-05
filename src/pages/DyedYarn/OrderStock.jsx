@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  ArrowLeft, Search, Filter, Package, Loader, ChevronRight,
+  ArrowLeft, Search, Filter, Package, Loader, ChevronRight, ChevronDown,
   FileText, Truck, Download, Layers, CheckCircle2, ClipboardList,
   Printer, X, User, Calendar, MapPin, AlertCircle, RefreshCw
 } from 'lucide-react';
@@ -30,6 +30,21 @@ export default function OrderStock() {
   // Modal state
   const [activeModal, setActiveModal] = useState(null); // { type, data }
 
+  // Expanded Order State
+  const [expandedOrderId, setExpandedOrderId] = useState(null);
+  const [activeSubTab, setActiveSubTab] = useState('dyeing'); // 'dyeing' | 'warping' | 'weaving'
+
+  const handleToggleExpand = async (order) => {
+    if (expandedOrderId === order.id) {
+      setExpandedOrderId(null);
+      setSelectedOrder(null);
+    } else {
+      setExpandedOrderId(order.id);
+      setActiveSubTab('dyeing');
+      await handleSelectOrder(order);
+    }
+  };
+
   useEffect(() => {
     fetchInitialData();
   }, []);
@@ -47,11 +62,6 @@ export default function OrderStock() {
 
       setOrders(orderRes.data || []);
       setYarnCounts(yarnRes.data || []);
-      
-      // Auto-select first order if available
-      if (orderRes.data && orderRes.data.length > 0) {
-        handleSelectOrder(orderRes.data[0]);
-      }
     } catch (err) {
       console.error('Error fetching initial data:', err);
     } finally {
@@ -343,385 +353,552 @@ export default function OrderStock() {
           <p style={{ marginTop: '1rem', color: 'var(--text-muted-current)' }}>Loading order list...</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: '1.5rem', height: 'calc(100vh - 180px)', minHeight: '650px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           
-          {/* Left Panel: Orders list */}
-          <div style={{ 
-            width: '360px', 
-            backgroundColor: 'var(--surface-current)', 
-            border: '1px solid var(--border-current)', 
-            borderRadius: 'var(--radius-lg)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden'
-          }}>
-            
-            {/* Search Bar */}
-            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-current)' }}>
-              <div style={{ position: 'relative' }}>
-                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                <input 
-                  type="text" 
-                  placeholder="Search order, design no..." 
-                  className="form-input"
-                  style={{ paddingLeft: '2.3rem', fontSize: '0.85rem' }}
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                />
-              </div>
+          {/* Search and Filter Controls */}
+          <div className="glass-panel" style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', width: '360px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+              <input 
+                type="text" 
+                placeholder="Search order, design no..." 
+                className="form-input"
+                style={{ paddingLeft: '2.3rem', fontSize: '0.85rem' }}
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
             </div>
-
-            {/* Scrollable List */}
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {filteredOrders.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)' }}>
-                  No orders found
-                </div>
-              ) : (
-                filteredOrders.map(order => {
-                  const isSelected = selectedOrder?.id === order.id;
-                  return (
-                    <div 
-                      key={order.id} 
-                      onClick={() => handleSelectOrder(order)}
-                      style={{ 
-                        padding: '1rem 1.25rem', 
-                        cursor: 'pointer',
-                        borderBottom: '1px solid var(--border-current)',
-                        backgroundColor: isSelected ? 'var(--color-primary-light)' : 'transparent',
-                        borderLeft: isSelected ? '4px solid var(--color-primary)' : '4px solid transparent',
-                        transition: 'all 0.15s'
-                      }}
-                      className="hover-lift"
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                        <span style={{ fontWeight: '800', fontSize: '0.95rem', color: isSelected ? 'var(--color-primary)' : 'var(--text-current)' }}>
-                          {order.order_number}
-                        </span>
-                        <span style={{ 
-                          fontSize: '0.65rem', 
-                          fontWeight: '800', 
-                          padding: '0.15rem 0.4rem', 
-                          borderRadius: '4px',
-                          textTransform: 'uppercase',
-                          backgroundColor: order.order_type === 'bulk' ? '#e0f2fe' : '#fef3c7',
-                          color: order.order_type === 'bulk' ? '#0369a1' : '#b45309'
-                        }}>
-                          {order.order_type}
-                        </span>
-                      </div>
-                      
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)', fontWeight: 500 }}>
-                        {order.design_no} / {order.design_name}
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.75rem' }}>
-                        <span style={{ color: '#6b7280', fontWeight: '500' }}>
-                          {order.master_brands?.brand_name || 'Generic'}
-                        </span>
-                        <span style={{ 
-                          fontSize: '0.7rem', 
-                          fontWeight: '700',
-                          textTransform: 'capitalize',
-                          color: order.status === 'completed' ? '#10b981' : order.status === 'in_progress' ? '#3b82f6' : '#9ca3af'
-                        }}>
-                          {order.status}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+            <div style={{ color: 'var(--text-muted-current)', fontSize: '0.875rem', fontWeight: '500' }}>
+              Showing {filteredOrders.length} orders
             </div>
-
           </div>
 
-          {/* Right Panel: Selected Order Details */}
-          <div style={{ 
-            flex: 1, 
-            backgroundColor: 'var(--surface-current)', 
-            border: '1px solid var(--border-current)', 
-            borderRadius: 'var(--radius-lg)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden'
-          }}>
-            {selectedOrder ? (
-              detailsLoading ? (
-                <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <Loader size={32} className="spin" color="var(--color-primary)" />
-                  <p style={{ marginTop: '1rem', color: 'var(--text-muted-current)', fontSize: '0.85rem' }}>Fetching order history...</p>
-                </div>
-              ) : (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', padding: '1.5rem' }}>
-                  
-                  {/* Order Specs Block */}
-                  <div style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-                    gap: '1.25rem',
-                    backgroundColor: '#f8fafc',
-                    padding: '1.25rem',
-                    borderRadius: '12px',
-                    border: '1px solid #e2e8f0',
-                    marginBottom: '1.5rem'
-                  }}>
-                    <div>
-                      <div style={{ fontSize: '0.7rem', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Order Number</div>
-                      <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#0f172a', marginTop: '0.2rem' }}>{selectedOrder.order_number}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.7rem', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Design Spec</div>
-                      <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#334155', marginTop: '0.2rem' }}>{selectedOrder.design_no} / {selectedOrder.design_name}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.7rem', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Brand / Buyer</div>
-                      <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#334155', marginTop: '0.2rem' }}>{selectedOrder.master_brands?.brand_name || 'Generic'}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.7rem', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>FOB / Dispatch Date</div>
-                      <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#334155', marginTop: '0.2rem' }}>
-                        {selectedOrder.fob_date ? new Date(selectedOrder.fob_date).toLocaleDateString() : 'N/A'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Breakdown Table Header */}
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <ClipboardList size={18} color="var(--color-primary)" /> Yarn Lifecycle Breakdown
-                  </h3>
-
-                  {/* Processing Status Table */}
-                  <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '2rem' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
-                          <th style={thStyle}>Count</th>
-                          <th style={thStyle}>Colour</th>
-                          <th style={thStyle}>Type</th>
-                          <th style={numericThStyle}>Required (kg)</th>
-                          <th style={numericThStyle}>Greige Sent</th>
-                          <th style={numericThStyle}>Dyed Recd</th>
-                          <th style={numericThStyle}>Bal to Rec</th>
-                          <th style={numericThStyle}>Deliv Warp</th>
-                          <th style={numericThStyle}>Recd Warp</th>
-                          <th style={numericThStyle}>Deliv Weav</th>
-                          <th style={numericThStyle}>Recd Weav</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {breakdownData.length === 0 ? (
-                          <tr>
-                            <td colSpan="11" style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8', fontSize: '0.85rem' }}>
-                              No yarn requirements defined for this order
-                            </td>
-                          </tr>
-                        ) : (
-                          breakdownData.map((row, idx) => {
-                            const balToRec = Math.max(0, row.greigeSent - row.dyedReceived);
-                            return (
-                              <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }} className="hover-lift">
-                                <td style={tdStyle}>{formatYarnCount(row.countId)}</td>
-                                <td style={{ ...tdStyle, fontWeight: '700', color: 'var(--color-primary)' }}>{row.colour}</td>
-                                <td style={tdStyle}>
-                                  <span style={{ 
-                                    padding: '0.15rem 0.4rem', 
-                                    borderRadius: '4px', 
-                                    fontSize: '0.7rem', 
-                                    fontWeight: '800',
-                                    textTransform: 'uppercase',
-                                    backgroundColor: row.type === 'warp' ? '#eff6ff' : '#ecfdf5',
-                                    color: row.type === 'warp' ? '#1e40af' : '#047857'
-                                  }}>
-                                    {row.type}
-                                  </span>
-                                </td>
-                                <td style={numericTdStyle}>{row.required.toFixed(1)}</td>
-                                <td style={numericTdStyle}>{row.greigeSent.toFixed(1)}</td>
-                                <td style={numericTdStyle}>{row.dyedReceived.toFixed(1)}</td>
-                                <td style={{ ...numericTdStyle, color: balToRec > 0 ? '#b45309' : '#10b981', fontWeight: '800' }}>
-                                  {balToRec.toFixed(1)}
-                                </td>
-                                <td style={numericTdStyle}>{row.deliveredWarping.toFixed(1)}</td>
-                                <td style={{ ...numericTdStyle, color: row.receivedWarping > 0 ? '#047857' : '#6b7280' }}>
-                                  {row.receivedWarping.toFixed(1)}
-                                </td>
-                                <td style={numericTdStyle}>{row.deliveredWeaving.toFixed(1)}</td>
-                                <td style={{ ...numericTdStyle, color: row.receivedWeaving > 0 ? '#047857' : '#6b7280' }}>
-                                  {row.receivedWeaving.toFixed(1)}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Associated Documents Section */}
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: '0 0 1.25rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <FileText size={18} color="var(--color-primary)" /> Associated Documents & Receipts
-                  </h3>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
-                    
-                    {/* DOFs list */}
-                    <div style={docBoxStyle}>
-                      <h4 style={docBoxTitleStyle}>Dyeing Orders (DOF)</h4>
-                      <div style={docListContainerStyle}>
-                        {associatedDocs.dofs.length === 0 ? (
-                          <div style={emptyDocStyle}>No DOFs linked</div>
-                        ) : (
-                          associatedDocs.dofs.map(d => (
-                            <div 
-                              key={d.id} 
-                              onClick={() => setActiveModal({ type: 'dof', data: d })}
-                              style={docItemStyle}
-                              className="hover-lift"
-                            >
-                              <div style={{ fontWeight: '700' }}>{d.dof_number}</div>
-                              <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
-                                {d.dyeing_unit?.partner_name} • {d.status}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    {/* GYDRs list */}
-                    <div style={docBoxStyle}>
-                      <h4 style={docBoxTitleStyle}>Greige Deliveries (GYDR)</h4>
-                      <div style={docListContainerStyle}>
-                        {associatedDocs.gydrs.length === 0 ? (
-                          <div style={emptyDocStyle}>No GYDRs linked</div>
-                        ) : (
-                          associatedDocs.gydrs.map(g => (
-                            <div 
-                              key={g.id} 
-                              onClick={() => setActiveModal({ type: 'gydr', data: g })}
-                              style={docItemStyle}
-                              className="hover-lift"
-                            >
-                              <div style={{ fontWeight: '700' }}>{g.gydr_number}</div>
-                              <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
-                                {g.delivered_by} • {new Date(g.created_at).toLocaleDateString()}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    {/* DYRRs list */}
-                    <div style={docBoxStyle}>
-                      <h4 style={docBoxTitleStyle}>Dyed Receipts (DYRR)</h4>
-                      <div style={docListContainerStyle}>
-                        {associatedDocs.dyrrs.length === 0 ? (
-                          <div style={emptyDocStyle}>No DYRRs linked</div>
-                        ) : (
-                          associatedDocs.dyrrs.map(r => (
-                            <div 
-                              key={r.id} 
-                              onClick={() => setActiveModal({ type: 'dyrr', data: r })}
-                              style={docItemStyle}
-                              className="hover-lift"
-                            >
-                              <div style={{ fontWeight: '700' }}>{r.dyrr_number}</div>
-                              <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
-                                {r.received_by} • {new Date(r.created_at).toLocaleDateString()}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    {/* DYDRs list */}
-                    <div style={docBoxStyle}>
-                      <h4 style={docBoxTitleStyle}>Dyed Deliveries (DYDR)</h4>
-                      <div style={docListContainerStyle}>
-                        {associatedDocs.dydrs.length === 0 ? (
-                          <div style={emptyDocStyle}>No DYDRs linked</div>
-                        ) : (
-                          associatedDocs.dydrs.map(d => (
-                            <div 
-                              key={d.id} 
-                              onClick={() => setActiveModal({ type: 'dydr', data: d })}
-                              style={docItemStyle}
-                              className="hover-lift"
-                            >
-                              <div style={{ fontWeight: '700' }}>{d.dydr_number}</div>
-                              <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
-                                {d.delivered_by} • {new Date(d.created_at).toLocaleDateString()}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Warping Orders */}
-                    <div style={docBoxStyle}>
-                      <h4 style={docBoxTitleStyle}>Warping Order Forms</h4>
-                      <div style={docListContainerStyle}>
-                        {associatedDocs.warping.length === 0 ? (
-                          <div style={emptyDocStyle}>No Warping Forms</div>
-                        ) : (
-                          associatedDocs.warping.map(w => (
-                            <div 
-                              key={w.id} 
-                              onClick={() => setActiveModal({ type: 'warping', data: w })}
-                              style={docItemStyle}
-                              className="hover-lift"
-                            >
-                              <div style={{ fontWeight: '700' }}>{w.warping_number}</div>
-                              <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
-                                Design: {w.design_no} • Status: {w.status}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Weaving Orders */}
-                    <div style={docBoxStyle}>
-                      <h4 style={docBoxTitleStyle}>Weaving Order Forms</h4>
-                      <div style={docListContainerStyle}>
-                        {associatedDocs.weaving.length === 0 ? (
-                          <div style={emptyDocStyle}>No Weaving Forms</div>
-                        ) : (
-                          associatedDocs.weaving.map(w => (
-                            <div 
-                              key={w.id} 
-                              onClick={() => setActiveModal({ type: 'weaving', data: w })}
-                              style={docItemStyle}
-                              className="hover-lift"
-                            >
-                              <div style={{ fontWeight: '700' }}>{w.weaving_number}</div>
-                              <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
-                                Design: {w.design_no} • Status: {w.status}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-
-                  </div>
-
-                </div>
-              )
-            ) : (
-              <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted-current)' }}>
-                <PackageOpen size={48} style={{ opacity: 0.4, marginBottom: '1rem' }} />
-                <p style={{ margin: 0, fontWeight: '700', fontSize: '1rem' }}>No Order Selected</p>
-                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem' }}>Select an order from the list on the left to analyze its status.</p>
+          {/* Orders Table/Accordion List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {filteredOrders.length === 0 ? (
+              <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)' }}>
+                No orders found
               </div>
+            ) : (
+              filteredOrders.map(order => {
+                const isExpanded = expandedOrderId === order.id;
+                
+                return (
+                  <div 
+                    key={order.id} 
+                    className="glass-panel fade-in" 
+                    style={{ 
+                      padding: 0, 
+                      overflow: 'hidden', 
+                      border: isExpanded ? '1px solid var(--color-primary)' : '1px solid var(--border-current)',
+                      boxShadow: isExpanded ? '0 10px 25px -5px rgba(128, 0, 0, 0.08)' : undefined,
+                      transition: 'all 0.2s',
+                      borderRadius: '12px'
+                    }}
+                  >
+                    {/* Header Row */}
+                    <div 
+                      onClick={() => handleToggleExpand(order)}
+                      style={{ 
+                        padding: '1.25rem 1.5rem', 
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        backgroundColor: isExpanded ? 'rgba(128, 0, 0, 0.01)' : 'transparent',
+                        borderBottom: isExpanded ? '1px solid var(--border-current)' : '1px solid transparent'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap', flex: 1 }}>
+                        <div style={{ minWidth: '150px' }}>
+                          <div style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Order Number</div>
+                          <div style={{ fontSize: '1.05rem', fontWeight: '900', color: 'var(--color-primary)', marginTop: '0.15rem' }}>{order.order_number}</div>
+                        </div>
+
+                        <div style={{ minWidth: '200px' }}>
+                          <div style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Design Spec</div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-current)', marginTop: '0.15rem' }}>{order.design_no} / {order.design_name}</div>
+                        </div>
+
+                        <div style={{ minWidth: '150px' }}>
+                          <div style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Brand / Buyer</div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-current)', marginTop: '0.15rem' }}>{order.master_brands?.brand_name || 'Generic'}</div>
+                        </div>
+
+                        <div style={{ minWidth: '80px' }}>
+                          <div style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Type</div>
+                          <span style={{ 
+                            fontSize: '0.65rem', 
+                            fontWeight: '800', 
+                            padding: '0.15rem 0.5rem', 
+                            borderRadius: '4px',
+                            textTransform: 'uppercase',
+                            display: 'inline-block',
+                            marginTop: '0.2rem',
+                            backgroundColor: order.order_type === 'bulk' ? '#e0f2fe' : '#fef3c7',
+                            color: order.order_type === 'bulk' ? '#0369a1' : '#b45309'
+                          }}>
+                            {order.order_type}
+                          </span>
+                        </div>
+
+                        <div style={{ minWidth: '90px' }}>
+                          <div style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</div>
+                          <span style={{ 
+                            fontSize: '0.75rem', 
+                            fontWeight: '800',
+                            textTransform: 'capitalize',
+                            display: 'inline-block',
+                            marginTop: '0.15rem',
+                            color: order.status === 'completed' ? '#10b981' : order.status === 'in_progress' ? '#3b82f6' : '#9ca3af'
+                          }}>
+                            {order.status}
+                          </span>
+                        </div>
+
+                        <div style={{ minWidth: '120px' }}>
+                          <div style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>FOB Date</div>
+                          <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-current)', marginTop: '0.15rem' }}>
+                            {order.fob_date ? new Date(order.fob_date).toLocaleDateString() : 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button 
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: isExpanded ? 'var(--color-primary)' : 'var(--text-muted-current)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '0.5rem',
+                          transition: 'transform 0.2s',
+                          transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)'
+                        }}
+                      >
+                        <ChevronDown size={22} />
+                      </button>
+                    </div>
+
+                    {/* Expanded Content Area */}
+                    {isExpanded && (
+                      <div style={{ padding: '1.5rem', backgroundColor: '#ffffff', borderTop: '1px solid var(--border-current)' }}>
+                        {detailsLoading ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 0' }}>
+                            <Loader size={32} className="spin" color="var(--color-primary)" />
+                            <p style={{ marginTop: '1rem', color: 'var(--text-muted-current)', fontSize: '0.85rem' }}>Fetching order details...</p>
+                          </div>
+                        ) : (
+                          <div className="fade-in">
+                            {/* Tabs Header inside Expanded Row */}
+                            <div style={{ display: 'flex', borderBottom: '2px solid #eee', marginBottom: '1.5rem', gap: '2rem' }}>
+                              {[
+                                { key: 'dyeing', label: 'Dyeing Stage' },
+                                { key: 'warping', label: 'Warping Stage' },
+                                { key: 'weaving', label: 'Weaving Stage' }
+                              ].map(tab => (
+                                <button
+                                  key={tab.key}
+                                  onClick={() => setActiveSubTab(tab.key)}
+                                  style={{
+                                    padding: '0.75rem 0', background: 'none', border: 'none', cursor: 'pointer',
+                                    fontSize: '0.95rem', fontWeight: '700',
+                                    color: activeSubTab === tab.key ? 'var(--color-primary)' : '#666',
+                                    borderBottom: activeSubTab === tab.key ? '3px solid var(--color-primary)' : '3px solid transparent',
+                                    transition: 'all 0.15s'
+                                  }}
+                                >
+                                  {tab.label}
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* DYEING TAB CONTENT */}
+                            {activeSubTab === 'dyeing' && (
+                              <div className="fade-in">
+                                {/* Warp requirements */}
+                                <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#1e40af', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Warp Yarn Requirements</h4>
+                                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '1.5rem' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                      <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
+                                        <th style={thStyle}>Count</th>
+                                        <th style={thStyle}>Colour</th>
+                                        <th style={numericThStyle}>Required (kg)</th>
+                                        <th style={numericThStyle}>Greige Sent (kg)</th>
+                                        <th style={numericThStyle}>Received Dyed (kg)</th>
+                                        <th style={numericThStyle}>Balance to Receive (kg)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {breakdownData.filter(d => d.type === 'warp').length === 0 ? (
+                                        <tr>
+                                          <td colSpan="6" style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8', fontSize: '0.8rem' }}>
+                                            No warp yarn requirements defined
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        breakdownData.filter(d => d.type === 'warp').map((row, idx) => {
+                                          const balToRec = Math.max(0, row.greigeSent - row.dyedReceived);
+                                          return (
+                                            <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                              <td style={tdStyle}>{formatYarnCount(row.countId)}</td>
+                                              <td style={{ ...tdStyle, fontWeight: '700', color: 'var(--color-primary)' }}>{row.colour}</td>
+                                              <td style={numericTdStyle}>{row.required.toFixed(2)}</td>
+                                              <td style={numericTdStyle}>{row.greigeSent.toFixed(2)}</td>
+                                              <td style={numericTdStyle}>{row.dyedReceived.toFixed(2)}</td>
+                                              <td style={{ ...numericTdStyle, color: balToRec > 0 ? '#b45309' : '#10b981', fontWeight: '800' }}>
+                                                {balToRec.toFixed(2)}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                {/* Weft requirements */}
+                                <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#0f766e', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Weft Yarn Requirements</h4>
+                                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '2rem' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                      <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
+                                        <th style={thStyle}>Count</th>
+                                        <th style={thStyle}>Colour</th>
+                                        <th style={numericThStyle}>Required (kg)</th>
+                                        <th style={numericThStyle}>Greige Sent (kg)</th>
+                                        <th style={numericThStyle}>Received Dyed (kg)</th>
+                                        <th style={numericThStyle}>Balance to Receive (kg)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {breakdownData.filter(d => d.type === 'weft').length === 0 ? (
+                                        <tr>
+                                          <td colSpan="6" style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8', fontSize: '0.8rem' }}>
+                                            No weft yarn requirements defined
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        breakdownData.filter(d => d.type === 'weft').map((row, idx) => {
+                                          const balToRec = Math.max(0, row.greigeSent - row.dyedReceived);
+                                          return (
+                                            <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                              <td style={tdStyle}>{formatYarnCount(row.countId)}</td>
+                                              <td style={{ ...tdStyle, fontWeight: '700', color: 'var(--color-primary)' }}>{row.colour}</td>
+                                              <td style={numericTdStyle}>{row.required.toFixed(2)}</td>
+                                              <td style={numericTdStyle}>{row.greigeSent.toFixed(2)}</td>
+                                              <td style={numericTdStyle}>{row.dyedReceived.toFixed(2)}</td>
+                                              <td style={{ ...numericTdStyle, color: balToRec > 0 ? '#b45309' : '#10b981', fontWeight: '800' }}>
+                                                {balToRec.toFixed(2)}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                {/* Dyeing Associated Documents */}
+                                <h4 style={{ fontSize: '0.95rem', fontWeight: '800', margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <FileText size={16} color="var(--color-primary)" /> Dyeing Documents & Receipts
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+                                  
+                                  {/* DOFs list */}
+                                  <div style={docBoxStyle}>
+                                    <h5 style={docBoxTitleStyle}>Dyeing Orders (DOF)</h5>
+                                    <div style={docListContainerStyle}>
+                                      {associatedDocs.dofs.length === 0 ? (
+                                        <div style={emptyDocStyle}>No DOFs linked</div>
+                                      ) : (
+                                        associatedDocs.dofs.map(d => (
+                                          <div 
+                                            key={d.id} 
+                                            onClick={() => setActiveModal({ type: 'dof', data: d })}
+                                            style={docItemStyle}
+                                            className="hover-lift"
+                                          >
+                                            <div style={{ fontWeight: '700' }}>{d.dof_number}</div>
+                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                                              {d.dyeing_unit?.partner_name} • {d.status}
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* GYDRs list */}
+                                  <div style={docBoxStyle}>
+                                    <h5 style={docBoxTitleStyle}>Greige Deliveries (GYDR)</h5>
+                                    <div style={docListContainerStyle}>
+                                      {associatedDocs.gydrs.length === 0 ? (
+                                        <div style={emptyDocStyle}>No GYDRs linked</div>
+                                      ) : (
+                                        associatedDocs.gydrs.map(g => (
+                                          <div 
+                                            key={g.id} 
+                                            onClick={() => setActiveModal({ type: 'gydr', data: g })}
+                                            style={docItemStyle}
+                                            className="hover-lift"
+                                          >
+                                            <div style={{ fontWeight: '700' }}>{g.gydr_number}</div>
+                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                                              {g.delivered_by} • {new Date(g.created_at).toLocaleDateString()}
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* DYRRs list */}
+                                  <div style={docBoxStyle}>
+                                    <h5 style={docBoxTitleStyle}>Dyed Receipts (DYRR)</h5>
+                                    <div style={docListContainerStyle}>
+                                      {associatedDocs.dyrrs.length === 0 ? (
+                                        <div style={emptyDocStyle}>No DYRRs linked</div>
+                                      ) : (
+                                        associatedDocs.dyrrs.map(r => (
+                                          <div 
+                                            key={r.id} 
+                                            onClick={() => setActiveModal({ type: 'dyrr', data: r })}
+                                            style={docItemStyle}
+                                            className="hover-lift"
+                                          >
+                                            <div style={{ fontWeight: '700' }}>{r.dyrr_number}</div>
+                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                                              {r.received_by} • {new Date(r.created_at).toLocaleDateString()}
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* WARPING TAB CONTENT */}
+                            {activeSubTab === 'warping' && (
+                              <div className="fade-in">
+                                {/* Warping Breakdown Table */}
+                                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '2rem' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                      <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
+                                        <th style={thStyle}>Count</th>
+                                        <th style={thStyle}>Colour</th>
+                                        <th style={numericThStyle}>Required (kg)</th>
+                                        <th style={numericThStyle}>Dyed Received (kg)</th>
+                                        <th style={numericThStyle}>Delivered to Warping (kg)</th>
+                                        <th style={numericThStyle}>Received from Warping (kg)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {breakdownData.filter(d => d.type === 'warp').length === 0 ? (
+                                        <tr>
+                                          <td colSpan="6" style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8', fontSize: '0.8rem' }}>
+                                            No warping stage items defined for this order
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        breakdownData.filter(d => d.type === 'warp').map((row, idx) => (
+                                          <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                            <td style={tdStyle}>{formatYarnCount(row.countId)}</td>
+                                            <td style={{ ...tdStyle, fontWeight: '700', color: 'var(--color-primary)' }}>{row.colour}</td>
+                                            <td style={numericTdStyle}>{row.required.toFixed(2)}</td>
+                                            <td style={numericTdStyle}>{row.dyedReceived.toFixed(2)}</td>
+                                            <td style={numericTdStyle}>{row.deliveredWarping.toFixed(2)}</td>
+                                            <td style={{ ...numericTdStyle, color: row.receivedWarping > 0 ? '#047857' : '#6b7280' }}>
+                                              {row.receivedWarping.toFixed(2)}
+                                            </td>
+                                          </tr>
+                                        ))
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                {/* Warping Associated Documents */}
+                                <h4 style={{ fontSize: '0.95rem', fontWeight: '800', margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <FileText size={16} color="var(--color-primary)" /> Warping Stage Documents
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+                                  
+                                  {/* DYDR list for warping */}
+                                  <div style={docBoxStyle}>
+                                    <h5 style={docBoxTitleStyle}>Dyed Deliveries (DYDR)</h5>
+                                    <div style={docListContainerStyle}>
+                                      {associatedDocs.dydrs.filter(d => (d.greige_yarn_delivery_items || d.dyed_yarn_delivery_items || []).some(item => item.process_type === 'warping')).length === 0 ? (
+                                        <div style={emptyDocStyle}>No DYDRs linked</div>
+                                      ) : (
+                                        associatedDocs.dydrs.filter(d => (d.greige_yarn_delivery_items || d.dyed_yarn_delivery_items || []).some(item => item.process_type === 'warping')).map(d => (
+                                          <div 
+                                            key={d.id} 
+                                            onClick={() => setActiveModal({ type: 'dydr', data: d })}
+                                            style={docItemStyle}
+                                            className="hover-lift"
+                                          >
+                                            <div style={{ fontWeight: '700' }}>{d.dydr_number}</div>
+                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                                              {d.delivered_by} • {new Date(d.created_at).toLocaleDateString()}
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Warping orders list */}
+                                  <div style={docBoxStyle}>
+                                    <h5 style={docBoxTitleStyle}>Warping Orders</h5>
+                                    <div style={docListContainerStyle}>
+                                      {associatedDocs.warping.length === 0 ? (
+                                        <div style={emptyDocStyle}>No Warping Orders linked</div>
+                                      ) : (
+                                        associatedDocs.warping.map(w => (
+                                          <div 
+                                            key={w.id} 
+                                            onClick={() => setActiveModal({ type: 'warping', data: w })}
+                                            style={docItemStyle}
+                                            className="hover-lift"
+                                          >
+                                            <div style={{ fontWeight: '700' }}>{w.warping_number}</div>
+                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                                              Design: {w.design_no} • Status: {w.status}
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* WEAVING TAB CONTENT */}
+                            {activeSubTab === 'weaving' && (
+                              <div className="fade-in">
+                                {/* Weaving Breakdown Table */}
+                                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '2rem' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                      <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
+                                        <th style={thStyle}>Count</th>
+                                        <th style={thStyle}>Colour</th>
+                                        <th style={thStyle}>Type</th>
+                                        <th style={numericThStyle}>Required (kg)</th>
+                                        <th style={numericThStyle}>Delivered to Weaving (kg)</th>
+                                        <th style={numericThStyle}>Received from Weaving (kg)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {breakdownData.length === 0 ? (
+                                        <tr>
+                                          <td colSpan="6" style={{ textAlign: 'center', padding: '1.5rem', color: '#94a3b8', fontSize: '0.8rem' }}>
+                                            No weaving stage items defined for this order
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        breakdownData.map((row, idx) => (
+                                          <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                            <td style={tdStyle}>{formatYarnCount(row.countId)}</td>
+                                            <td style={{ ...tdStyle, fontWeight: '700', color: 'var(--color-primary)' }}>{row.colour}</td>
+                                            <td style={tdStyle}>
+                                              <span style={{ 
+                                                padding: '0.15rem 0.4rem', 
+                                                borderRadius: '4px', 
+                                                fontSize: '0.7rem', 
+                                                fontWeight: '800',
+                                                textTransform: 'uppercase',
+                                                backgroundColor: row.type === 'warp' ? '#eff6ff' : '#ecfdf5',
+                                                color: row.type === 'warp' ? '#1e40af' : '#047857'
+                                              }}>
+                                                {row.type}
+                                              </span>
+                                            </td>
+                                            <td style={numericTdStyle}>{row.required.toFixed(2)}</td>
+                                            <td style={numericTdStyle}>{row.deliveredWeaving.toFixed(2)}</td>
+                                            <td style={{ ...numericTdStyle, color: row.receivedWeaving > 0 ? '#047857' : '#6b7280' }}>
+                                              {row.receivedWeaving.toFixed(2)}
+                                            </td>
+                                          </tr>
+                                        ))
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                {/* Weaving Associated Documents */}
+                                <h4 style={{ fontSize: '0.95rem', fontWeight: '800', margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <FileText size={16} color="var(--color-primary)" /> Weaving Stage Documents
+                                </h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+                                  
+                                  {/* DYDR list for weaving */}
+                                  <div style={docBoxStyle}>
+                                    <h5 style={docBoxTitleStyle}>Dyed Deliveries (DYDR)</h5>
+                                    <div style={docListContainerStyle}>
+                                      {associatedDocs.dydrs.filter(d => (d.greige_yarn_delivery_items || d.dyed_yarn_delivery_items || []).some(item => item.process_type === 'weaving')).length === 0 ? (
+                                        <div style={emptyDocStyle}>No DYDRs linked</div>
+                                      ) : (
+                                        associatedDocs.dydrs.filter(d => (d.greige_yarn_delivery_items || d.dyed_yarn_delivery_items || []).some(item => item.process_type === 'weaving')).map(d => (
+                                          <div 
+                                            key={d.id} 
+                                            onClick={() => setActiveModal({ type: 'dydr', data: d })}
+                                            style={docItemStyle}
+                                            className="hover-lift"
+                                          >
+                                            <div style={{ fontWeight: '700' }}>{d.dydr_number}</div>
+                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                                              {d.delivered_by} • {new Date(d.created_at).toLocaleDateString()}
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Weaving orders list */}
+                                  <div style={docBoxStyle}>
+                                    <h5 style={docBoxTitleStyle}>Weaving Orders</h5>
+                                    <div style={docListContainerStyle}>
+                                      {associatedDocs.weaving.length === 0 ? (
+                                        <div style={emptyDocStyle}>No Weaving Orders linked</div>
+                                      ) : (
+                                        associatedDocs.weaving.map(w => (
+                                          <div 
+                                            key={w.id} 
+                                            onClick={() => setActiveModal({ type: 'weaving', data: w })}
+                                            style={docItemStyle}
+                                            className="hover-lift"
+                                          >
+                                            <div style={{ fontWeight: '700' }}>{w.weaving_number}</div>
+                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                                              Design: {w.design_no} • Status: {w.status}
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
-
         </div>
       )}
 
