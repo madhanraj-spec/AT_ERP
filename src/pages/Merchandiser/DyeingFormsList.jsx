@@ -4,6 +4,73 @@ import { Plus, Loader, CheckCircle, Clock, XCircle, Eye, Filter, ChevronDown, Ch
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Helpers for Expected Delivery Dates & Warning Alerts
+// ──────────────────────────────────────────────────────────────────────────────
+const getTodayString = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getDofAlertInfo = (form) => {
+  const today = getTodayString();
+  const expected = form.expected_delivery_date;
+
+  if (form.status === 'received') {
+    if (form.maxReceivedDate && expected) {
+      if (form.maxReceivedDate <= expected) {
+        return {
+          type: 'received_on_time',
+          label: 'Received On Time',
+          color: '#166534',
+          bgColor: '#dcfce7',
+          borderColor: '#bbf7d0'
+        };
+      } else {
+        return {
+          type: 'received_late',
+          label: 'Received Late',
+          color: '#475569',
+          bgColor: '#f1f5f9',
+          borderColor: '#cbd5e1'
+        };
+      }
+    }
+    return {
+      type: 'received_on_time',
+      label: 'Received On Time',
+      color: '#166534',
+      bgColor: '#dcfce7',
+      borderColor: '#bbf7d0'
+    };
+  }
+
+  if (!expected) return null;
+
+  if (expected === today) {
+    return {
+      type: 'expected_today',
+      label: 'Expected Today',
+      color: '#b45309',
+      bgColor: '#fef3c7',
+      borderColor: '#fcd34d'
+    };
+  } else if (expected < today) {
+    return {
+      type: 'late',
+      label: 'Late',
+      color: '#b91c1c',
+      bgColor: '#fee2e2',
+      borderColor: '#fca5a5'
+    };
+  }
+
+  return null;
+};
+
 export default function DyeingFormsList() {
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -27,26 +94,45 @@ export default function DyeingFormsList() {
   const fetchForms = async () => {
     setLoading(true);
     try {
-      let query = supabase
-        .from('dyeing_order_forms')
-        .select(`
-          *,
-          dyeing_unit:master_partners(partner_name),
-          creator:profiles!dyeing_order_forms_created_by_fkey(full_name)
-        `)
-        .order('created_at', { ascending: false });
+      const [formsRes, receiptsRes] = await Promise.all([
+        supabase
+          .from('dyeing_order_forms')
+          .select(`
+            *,
+            dyeing_unit:master_partners(partner_name),
+            creator:profiles!dyeing_order_forms_created_by_fkey(full_name)
+          `)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('dyed_yarn_receipts')
+          .select('id, dof_id, received_date')
+      ]);
 
-      const { data, error } = await query;
-      if (error) throw error;
+      if (formsRes.error) throw formsRes.error;
+      const rawForms = formsRes.data || [];
+      const receipts = receiptsRes.data || [];
 
-      // For each form, fetch linked orders
-      const formsWithOrders = await Promise.all((data || []).map(async (form) => {
-        if (!form.order_ids || form.order_ids.length === 0) return { ...form, orders: [] };
-        const { data: orders } = await supabase
-          .from('orders')
-          .select('id, order_number, design_no, design_name, technical_specs')
-          .in('id', form.order_ids);
-        return { ...form, orders: orders || [] };
+      // For each form, fetch linked orders and compute max received date
+      const formsWithOrders = await Promise.all(rawForms.map(async (form) => {
+        const formReceipts = receipts.filter(r => r.dof_id === form.id);
+        const maxReceivedDate = formReceipts.reduce((max, r) => {
+          return (!max || r.received_date > max) ? r.received_date : max;
+        }, null);
+
+        let orders = [];
+        if (form.order_ids && form.order_ids.length > 0) {
+          const { data: oData } = await supabase
+            .from('orders')
+            .select('id, order_number, design_no, design_name, technical_specs')
+            .in('id', form.order_ids);
+          orders = oData || [];
+        }
+
+        return { 
+          ...form, 
+          orders, 
+          maxReceivedDate 
+        };
       }));
 
       setForms(formsWithOrders);
@@ -254,10 +340,42 @@ export default function DyeingFormsList() {
                         <td style={{ fontWeight: '600' }}>
                           {form.dyeing_unit?.partner_name || <span style={{ color: 'var(--text-muted-current)' }}>Not set</span>}
                         </td>
-                        <td style={{ fontSize: '0.8125rem' }}>
-                          {form.expected_delivery_date
-                            ? new Date(form.expected_delivery_date).toLocaleDateString()
-                            : <span style={{ color: 'var(--text-muted-current)' }}>Not set</span>}
+                        <td>
+                          {(() => {
+                            if (!form.expected_delivery_date) {
+                              return <span style={{ color: 'var(--text-muted-current)', fontSize: '0.8125rem' }}>Not set</span>;
+                            }
+                            const alertInfo = getDofAlertInfo(form);
+                            const dateStr = new Date(form.expected_delivery_date).toLocaleDateString();
+
+                            if (alertInfo) {
+                              return (
+                                <div style={{ 
+                                  display: 'inline-flex', 
+                                  flexDirection: 'column', 
+                                  gap: '0.25rem', 
+                                  alignItems: 'flex-start',
+                                  padding: '0.25rem 0.5rem',
+                                  backgroundColor: alertInfo.bgColor,
+                                  border: `1px solid ${alertInfo.borderColor}`,
+                                  borderRadius: '6px'
+                                }}>
+                                  <span style={{ fontSize: '0.8125rem', fontWeight: '700', color: alertInfo.color }}>{dateStr}</span>
+                                  <span style={{
+                                    fontSize: '0.65rem',
+                                    fontWeight: '800',
+                                    textTransform: 'uppercase',
+                                    color: alertInfo.color,
+                                    opacity: 0.95
+                                  }}>
+                                    {alertInfo.label}
+                                  </span>
+                                </div>
+                              );
+                            }
+
+                            return <span style={{ fontSize: '0.8125rem', fontWeight: '500' }}>{dateStr}</span>;
+                          })()}
                         </td>
                         <td>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
