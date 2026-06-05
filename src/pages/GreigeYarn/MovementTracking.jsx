@@ -364,6 +364,67 @@ export default function MovementTracking() {
     return [...new Set(counts)].sort();
   }, [productionReceipts, prodReceiptNos, prodDates, prodOrderForms]);
 
+  // Group deliveries (greige yarn output) by receipt and countId
+  const groupedDeliveries = React.useMemo(() => {
+    const list = [];
+    deliveries.forEach(r => {
+      const countGroups = {};
+      (r.greige_yarn_delivery_items || []).forEach(item => {
+        const countId = item.yarn_count_id;
+        if (!countGroups[countId]) {
+          countGroups[countId] = {
+            countId,
+            yarn_label: item.master_yarn_counts
+              ? `${item.master_yarn_counts.count_value} - ${item.master_yarn_counts.material} - ${item.master_yarn_counts.product_type}`
+              : '-',
+            total_qty: 0,
+            locations: [],
+            items: []
+          };
+        }
+        countGroups[countId].total_qty += parseFloat(item.quantity_kg || 0);
+        const loc = item.master_locations?.location_name || '-';
+        if (loc !== '-' && !countGroups[countId].locations.includes(loc)) {
+          countGroups[countId].locations.push(loc);
+        }
+        countGroups[countId].items.push(item);
+      });
+
+      if (Object.keys(countGroups).length === 0) {
+        list.push({
+          receiptId: r.id,
+          gydr_number: r.gydr_number,
+          dof_number: r.dof_number,
+          partner_name: r.dyeing_order_forms?.master_partners?.partner_name || '-',
+          created_at: r.created_at,
+          countId: 'empty',
+          yarn_label: '-',
+          total_qty: 0,
+          locations_str: '-',
+          items: [],
+          receiptObj: r
+        });
+      } else {
+        Object.values(countGroups).forEach(g => {
+          list.push({
+            receiptId: r.id,
+            gydr_number: r.gydr_number,
+            dof_number: r.dof_number,
+            partner_name: r.dyeing_order_forms?.master_partners?.partner_name || '-',
+            created_at: r.created_at,
+            countId: g.countId,
+            yarn_label: g.yarn_label,
+            total_qty: g.total_qty,
+            locations_str: g.locations.join(', ') || '-',
+            items: g.items,
+            receiptObj: r
+          });
+        });
+      }
+    });
+    return list;
+  }, [deliveries]);
+
   // ── Dependent Filter Helper for Greige Output Tab ──
   const getFilteredDeliveries = (excludeField) => {
     return groupedDeliveries.filter(row => {
@@ -504,67 +565,6 @@ export default function MovementTracking() {
     });
     return Object.values(groups);
   }, [filteredProductionReceipts]);
-
-  // Group deliveries (greige yarn output) by receipt and countId
-  const groupedDeliveries = React.useMemo(() => {
-    const list = [];
-    deliveries.forEach(r => {
-      const countGroups = {};
-      (r.greige_yarn_delivery_items || []).forEach(item => {
-        const countId = item.yarn_count_id;
-        if (!countGroups[countId]) {
-          countGroups[countId] = {
-            countId,
-            yarn_label: item.master_yarn_counts
-              ? `${item.master_yarn_counts.count_value} - ${item.master_yarn_counts.material} - ${item.master_yarn_counts.product_type}`
-              : '-',
-            total_qty: 0,
-            locations: [],
-            items: []
-          };
-        }
-        countGroups[countId].total_qty += parseFloat(item.quantity_kg || 0);
-        const loc = item.master_locations?.location_name || '-';
-        if (loc !== '-' && !countGroups[countId].locations.includes(loc)) {
-          countGroups[countId].locations.push(loc);
-        }
-        countGroups[countId].items.push(item);
-      });
-
-      if (Object.keys(countGroups).length === 0) {
-        list.push({
-          receiptId: r.id,
-          gydr_number: r.gydr_number,
-          dof_number: r.dof_number,
-          partner_name: r.dyeing_order_forms?.master_partners?.partner_name || '-',
-          created_at: r.created_at,
-          countId: 'empty',
-          yarn_label: '-',
-          total_qty: 0,
-          locations_str: '-',
-          items: [],
-          receiptObj: r
-        });
-      } else {
-        Object.values(countGroups).forEach(g => {
-          list.push({
-            receiptId: r.id,
-            gydr_number: r.gydr_number,
-            dof_number: r.dof_number,
-            partner_name: r.dyeing_order_forms?.master_partners?.partner_name || '-',
-            created_at: r.created_at,
-            countId: g.countId,
-            yarn_label: g.yarn_label,
-            total_qty: g.total_qty,
-            locations_str: g.locations.join(', ') || '-',
-            items: g.items,
-            receiptObj: r
-          });
-        });
-      }
-    });
-    return list;
-  }, [deliveries]);
 
   // Client-side Filtered Deliveries (flat filter on groupedDeliveries)
   const filteredGroupedDeliveries = React.useMemo(() => {
