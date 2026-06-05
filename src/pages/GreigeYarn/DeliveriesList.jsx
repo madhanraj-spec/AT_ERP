@@ -558,9 +558,9 @@ export default function DeliveriesList() {
                                           <th>Count</th>
                                           <th style={{ textAlign: 'right' }}>Qty Allotted (kg)</th>
                                           <th style={{ textAlign: 'right' }}>Qty Sent (kg)</th>
+                                          <th style={{ textAlign: 'right' }}>Balance to Send (kg)</th>
                                           <th style={{ textAlign: 'right' }}>Qty Received (kg)</th>
                                           <th style={{ textAlign: 'right' }}>Balance to Receive (kg)</th>
-                                          <th>Associated DYRRs</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -581,25 +581,17 @@ export default function DeliveriesList() {
                                             .reduce((sum, r) => sum + parseFloat(r.total_weight || 0), 0);
                                             
                                           const netSent = Math.max(0, sentQty - returnedQty);
-
+ 
                                           // Get dyed receipts for this specific allocation
                                           const dofDyrrItems = dofDetails[form.id]?.dyrrItems || [];
                                           const receivedQty = dofDyrrItems
                                             .filter(d => d.order_id === alloc.orderId && d.yarn_count_id === alloc.countId && d.colour === alloc.colour && (d.yarn_type || 'warp') === (alloc.type || 'warp'))
                                             .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
-
+ 
                                           const allottedQty = parseFloat(alloc.total_kg || 0);
+                                          const balanceToSend = Math.max(0, allottedQty - netSent);
                                           const balanceToReceive = Math.max(0, allottedQty - receivedQty);
-
-                                          // Find associated DYRRs
-                                          const allocDyrrItems = dofDyrrItems.filter(d => 
-                                            d.order_id === alloc.orderId && 
-                                            d.yarn_count_id === alloc.countId && 
-                                            d.colour === alloc.colour && 
-                                            (d.yarn_type || 'warp') === (alloc.type || 'warp')
-                                          );
-                                          const dofDyrrs = dofDetails[form.id]?.dyrrs || [];
-
+ 
                                           return (
                                             <tr key={idx}>
                                               <td style={{ fontWeight: '600', color: 'var(--color-primary)' }}>
@@ -617,22 +609,12 @@ export default function DeliveriesList() {
                                               </td>
                                               <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{allottedQty.toFixed(2)}</td>
                                               <td style={{ textAlign: 'right' }}>{netSent.toFixed(2)}</td>
+                                              <td style={{ textAlign: 'right', color: balanceToSend > 0.1 ? '#b91c1c' : 'var(--text-muted-current)', fontWeight: 'bold' }}>
+                                                {balanceToSend.toFixed(2)}
+                                              </td>
                                               <td style={{ textAlign: 'right', color: '#166534', fontWeight: 'bold' }}>{receivedQty.toFixed(2)}</td>
                                               <td style={{ textAlign: 'right', color: balanceToReceive > 0.1 ? '#b91c1c' : 'var(--text-muted-current)', fontWeight: 'bold' }}>
                                                 {balanceToReceive.toFixed(2)}
-                                              </td>
-                                              <td>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                  {allocDyrrItems.map(item => {
-                                                    const r = dofDyrrs.find(rec => rec.id === item.receipt_id);
-                                                    return (
-                                                      <span key={item.id} style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                                                        <span style={{ fontWeight: '600' }}>{r?.dyrr_number || 'Unknown'}</span>: {parseFloat(item.quantity_kg).toFixed(2)} kg
-                                                      </span>
-                                                    );
-                                                  })}
-                                                  {allocDyrrItems.length === 0 && <span style={{ color: 'var(--text-muted-current)', fontSize: '0.75rem' }}>-</span>}
-                                                </div>
                                               </td>
                                             </tr>
                                           );
