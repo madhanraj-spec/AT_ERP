@@ -649,6 +649,50 @@ export default function OrderStock() {
                           </div>
                         ) : (
                           <div className="fade-in">
+                            {/* Order Technical Specs Summary */}
+                            <div style={{ 
+                              display: 'grid', 
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                              gap: '1.25rem', 
+                              padding: '1.25rem', 
+                              marginBottom: '1.5rem',
+                              backgroundColor: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '8px'
+                            }}>
+                              <div>
+                                <span style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', display: 'block', marginBottom: '0.2rem', letterSpacing: '0.5px' }}>Order Quantity</span>
+                                <span style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-current)' }}>
+                                  {order.total_quantity ? `${order.total_quantity} Mtrs` : 'N/A'}
+                                </span>
+                              </div>
+                              <div>
+                                <span style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', display: 'block', marginBottom: '0.2rem', letterSpacing: '0.5px' }}>Finished Width</span>
+                                <span style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-current)' }}>
+                                  {order.technical_specs?.finished_width ? `${order.technical_specs.finished_width}"` : 'N/A'}
+                                </span>
+                              </div>
+                              <div>
+                                <span style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', display: 'block', marginBottom: '0.2rem', letterSpacing: '0.5px' }}>Order Construction</span>
+                                <span style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-current)' }}>
+                                  {order.technical_specs?.order_reed && order.technical_specs?.order_pick 
+                                    ? `${order.technical_specs.order_reed} / ${order.technical_specs.order_pick}` 
+                                    : 'N/A'}
+                                </span>
+                              </div>
+                              <div>
+                                <span style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', display: 'block', marginBottom: '0.2rem', letterSpacing: '0.5px' }}>Yarn Counts</span>
+                                <span style={{ fontSize: '0.9rem', fontWeight: '800', color: 'var(--text-current)', display: 'block', wordBreak: 'break-word' }}>
+                                  {(() => {
+                                    const reqs = order.yarn_requirements || [];
+                                    const counts = reqs.map(yr => formatYarnCount(yr.countId));
+                                    const uniqueCounts = [...new Set(counts)].filter(c => c !== '-');
+                                    return uniqueCounts.length > 0 ? uniqueCounts.join(', ') : 'N/A';
+                                  })()}
+                                </span>
+                              </div>
+                            </div>
+
                             {/* Tabs Header inside Expanded Row */}
                             <div style={{ display: 'flex', borderBottom: '2px solid #eee', marginBottom: '1.5rem', gap: '2rem' }}>
                               {[
