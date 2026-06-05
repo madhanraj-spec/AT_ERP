@@ -164,7 +164,7 @@ export default function DeliveriesList() {
           .from('greige_yarn_delivery_items')
           .select(`
             *,
-            master_yarn_counts(count, unit)
+            master_yarn_counts(*)
           `)
           .in('receipt_id', gydrIds);
         if (itemsErr) throw itemsErr;
@@ -187,7 +187,7 @@ export default function DeliveriesList() {
           .from('dyed_yarn_receipt_items')
           .select(`
             *,
-            master_yarn_counts(count, unit)
+            master_yarn_counts(*)
           `)
           .in('receipt_id', dyrrIds);
         if (itemsErr) throw itemsErr;
@@ -240,7 +240,8 @@ export default function DeliveriesList() {
 
   const formatCount = (count) => {
     if (!count) return '';
-    return `${count.count}${count.unit}`;
+    const parts = [count.count_value, count.material, count.product_type].filter(Boolean);
+    return parts.join(' - ');
   };
 
   const getDeliveryStatusBadge = (status) => {
