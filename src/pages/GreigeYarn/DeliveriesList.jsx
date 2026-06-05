@@ -23,7 +23,7 @@ export default function DeliveriesList() {
           dyeing_unit:master_partners(partner_name),
           creator:profiles!dyeing_order_forms_created_by_fkey(full_name)
         `)
-        .in('status', ['approved', 'partially_sent', 'fully_sent'])
+        .in('status', ['approved', 'partially_sent', 'fully_sent', 'partially_received', 'received'])
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -54,6 +54,10 @@ export default function DeliveriesList() {
         return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'PARTIALLY SENT' };
       case 'fully_sent':
         return { bg: '#dbeafe', text: '#1e40af', icon: <Send size={12} />, label: 'FULLY SENT' };
+      case 'partially_received':
+        return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'PARTIALLY RECEIVED' };
+      case 'received':
+        return { bg: '#f1f5f9', text: '#475569', icon: <CheckCircle size={12} />, label: 'FULLY RECEIVED' };
       default:
         return { bg: '#f1f5f9', text: '#475569', icon: null, label: status?.toUpperCase() };
     }
