@@ -100,7 +100,7 @@ export default function DeliveriesList() {
         dofNumbers.length > 0
           ? supabase
               .from('greige_yarn_receipts')
-              .select('order_form_no, yarn_count_id, colour, total_weight')
+              .select('order_form_no, yarn_count_id, colour, total_weight, order_id, yarn_type')
               .eq('receipt_type', 'production')
               .in('order_form_no', dofNumbers)
           : Promise.resolve({ data: [] })
@@ -144,7 +144,7 @@ export default function DeliveriesList() {
 
     setDofDetails(prev => ({
       ...prev,
-      [dofId]: { loading: true, gydrs: [], gydrItems: [], dyrrs: [], dyrrItems: [] }
+      [dofId]: { loading: true, gydrs: [], gydrItems: [], dyrrs: [], dyrrItems: [], gyrrs: [] }
     }));
 
     try {
@@ -194,6 +194,19 @@ export default function DeliveriesList() {
         dyrrItemsData = itemsData || [];
       }
 
+      // 3. Fetch GYRRs (production returns)
+      const { data: gyrrsData, error: gyrrsErr } = await supabase
+        .from('greige_yarn_receipts')
+        .select(`
+          *,
+          master_yarn_counts(*)
+        `)
+        .eq('receipt_type', 'production')
+        .eq('order_form_no', dofNumber)
+        .order('created_at', { ascending: false });
+
+      if (gyrrsErr) throw gyrrsErr;
+
       setDofDetails(prev => ({
         ...prev,
         [dofId]: {
@@ -201,7 +214,8 @@ export default function DeliveriesList() {
           gydrs: gydrsData || [],
           gydrItems: gydrItemsData,
           dyrrs: dyrrsData || [],
-          dyrrItems: dyrrItemsData
+          dyrrItems: dyrrItemsData,
+          gyrrs: gyrrsData || []
         }
       }));
     } catch (err) {
@@ -214,7 +228,8 @@ export default function DeliveriesList() {
           gydrs: [],
           gydrItems: [],
           dyrrs: [],
-          dyrrItems: []
+          dyrrItems: [],
+          gyrrs: []
         }
       }));
     }
@@ -575,9 +590,9 @@ export default function DeliveriesList() {
                                             .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
                                             
                                           // Subtract production returns if any
-                                          const dofReturns = returnsMap[form.dof_number] || [];
+                                          const dofReturns = dofDetails[form.id]?.gyrrs || [];
                                           const returnedQty = dofReturns
-                                            .filter(r => r.order_id === alloc.orderId && r.yarn_count_id === alloc.countId && r.colour === alloc.colour && r.yarn_type === alloc.type)
+                                            .filter(r => r.order_id === alloc.orderId && r.yarn_count_id === alloc.countId && r.colour === alloc.colour && (r.yarn_type || 'warp') === (alloc.type || 'warp'))
                                             .reduce((sum, r) => sum + parseFloat(r.total_weight || 0), 0);
                                             
                                           const netSent = Math.max(0, sentQty - returnedQty);
@@ -621,6 +636,111 @@ export default function DeliveriesList() {
                                         })}
                                       </tbody>
                                     </table>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Section 3: Production Returns (GYRR) */}
+                              <div>
+                                <h4 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '1rem', color: 'var(--text-current)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <ArrowLeft size={18} style={{ transform: 'rotate(-45deg)' }} /> Production Returns (GYRR)
+                                </h4>
+                                
+                                {dofDetails[form.id]?.loading ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem', color: 'var(--text-muted-current)' }}>
+                                    <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> Loading production returns...
+                                  </div>
+                                ) : dofDetails[form.id]?.error ? (
+                                  <div style={{ padding: '1rem', color: '#b91c1c', backgroundColor: '#fee2e2', borderRadius: '4px' }}>
+                                    Error loading returns: {dofDetails[form.id].error}
+                                  </div>
+                                ) : !dofDetails[form.id]?.gyrrs || dofDetails[form.id].gyrrs.length === 0 ? (
+                                  <p style={{ color: 'var(--text-muted-current)', fontStyle: 'italic', margin: '0 0 0 1.5rem' }}>
+                                    No production returns have been received for this DOF.
+                                  </p>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', paddingLeft: '1.5rem' }}>
+                                    {(() => {
+                                      const groupedGyrrs = {};
+                                      (dofDetails[form.id]?.gyrrs || []).forEach(r => {
+                                        if (!groupedGyrrs[r.receipt_no]) {
+                                          groupedGyrrs[r.receipt_no] = {
+                                            receipt_no: r.receipt_no,
+                                            created_at: r.created_at,
+                                            received_by: r.received_by,
+                                            vehicle_no: r.vehicle_no,
+                                            items: []
+                                          };
+                                        }
+                                        groupedGyrrs[r.receipt_no].items.push(r);
+                                      });
+                                      
+                                      return Object.values(groupedGyrrs).map(gyrr => {
+                                        const isGyrrExpanded = !!expandedGydrs[gyrr.receipt_no];
+                                        return (
+                                          <div key={gyrr.receipt_no} className="glass-panel" style={{ padding: '1rem', border: '1px solid var(--border-current)', borderRadius: '6px', backgroundColor: 'var(--bg-panel-current, #fff)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                              <div style={{ display: 'flex', gap: '2rem', fontSize: '0.85rem' }}>
+                                                <div>
+                                                  <span style={{ color: 'var(--text-muted-current)' }}>Receipt No:</span>{' '}
+                                                  <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{gyrr.receipt_no}</span>
+                                                </div>
+                                                <div>
+                                                  <span style={{ color: 'var(--text-muted-current)' }}>Date:</span>{' '}
+                                                  <span style={{ fontWeight: '600' }}>{new Date(gyrr.created_at).toLocaleDateString('en-IN')}</span>
+                                                </div>
+                                                <div>
+                                                  <span style={{ color: 'var(--text-muted-current)' }}>Received By:</span>{' '}
+                                                  <span style={{ fontWeight: '600' }}>{gyrr.received_by}</span>
+                                                </div>
+                                                {gyrr.vehicle_no && (
+                                                  <div>
+                                                    <span style={{ color: 'var(--text-muted-current)' }}>Vehicle:</span>{' '}
+                                                    <span style={{ fontWeight: '600' }}>{gyrr.vehicle_no}</span>
+                                                  </div>
+                                                )}
+                                              </div>
+                                              <button
+                                                onClick={() => toggleGydrExpand(gyrr.receipt_no)}
+                                                className="btn btn-secondary"
+                                                style={{ padding: '2px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                                              >
+                                                {isGyrrExpanded ? 'Hide Items' : 'View Items'}
+                                              </button>
+                                            </div>
+                                            
+                                            {isGyrrExpanded && (
+                                              <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--border-current)', paddingTop: '0.75rem' }}>
+                                                <table className="table" style={{ fontSize: '0.8rem', width: '100%', margin: 0 }}>
+                                                  <thead>
+                                                    <tr>
+                                                      <th style={{ padding: '6px 12px' }}>Count</th>
+                                                      <th style={{ padding: '6px 12px' }}>Colour</th>
+                                                      <th style={{ padding: '6px 12px', textAlign: 'right' }}>Qty Returned (kg)</th>
+                                                      <th style={{ padding: '6px 12px' }}>Date</th>
+                                                      <th style={{ padding: '6px 12px' }}>Person</th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {gyrr.items.map(item => (
+                                                      <tr key={item.id}>
+                                                        <td style={{ padding: '6px 12px' }}>{formatCount(item.master_yarn_counts)}</td>
+                                                        <td style={{ padding: '6px 12px' }}>{item.colour}</td>
+                                                        <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 'bold' }}>
+                                                          {parseFloat(item.total_weight).toFixed(2)} kg
+                                                        </td>
+                                                        <td style={{ padding: '6px 12px' }}>{new Date(gyrr.created_at).toLocaleDateString('en-IN')}</td>
+                                                        <td style={{ padding: '6px 12px' }}>{gyrr.received_by}</td>
+                                                      </tr>
+                                                    ))}
+                                                  </tbody>
+                                                </table>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      });
+                                    })()}
                                   </div>
                                 )}
                               </div>
