@@ -3,11 +3,40 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader, Eye, Truck, CheckCircle, Clock, AlertCircle, Send } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
+const hasGreigeBalanceToSend = (form, deliveryItemsMap, returnsMap) => {
+  if (!form || !Array.isArray(form.summary) || form.summary.length === 0) {
+    return false;
+  }
+  
+  const dofDeliveryItems = deliveryItemsMap[form.id] || [];
+  const dofReturns = returnsMap[form.dof_number] || [];
+  
+  // Check if any summary item has a positive remaining balance to send
+  return form.summary.some(s => {
+    const required = parseFloat(s.total_kg || 0);
+    
+    const sentDeliveries = dofDeliveryItems
+      .filter(d => d.yarn_count_id === s.countId && d.colour === s.colour)
+      .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+      
+    const returned = dofReturns
+      .filter(r => r.yarn_count_id === s.countId && r.colour === s.colour)
+      .reduce((sum, r) => sum + parseFloat(r.total_weight || 0), 0);
+      
+    const sent = Math.max(0, sentDeliveries - returned);
+    const balance = required - sent;
+    
+    return balance > 0.01; // Positive balance remaining to send
+  });
+};
+
 export default function DeliveriesList() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('dyeing');
   const [loading, setLoading] = useState(true);
   const [dyeingForms, setDyeingForms] = useState([]);
+  const [deliveryItemsMap, setDeliveryItemsMap] = useState({});
+  const [returnsMap, setReturnsMap] = useState({});
 
   useEffect(() => {
     fetchDyeingForms();
@@ -28,16 +57,66 @@ export default function DeliveriesList() {
 
       if (error) throw error;
 
-      // Fetch linked orders for each form
-      const formsWithOrders = await Promise.all((data || []).map(async (form) => {
-        if (!form.order_ids || form.order_ids.length === 0) return { ...form, orders: [] };
-        const { data: orders } = await supabase
-          .from('orders')
-          .select('id, order_number, design_no')
-          .in('id', form.order_ids);
-        return { ...form, orders: orders || [] };
-      }));
+      const dofIds = (data || []).map(f => f.id);
+      const dofNumbers = (data || []).map(f => f.dof_number).filter(Boolean);
 
+      // Fetch linked orders, deliveries, and returns in parallel
+      const [formsWithOrders, receiptsResult, returnsResult] = await Promise.all([
+        Promise.all((data || []).map(async (form) => {
+          if (!form.order_ids || form.order_ids.length === 0) return { ...form, orders: [] };
+          const { data: orders } = await supabase
+            .from('orders')
+            .select('id, order_number, design_no')
+            .in('id', form.order_ids);
+          return { ...form, orders: orders || [] };
+        })),
+        dofIds.length > 0
+          ? supabase
+              .from('greige_yarn_delivery_receipts')
+              .select(`
+                dof_id,
+                greige_yarn_delivery_items(
+                  yarn_count_id,
+                  colour,
+                  quantity_kg
+                )
+              `)
+              .in('dof_id', dofIds)
+          : Promise.resolve({ data: [] }),
+        dofNumbers.length > 0
+          ? supabase
+              .from('greige_yarn_receipts')
+              .select('order_form_no, yarn_count_id, colour, total_weight')
+              .eq('receipt_type', 'production')
+              .in('order_form_no', dofNumbers)
+          : Promise.resolve({ data: [] })
+      ]);
+
+      if (receiptsResult.error) throw receiptsResult.error;
+      if (returnsResult.error) throw returnsResult.error;
+
+      // Map delivery items
+      const dMap = {};
+      (receiptsResult.data || []).forEach(r => {
+        if (!dMap[r.dof_id]) {
+          dMap[r.dof_id] = [];
+        }
+        if (r.greige_yarn_delivery_items) {
+          dMap[r.dof_id].push(...r.greige_yarn_delivery_items);
+        }
+      });
+
+      // Map returns
+      const rMap = {};
+      (returnsResult.data || []).forEach(ret => {
+        if (!rMap[ret.order_form_no]) {
+          rMap[ret.order_form_no] = [];
+        }
+        rMap[ret.order_form_no].push(ret);
+      });
+
+      setDeliveryItemsMap(dMap);
+      setReturnsMap(rMap);
       setDyeingForms(formsWithOrders);
     } catch (err) {
       console.error(err);
@@ -154,6 +233,9 @@ export default function DeliveriesList() {
                 <tbody>
                   {dyeingForms.map(form => {
                     const badge = getDeliveryStatusBadge(form.status);
+                    const canDeliver = hasGreigeBalanceToSend(form, deliveryItemsMap, returnsMap) &&
+                      form.status !== 'fully_sent' &&
+                      form.status !== 'received';
                     return (
                       <tr key={form.id} className="fade-in">
                         <td>
@@ -211,15 +293,14 @@ export default function DeliveriesList() {
                             >
                               <Eye size={12} /> View
                             </button>
-                            {form.status !== 'fully_sent' && (
+                            {canDeliver ? (
                               <button
                                 onClick={() => navigate(`/greige-yarn/deliveries/${form.id}`)}
                                 style={{ backgroundColor: '#7f1d1d', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
                               >
                                 <Truck size={12} /> Deliver Yarn
                               </button>
-                            )}
-                            {form.status === 'fully_sent' && (
+                            ) : (
                               <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
                                 <CheckCircle size={12} /> Complete
                               </span>
