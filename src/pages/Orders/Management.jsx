@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Plus, ArrowLeft, Trash2, Loader, 
   ChevronDown, ChevronUp, Info, Layers, 
   Zap, Search, Check, Eye, FileText, 
   Truck, ArrowRight, Package, Calculator,
-  ExternalLink, X, CheckCircle, Clock
+  ExternalLink, X, CheckCircle, Clock,
+  SlidersHorizontal
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -775,6 +776,54 @@ export default function OrdersManagement() {
   const [brands, setBrands] = useState([]);
   const [allDofs, setAllDofs] = useState([]);
   const [allDyrrs, setAllDyrrs] = useState([]);
+  const [partners, setPartners] = useState([]);
+  
+  // Collapsible Filters State
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const [searchOrderNumber, setSearchOrderNumber] = useState('');
+  const [searchMerchandiser, setSearchMerchandiser] = useState('');
+  const [searchBuyer, setSearchBuyer] = useState('');
+  const [searchVendor, setSearchVendor] = useState('');
+  const [searchSeason, setSearchSeason] = useState('');
+  const [searchWeaveType, setSearchWeaveType] = useState('');
+
+  // Unique filter values derived from orders
+  const uniqueMerchandisers = useMemo(() => {
+    return [...new Set(orders.map(o => o.merchandiser_name).filter(Boolean))].sort();
+  }, [orders]);
+
+  const uniqueSeasons = useMemo(() => {
+    return [...new Set(orders.map(o => o.season).filter(Boolean))].sort();
+  }, [orders]);
+
+  const uniqueWeaveTypes = useMemo(() => {
+    return [...new Set(orders.map(o => o.technical_specs?.weave_type).filter(Boolean))].sort();
+  }, [orders]);
+
+  // Filtered Orders calculation
+  const filteredOrders = useMemo(() => {
+    return orders.filter(order => {
+      if (searchOrderNumber && !order.order_number?.toLowerCase().includes(searchOrderNumber.toLowerCase())) {
+        return false;
+      }
+      if (searchMerchandiser && order.merchandiser_name !== searchMerchandiser) {
+        return false;
+      }
+      if (searchBuyer && order.master_brands?.brand_name !== searchBuyer) {
+        return false;
+      }
+      if (searchVendor && order.vendor?.partner_name !== searchVendor) {
+        return false;
+      }
+      if (searchSeason && order.season !== searchSeason) {
+        return false;
+      }
+      if (searchWeaveType && order.technical_specs?.weave_type !== searchWeaveType) {
+        return false;
+      }
+      return true;
+    });
+  }, [orders, searchOrderNumber, searchMerchandiser, searchBuyer, searchVendor, searchSeason, searchWeaveType]);
   
   // Modal tracking
   const [viewDofData, setViewDofData] = useState(null);
@@ -794,16 +843,18 @@ export default function OrdersManagement() {
     setLoading(true);
     try {
       // Fetch Masters for display names and all DOFs/Receipts for warnings
-      const [yarnRes, brandRes, dofsRes, dyrrsRes] = await Promise.all([
+      const [yarnRes, brandRes, dofsRes, dyrrsRes, partnersRes] = await Promise.all([
         supabase.from('master_yarn_counts').select('*'),
         supabase.from('master_brands').select('*'),
         supabase.from('dyeing_order_forms').select('id, dof_number, expected_delivery_date, order_ids, status'),
-        supabase.from('dyed_yarn_receipts').select('id, dof_id, received_date')
+        supabase.from('dyed_yarn_receipts').select('id, dof_id, received_date'),
+        supabase.from('master_partners').select('*')
       ]);
       setYarnCounts(yarnRes.data || []);
       setBrands(brandRes.data || []);
       setAllDofs(dofsRes.data || []);
       setAllDyrrs(dyrrsRes.data || []);
+      setPartners(partnersRes.data || []);
 
       let query = supabase
         .from('orders')
@@ -941,35 +992,183 @@ export default function OrdersManagement() {
       <div style={{ 
         display: 'flex', 
         alignItems: 'center', 
-        gap: '0.75rem', 
+        justifyContent: 'space-between',
         padding: '0.75rem 1rem', 
         backgroundColor: 'var(--surface-current)', 
         border: '1px solid var(--border-current)', 
         borderRadius: 'var(--radius-md)', 
-        marginBottom: '1rem' 
+        marginBottom: '1rem',
+        flexWrap: 'wrap',
+        gap: '1rem'
       }}>
-        <span style={{ fontWeight: 600, fontSize: '0.875rem', marginRight: '0.5rem' }}>Filter:</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600, fontSize: '0.875rem', marginRight: '0.5rem' }}>Filter:</span>
+          {['all', 'drafts', 'active', 'completed', 'bulk', 'sample'].map(f => (
+            <button 
+              key={f}
+              onClick={() => setFilter(f)}
+              style={{
+                padding: '0.5rem 1rem',
+                border: filter === f ? '1px solid var(--color-primary)' : '1px solid var(--border-current)',
+                backgroundColor: filter === f ? 'var(--color-primary)' : 'transparent',
+                color: filter === f ? 'white' : 'var(--text-current)',
+                borderRadius: 'var(--radius-md)',
+                fontWeight: '600',
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+                textTransform: 'capitalize'
+              }}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
         
-        {['all', 'drafts', 'active', 'completed', 'bulk', 'sample'].map(f => (
-          <button 
-            key={f}
-            onClick={() => setFilter(f)}
-            style={{
-              padding: '0.5rem 1rem',
-              border: filter === f ? '1px solid var(--color-primary)' : '1px solid var(--border-current)',
-              backgroundColor: filter === f ? 'var(--color-primary)' : 'transparent',
-              color: filter === f ? 'white' : 'var(--text-current)',
-              borderRadius: 'var(--radius-md)',
-              fontWeight: '600',
-              fontSize: '0.875rem',
-              cursor: 'pointer',
-              textTransform: 'capitalize'
-            }}
-          >
-            {f}
-          </button>
-        ))}
+        <button
+          onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+          style={{
+            padding: '0.5rem 1rem',
+            border: '1px solid var(--border-current)',
+            backgroundColor: isFilterExpanded ? 'var(--color-primary)' : 'transparent',
+            color: isFilterExpanded ? 'white' : 'var(--text-current)',
+            borderRadius: 'var(--radius-md)',
+            fontWeight: '600',
+            fontSize: '0.875rem',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <SlidersHorizontal size={16} />
+          {isFilterExpanded ? 'Hide Filters' : 'Advanced Filters'}
+        </button>
       </div>
+
+      {/* Expandable filter panel */}
+      {isFilterExpanded && (
+        <div style={{
+          backgroundColor: 'var(--surface-current)',
+          border: '1px solid var(--border-current)',
+          borderRadius: 'var(--radius-md)',
+          padding: '1.25rem',
+          marginBottom: '1rem',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '1rem'
+        }} className="fade-in">
+          {/* Filter by Order Number */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Order Number</label>
+            <input
+              type="text"
+              className="input"
+              placeholder="e.g. AT/2026/S/00001"
+              value={searchOrderNumber}
+              onChange={e => setSearchOrderNumber(e.target.value)}
+              style={{ fontSize: '0.85rem', padding: '0.5rem', width: '100%' }}
+            />
+          </div>
+
+          {/* Filter by Merchandiser Name */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Merchandiser</label>
+            <select
+              className="input"
+              value={searchMerchandiser}
+              onChange={e => setSearchMerchandiser(e.target.value)}
+              style={{ fontSize: '0.85rem', padding: '0.5rem', width: '100%' }}
+            >
+              <option value="">All Merchandisers</option>
+              {uniqueMerchandisers.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter by Buyer */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Buyer / Brand</label>
+            <select
+              className="input"
+              value={searchBuyer}
+              onChange={e => setSearchBuyer(e.target.value)}
+              style={{ fontSize: '0.85rem', padding: '0.5rem', width: '100%' }}
+            >
+              <option value="">All Buyers</option>
+              {brands.map(b => (
+                <option key={b.id} value={b.brand_name}>{b.brand_name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter by Vendor */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Vendor Partner</label>
+            <select
+              className="input"
+              value={searchVendor}
+              onChange={e => setSearchVendor(e.target.value)}
+              style={{ fontSize: '0.85rem', padding: '0.5rem', width: '100%' }}
+            >
+              <option value="">All Vendors</option>
+              {partners.map(p => (
+                <option key={p.id} value={p.partner_name}>{p.partner_name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter by Season */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Season</label>
+            <select
+              className="input"
+              value={searchSeason}
+              onChange={e => setSearchSeason(e.target.value)}
+              style={{ fontSize: '0.85rem', padding: '0.5rem', width: '100%' }}
+            >
+              <option value="">All Seasons</option>
+              {uniqueSeasons.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter by Weave Type */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Weave Type</label>
+            <select
+              className="input"
+              value={searchWeaveType}
+              onChange={e => setSearchWeaveType(e.target.value)}
+              style={{ fontSize: '0.85rem', padding: '0.5rem', width: '100%' }}
+            >
+              <option value="">All Weave Types</option>
+              {uniqueWeaveTypes.map(w => (
+                <option key={w} value={w}>{w}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Reset Filters button */}
+          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button
+              onClick={() => {
+                setSearchOrderNumber('');
+                setSearchMerchandiser('');
+                setSearchBuyer('');
+                setSearchVendor('');
+                setSearchSeason('');
+                setSearchWeaveType('');
+              }}
+              className="btn btn-secondary"
+              style={{ padding: '0.5rem 1.25rem', fontSize: '0.875rem', fontWeight: '600' }}
+            >
+              Reset Filters
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Orders List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -982,8 +1181,12 @@ export default function OrdersManagement() {
           <div style={{ textAlign: 'center', padding: '3rem', backgroundColor: 'var(--surface-current)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-current)' }}>
             <p style={{ color: 'var(--text-muted-current)' }}>No orders found for this filter.</p>
           </div>
+        ) : filteredOrders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', backgroundColor: 'var(--surface-current)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-current)' }}>
+            <p style={{ color: 'var(--text-muted-current)', fontWeight: '500' }}>No orders match the selected search filters.</p>
+          </div>
         ) : (
-          orders.map(order => {
+          filteredOrders.map(order => {
             const orderDofs = allDofs.filter(d => d.order_ids && d.order_ids.includes(order.id));
             return (
               <OrderCard 

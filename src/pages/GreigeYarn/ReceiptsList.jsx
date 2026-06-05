@@ -13,9 +13,30 @@ export default function ReceiptsList() {
   // For Printable view
   const [selectedReceipt, setSelectedReceipt] = useState(null);
 
-  useEffect(() => {
-    fetchReceipts();
-  }, [activeTab]);
+  // Group receipts by receipt_no to display multi-count receipts on the same line (using rowspan)
+  const groupedReceipts = React.useMemo(() => {
+    const groups = [];
+    const map = new Map();
+    receipts.forEach((row) => {
+      if (!map.has(row.receipt_no)) {
+        const group = {
+          id: row.id,
+          receipt_no: row.receipt_no,
+          created_at: row.created_at,
+          invoice_no: row.invoice_no,
+          order_form_no: row.order_form_no,
+          master_partners: row.master_partners,
+          invoice_amount: row.invoice_amount,
+          row, // Keep reference to original row object for actions or detail modal
+          items: []
+        };
+        map.set(row.receipt_no, group);
+        groups.push(group);
+      }
+      map.get(row.receipt_no).items.push(row);
+    });
+    return groups;
+  }, [receipts]);
 
   const fetchReceipts = async () => {
     setLoading(true);
@@ -39,7 +60,10 @@ export default function ReceiptsList() {
     setLoading(false);
   };
 
-  const getSpinningCount = () => receipts.length; // Approximate, would normally do distinct query but for now current array size works if we don't paginate
+  useEffect(() => {
+    fetchReceipts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1rem' }} className="fade-in">
@@ -145,55 +169,79 @@ export default function ReceiptsList() {
                   </td>
                 </tr>
               ) : (
-                receipts.map((row) => (
-                  <tr key={row.id}>
-                    <td>{new Date(row.created_at).toLocaleString()}</td>
-                    <td style={{ fontWeight: 'bold' }}>{row.receipt_no}</td>
-                    
-                    {activeTab === 'spinning' ? (
-                      <>
-                        <td>{row.invoice_no || '-'}</td>
-                        <td>{row.master_partners?.partner_name || '-'}</td>
-                        <td>{row.master_yarn_counts ? `${row.master_yarn_counts.count_value} ${row.master_yarn_counts.material} ${row.master_yarn_counts.product_type || ''}` : '-'}</td>
-                        <td>{row.master_locations?.location_name || '-'}</td>
-                      </>
-                    ) : (
-                      <>
-                        <td>{row.order_form_no || '-'}</td>
-                        <td>
-                          {row.master_yarn_counts ? `${row.master_yarn_counts.count_value} ${row.master_yarn_counts.material} ${row.master_yarn_counts.product_type || ''}` : '-'}
-                          {(row.yarn_type || row.colour || row.orders?.order_number) && (
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
-                              {[row.yarn_type, row.colour, row.orders?.order_number].filter(Boolean).join(' • ')}
-                            </div>
-                          )}
-                        </td>
-                        <td>{row.master_locations?.location_name || '-'}</td>
-                      </>
-                    )}
+                groupedReceipts.map((group) => {
+                  const rowSpan = group.items.length;
+                  return (
+                    <React.Fragment key={group.receipt_no}>
+                      {group.items.map((item, index) => {
+                        const isFirst = index === 0;
+                        return (
+                          <tr key={item.id}>
+                            {isFirst && (
+                              <>
+                                <td rowSpan={rowSpan}>{new Date(group.created_at).toLocaleString()}</td>
+                                <td rowSpan={rowSpan} style={{ fontWeight: 'bold' }}>{group.receipt_no}</td>
+                                
+                                {activeTab === 'spinning' ? (
+                                  <>
+                                    <td rowSpan={rowSpan}>{group.invoice_no || '-'}</td>
+                                    <td rowSpan={rowSpan}>{group.master_partners?.partner_name || '-'}</td>
+                                  </>
+                                ) : (
+                                  <td rowSpan={rowSpan}>{group.order_form_no || '-'}</td>
+                                )}
+                              </>
+                            )}
+                            
+                            {activeTab === 'spinning' ? (
+                              <>
+                                <td>{item.master_yarn_counts ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} ${item.master_yarn_counts.product_type || ''}` : '-'}</td>
+                                <td>{item.master_locations?.location_name || '-'}</td>
+                              </>
+                            ) : (
+                              <>
+                                <td>
+                                  {item.master_yarn_counts ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} ${item.master_yarn_counts.product_type || ''}` : '-'}
+                                  {(item.yarn_type || item.colour || item.orders?.order_number) && (
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
+                                      {[item.yarn_type, item.colour, item.orders?.order_number].filter(Boolean).join(' • ')}
+                                    </div>
+                                  )}
+                                </td>
+                                <td>{item.master_locations?.location_name || '-'}</td>
+                              </>
+                            )}
 
-                    <td>{row.bag_count || 0}</td>
-                    <td>{row.cone_count || 0}</td>
-                    <td>{Number(row.bag_weight || 0).toFixed(2)}</td>
-                    <td>{Number(row.cone_weight || 0).toFixed(2)}</td>
-                    <td style={{ fontWeight: 'bold' }}>{Number(row.total_weight).toFixed(2)}</td>
-                    
-                    <td>₹{Number(row.rate_per_kg || 0).toFixed(2)}</td>
-                    
-                    {activeTab === 'spinning' && (
-                      <td>₹{Number(row.invoice_amount || 0).toFixed(2)}</td>
-                    )}
-                    
-                    <td style={{ textAlign: 'right' }}>
-                      <button 
-                        onClick={() => setSelectedReceipt(row)}
-                        style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0 }}
-                      >
-                        View
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                            <td>{item.bag_count || 0}</td>
+                            <td>{item.cone_count || 0}</td>
+                            <td>{Number(item.bag_weight || 0).toFixed(2)}</td>
+                            <td>{Number(item.cone_weight || 0).toFixed(2)}</td>
+                            <td style={{ fontWeight: 'bold' }}>{Number(item.total_weight).toFixed(2)}</td>
+                            
+                            <td>₹{Number(item.rate_per_kg || 0).toFixed(2)}</td>
+                            
+                            {isFirst && (
+                              <>
+                                {activeTab === 'spinning' && (
+                                  <td rowSpan={rowSpan}>₹{Number(group.invoice_amount || 0).toFixed(2)}</td>
+                                )}
+                                
+                                <td rowSpan={rowSpan} style={{ textAlign: 'right' }}>
+                                  <button 
+                                    onClick={() => setSelectedReceipt(group.row)}
+                                    style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0 }}
+                                  >
+                                    View
+                                  </button>
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>
