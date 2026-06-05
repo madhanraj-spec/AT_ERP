@@ -210,6 +210,19 @@ export default function ReceiveYarn() {
         });
       }
 
+      // Fetch returns (GYRR)
+      const { data: returnsData } = await supabase
+        .from('greige_yarn_receipts')
+        .select('order_id, yarn_count_id, colour, total_weight, yarn_type')
+        .eq('receipt_type', 'production')
+        .eq('order_form_no', dof.dof_number);
+
+      const rMap = {};
+      returnsData?.forEach(item => {
+        const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}`;
+        rMap[key] = (rMap[key] || 0) + parseFloat(item.total_weight || 0);
+      });
+
       const { data: dyrrs } = await supabase
         .from('dyed_yarn_receipts')
         .select('id').eq('dof_id', dof.id);
@@ -232,10 +245,17 @@ export default function ReceiveYarn() {
       const initialItems = dof.yarn_allocations.map(alloc => {
         const key = `${alloc.orderId}-${alloc.countId}-${alloc.colour}-${alloc.type}`;
         
-        const sentValue = (sMap[key] || 0) + 
-                          (sMap[`${alloc.orderId}-${alloc.countId}-${alloc.colour}-null`] || 0) +
-                          (sMap[`null-${alloc.countId}-${alloc.colour}-${alloc.type}`] || 0) +
-                          (sMap[`null-${alloc.countId}-${alloc.colour}-null`] || 0);
+        const rawSentValue = (sMap[key] || 0) + 
+                             (sMap[`${alloc.orderId}-${alloc.countId}-${alloc.colour}-null`] || 0) +
+                             (sMap[`null-${alloc.countId}-${alloc.colour}-${alloc.type}`] || 0) +
+                             (sMap[`null-${alloc.countId}-${alloc.colour}-null`] || 0);
+
+        const returnedValue = (rMap[key] || 0) + 
+                              (rMap[`${alloc.orderId}-${alloc.countId}-${alloc.colour}-null`] || 0) +
+                              (rMap[`null-${alloc.countId}-${alloc.colour}-${alloc.type}`] || 0) +
+                              (rMap[`null-${alloc.countId}-${alloc.colour}-null`] || 0);
+
+        const sentValue = Math.max(0, rawSentValue - returnedValue);
         const histValue = hMap[key] || 0;
 
         return {
@@ -319,6 +339,19 @@ export default function ReceiveYarn() {
         });
       }
 
+      // Fetch returns (GYRR)
+      const { data: returnsData } = await supabase
+        .from('greige_yarn_receipts')
+        .select('order_id, yarn_count_id, colour, total_weight, yarn_type')
+        .eq('receipt_type', 'production')
+        .eq('order_form_no', dof.dof_number);
+
+      const rMap = {};
+      returnsData?.forEach(item => {
+        const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}`;
+        rMap[key] = (rMap[key] || 0) + parseFloat(item.total_weight || 0);
+      });
+
       // 4. Fetch Historical Dyed Receipts (Total Received)
       const { data: dyrrs } = await supabase
         .from('dyed_yarn_receipts')
@@ -344,10 +377,17 @@ export default function ReceiveYarn() {
         const key = `${alloc.orderId}-${alloc.countId}-${alloc.colour}-${alloc.type}`;
         
         // Matches: Type-Specific + Legacy-Order-Specific + Fully-Unassigned
-        const sentValue = (sMap[key] || 0) + 
-                          (sMap[`${alloc.orderId}-${alloc.countId}-${alloc.colour}-null`] || 0) +
-                          (sMap[`null-${alloc.countId}-${alloc.colour}-${alloc.type}`] || 0) +
-                          (sMap[`null-${alloc.countId}-${alloc.colour}-null`] || 0);
+        const rawSentValue = (sMap[key] || 0) + 
+                             (sMap[`${alloc.orderId}-${alloc.countId}-${alloc.colour}-null`] || 0) +
+                             (sMap[`null-${alloc.countId}-${alloc.colour}-${alloc.type}`] || 0) +
+                             (sMap[`null-${alloc.countId}-${alloc.colour}-null`] || 0);
+
+        const returnedValue = (rMap[key] || 0) + 
+                              (rMap[`${alloc.orderId}-${alloc.countId}-${alloc.colour}-null`] || 0) +
+                              (rMap[`null-${alloc.countId}-${alloc.colour}-${alloc.type}`] || 0) +
+                              (rMap[`null-${alloc.countId}-${alloc.colour}-null`] || 0);
+
+        const sentValue = Math.max(0, rawSentValue - returnedValue);
         const histValue = hMap[key] || 0;
 
         return {
