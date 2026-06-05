@@ -115,6 +115,7 @@ export default function ReceiveYarn() {
   const [allGydrItems, setAllGydrItems] = useState([]);
   const [allDyrrItems, setAllDyrrItems] = useState([]);
   const [allDyrrs, setAllDyrrs] = useState([]);
+  const [allReturns, setAllReturns] = useState([]);
   const [dofsLoading, setDofsLoading] = useState(false);
   const [expandedDofId, setExpandedDofId] = useState(null);
 
@@ -146,7 +147,7 @@ export default function ReceiveYarn() {
   const fetchAllDofsData = async () => {
     setDofsLoading(true);
     try {
-      const [dofsRes, ordersRes, gydiRes, dyriRes, dyrrsRes] = await Promise.all([
+      const [dofsRes, ordersRes, gydiRes, dyriRes, dyrrsRes, returnsRes] = await Promise.all([
         supabase
           .from('dyeing_order_forms')
           .select('*, dyeing_unit:master_partners(partner_name)')
@@ -154,7 +155,8 @@ export default function ReceiveYarn() {
         supabase.from('orders').select('id, order_number, design_no, design_name'),
         supabase.from('greige_yarn_delivery_items').select('*, receipt:greige_yarn_delivery_receipts(*)'),
         supabase.from('dyed_yarn_receipt_items').select('*, receipt:dyed_yarn_receipts(*)'),
-        supabase.from('dyed_yarn_receipts').select('*')
+        supabase.from('dyed_yarn_receipts').select('*'),
+        supabase.from('greige_yarn_receipts').select('*').eq('receipt_type', 'production')
       ]);
 
       setAllDofs(dofsRes.data || []);
@@ -162,6 +164,7 @@ export default function ReceiveYarn() {
       setAllGydrItems(gydiRes.data || []);
       setAllDyrrItems(dyriRes.data || []);
       setAllDyrrs(dyrrsRes.data || []);
+      setAllReturns(returnsRes.data || []);
     } catch (err) {
       console.error('Error fetching all DOFs:', err);
     } finally {
@@ -660,7 +663,7 @@ export default function ReceiveYarn() {
                       
                       const allocationsStatus = dof.yarn_allocations.map(alloc => {
                         // Greige Sent for this allocation
-                        const sentValue = allGydrItems
+                        const rawSentValue = allGydrItems
                           .filter(item => item.receipt?.dof_id === dof.id && 
                             item.yarn_count_id === alloc.countId && 
                             item.colour === alloc.colour && 
@@ -668,6 +671,18 @@ export default function ReceiveYarn() {
                             (item.order_id === alloc.orderId || !item.order_id)
                           )
                           .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+                        // Greige Returns for this allocation
+                        const returnedValue = allReturns
+                          .filter(item => item.order_form_no === dof.dof_number &&
+                            item.yarn_count_id === alloc.countId &&
+                            item.colour === alloc.colour &&
+                            (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
+                            (item.order_id === alloc.orderId || !item.order_id)
+                          )
+                          .reduce((sum, item) => sum + parseFloat(item.total_weight || 0), 0);
+
+                        const sentValue = Math.max(0, rawSentValue - returnedValue);
 
                         // Dyed Received for this allocation
                         const recValue = allDyrrItems
