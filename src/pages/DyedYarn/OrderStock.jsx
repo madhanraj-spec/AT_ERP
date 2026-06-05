@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Search, Filter, Package, Loader, ChevronRight, ChevronDown,
   FileText, Truck, Download, Layers, CheckCircle2, ClipboardList,
-  Printer, X, User, Calendar, MapPin, AlertCircle, RefreshCw
+  Printer, X, User, Calendar, MapPin, AlertCircle, RefreshCw, SlidersHorizontal
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -33,6 +33,52 @@ export default function OrderStock() {
   // Expanded Order State
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [activeSubTab, setActiveSubTab] = useState('dyeing'); // 'dyeing' | 'warping' | 'weaving'
+
+  // Advanced Filters State
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const [selectedOrderNos, setSelectedOrderNos] = useState([]);
+  const [selectedDesignNames, setSelectedDesignNames] = useState([]);
+  const [selectedDesignNos, setSelectedDesignNos] = useState([]);
+  const [selectedOrderTypes, setSelectedOrderTypes] = useState([]);
+
+  // Dependent Filter Option Calculations
+  const getFilteredOrders = (excludeField) => {
+    return orders.filter(o => {
+      if (excludeField !== 'orderNo' && selectedOrderNos.length > 0) {
+        if (!selectedOrderNos.includes(o.order_number || '')) return false;
+      }
+      if (excludeField !== 'designName' && selectedDesignNames.length > 0) {
+        if (!selectedDesignNames.includes(o.design_name || '')) return false;
+      }
+      if (excludeField !== 'designNo' && selectedDesignNos.length > 0) {
+        if (!selectedDesignNos.includes(o.design_no || '')) return false;
+      }
+      if (excludeField !== 'orderType' && selectedOrderTypes.length > 0) {
+        if (!selectedOrderTypes.includes(o.order_type || '')) return false;
+      }
+      return true;
+    });
+  };
+
+  const uniqueOrderNos = useMemo(() => {
+    const data = getFilteredOrders('orderNo');
+    return [...new Set(data.map(o => o.order_number).filter(Boolean))].sort();
+  }, [orders, selectedDesignNames, selectedDesignNos, selectedOrderTypes]);
+
+  const uniqueDesignNames = useMemo(() => {
+    const data = getFilteredOrders('designName');
+    return [...new Set(data.map(o => o.design_name).filter(Boolean))].sort();
+  }, [orders, selectedOrderNos, selectedDesignNos, selectedOrderTypes]);
+
+  const uniqueDesignNos = useMemo(() => {
+    const data = getFilteredOrders('designNo');
+    return [...new Set(data.map(o => o.design_no).filter(Boolean))].sort();
+  }, [orders, selectedOrderNos, selectedDesignNames, selectedOrderTypes]);
+
+  const uniqueOrderTypes = useMemo(() => {
+    const data = getFilteredOrders('orderType');
+    return [...new Set(data.map(o => o.order_type).filter(Boolean))].sort();
+  }, [orders, selectedOrderNos, selectedDesignNames, selectedDesignNos]);
 
   const handleToggleExpand = async (order) => {
     if (expandedOrderId === order.id) {
@@ -136,11 +182,26 @@ export default function OrderStock() {
     return y ? `${y.count_value} ${y.material}` : '-';
   };
 
-  const filteredOrders = orders.filter(o => 
-    (o.order_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (o.design_no || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (o.design_name || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      // 1. Text Search Term
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        const matchesSearch = 
+          (o.order_number || '').toLowerCase().includes(search) ||
+          (o.design_no || '').toLowerCase().includes(search) ||
+          (o.design_name || '').toLowerCase().includes(search);
+        if (!matchesSearch) return false;
+      }
+      // 2. Advanced Filters
+      if (selectedOrderNos.length > 0 && !selectedOrderNos.includes(o.order_number || '')) return false;
+      if (selectedDesignNames.length > 0 && !selectedDesignNames.includes(o.design_name || '')) return false;
+      if (selectedDesignNos.length > 0 && !selectedDesignNos.includes(o.design_no || '')) return false;
+      if (selectedOrderTypes.length > 0 && !selectedOrderTypes.includes(o.order_type || '')) return false;
+
+      return true;
+    });
+  }, [orders, searchTerm, selectedOrderNos, selectedDesignNames, selectedDesignNos, selectedOrderTypes]);
 
   // Grouped breakdown calculations
   const breakdownData = useMemo(() => {
@@ -368,10 +429,107 @@ export default function OrderStock() {
                 onChange={e => setSearchTerm(e.target.value)}
               />
             </div>
-            <div style={{ color: 'var(--text-muted-current)', fontSize: '0.875rem', fontWeight: '500' }}>
-              Showing {filteredOrders.length} orders
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+              <button
+                onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  border: '1px solid var(--border-current)',
+                  backgroundColor: isFilterExpanded ? 'var(--color-primary)' : 'transparent',
+                  color: isFilterExpanded ? 'white' : 'var(--text-current)',
+                  borderRadius: 'var(--radius-md)',
+                  fontWeight: '600',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  height: '38px',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <SlidersHorizontal size={16} />
+                {isFilterExpanded ? 'Hide Filters' : 'Advanced Filters'}
+              </button>
+              <div style={{ color: 'var(--text-muted-current)', fontSize: '0.875rem', fontWeight: '500' }}>
+                Showing {filteredOrders.length} orders
+              </div>
             </div>
           </div>
+
+          {/* Expandable Filter Panel */}
+          {isFilterExpanded && (
+            <div className="glass-panel fade-in" style={{
+              padding: '1.25rem',
+              backgroundColor: '#fff',
+              border: '1px solid var(--border-current)',
+              borderRadius: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '1rem'
+              }}>
+                <MultiSelectDropdown 
+                  label="Order Number"
+                  options={uniqueOrderNos}
+                  selectedValues={selectedOrderNos}
+                  onChange={setSelectedOrderNos}
+                  placeholder="All Orders"
+                />
+                <MultiSelectDropdown 
+                  label="Design Spec Name"
+                  options={uniqueDesignNames}
+                  selectedValues={selectedDesignNames}
+                  onChange={setSelectedDesignNames}
+                  placeholder="All Design Names"
+                />
+                <MultiSelectDropdown 
+                  label="Design Spec Number"
+                  options={uniqueDesignNos}
+                  selectedValues={selectedDesignNos}
+                  onChange={setSelectedDesignNos}
+                  placeholder="All Design Nos"
+                />
+                <MultiSelectDropdown 
+                  label="Order Type"
+                  options={uniqueOrderTypes}
+                  selectedValues={selectedOrderTypes}
+                  onChange={setSelectedOrderTypes}
+                  placeholder="All Types"
+                />
+              </div>
+
+              {(selectedOrderNos.length > 0 || selectedDesignNames.length > 0 || selectedDesignNos.length > 0 || selectedOrderTypes.length > 0) && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f3f4f6', paddingTop: '0.75rem' }}>
+                  <button 
+                    onClick={() => {
+                      setSelectedOrderNos([]);
+                      setSelectedDesignNames([]);
+                      setSelectedDesignNos([]);
+                      setSelectedOrderTypes([]);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--color-primary)',
+                      cursor: 'pointer',
+                      fontWeight: '700',
+                      fontSize: '0.85rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.25rem'
+                    }}
+                  >
+                    Clear All Filters
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Orders Table/Accordion List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -915,6 +1073,153 @@ export default function OrderStock() {
         />
       )}
 
+    </div>
+  );
+}
+
+// Reusable MultiSelectDropdown Component
+// ──────────────────────────────────────────────────────────────────────────────
+function MultiSelectDropdown({ label, options, selectedValues, onChange, placeholder = "Select..." }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredOptions = options.filter(opt => 
+    opt.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const toggleOption = (val) => {
+    if (selectedValues.includes(val)) {
+      onChange(selectedValues.filter(v => v !== val));
+    } else {
+      onChange([...selectedValues, val]);
+    }
+  };
+
+  const selectAll = () => {
+    onChange(options);
+  };
+
+  const clearAll = () => {
+    onChange([]);
+  };
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1, minWidth: '200px' }}>
+      <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>
+        {label}
+      </label>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '0.5rem 0.75rem',
+          border: '1px solid var(--border-current)',
+          borderRadius: 'var(--radius-md)',
+          backgroundColor: 'var(--surface-current)',
+          color: selectedValues.length > 0 ? 'var(--text-current)' : 'var(--text-muted-current)',
+          fontSize: '0.85rem',
+          cursor: 'pointer',
+          width: '100%',
+          textAlign: 'left',
+          minHeight: '38px'
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>
+          {selectedValues.length === 0 
+            ? placeholder 
+            : selectedValues.length === 1 
+              ? selectedValues[0] 
+              : `${selectedValues.length} Selected`}
+        </span>
+        <span style={{ fontSize: '0.6rem', marginLeft: '0.5rem' }}>▼</span>
+      </button>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          backgroundColor: 'var(--surface-current)',
+          border: '1px solid var(--border-current)',
+          borderRadius: 'var(--radius-md)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          zIndex: 50,
+          marginTop: '4px',
+          padding: '0.5rem',
+          maxHeight: '250px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem'
+        }}>
+          {options.length > 5 && (
+            <input
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.25rem 0.5rem',
+                fontSize: '0.8rem',
+                border: '1px solid var(--border-current)',
+                borderRadius: '4px',
+                backgroundColor: 'transparent',
+                outline: 'none',
+                color: 'var(--text-current)'
+              }}
+            />
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', padding: '0 0.25rem' }}>
+            <button type="button" onClick={selectAll} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: '600' }}>Select All</button>
+            <button type="button" onClick={clearAll} style={{ background: 'none', border: 'none', color: 'var(--text-muted-current)', cursor: 'pointer', fontWeight: '600' }}>Clear All</button>
+          </div>
+          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingRight: '0.25rem' }}>
+            {filteredOptions.length === 0 ? (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)', padding: '0.25rem' }}>No options found</span>
+            ) : (
+              filteredOptions.map(opt => {
+                const isChecked = selectedValues.includes(opt);
+                return (
+                  <label key={opt} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.25rem',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    borderRadius: '4px',
+                    backgroundColor: isChecked ? 'rgba(128, 0, 0, 0.05)' : 'transparent',
+                    transition: 'background-color 0.1s'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleOption(opt)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span style={{ color: 'var(--text-current)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
