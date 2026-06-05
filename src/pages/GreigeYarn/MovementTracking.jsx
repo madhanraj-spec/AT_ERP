@@ -267,86 +267,144 @@ export default function MovementTracking() {
     }));
   };
 
-  // ── Unique Options for Greige Input Tab ──
+  // ── Dependent Filter Helper for Greige Input Tab ──
+  const getFilteredSpinning = (excludeField) => {
+    return spinningReceipts.filter(r => {
+      if (excludeField !== 'receipt' && millReceiptNos.length > 0 && !millReceiptNos.includes(r.receipt_no)) return false;
+      if (excludeField !== 'date' && millDates.length > 0) {
+        const dateStr = r.created_at ? r.created_at.split('T')[0] : '';
+        if (!millDates.includes(dateStr)) return false;
+      }
+      if (excludeField !== 'invoice' && millInvoiceNos.length > 0 && !millInvoiceNos.includes(r.invoice_no || '')) return false;
+      if (excludeField !== 'partner' && millPartners.length > 0) {
+        const partner = r.master_partners?.partner_name || '-';
+        if (!millPartners.includes(partner)) return false;
+      }
+      if (excludeField !== 'count' && millCounts.length > 0) {
+        const countLabel = r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}`.trim() : '-';
+        if (!millCounts.includes(countLabel)) return false;
+      }
+      return true;
+    });
+  };
+
+  // ── Unique Options for Greige Input Tab (Dependent) ──
   const uniqueMillReceiptNos = useMemo(() => {
-    return [...new Set(spinningReceipts.map(r => r.receipt_no).filter(Boolean))].sort();
-  }, [spinningReceipts]);
+    const data = getFilteredSpinning('receipt');
+    return [...new Set(data.map(r => r.receipt_no).filter(Boolean))].sort();
+  }, [spinningReceipts, millDates, millInvoiceNos, millPartners, millCounts]);
 
   const uniqueMillDates = useMemo(() => {
-    const dates = spinningReceipts.map(r => r.created_at ? r.created_at.split('T')[0] : '').filter(Boolean);
+    const data = getFilteredSpinning('date');
+    const dates = data.map(r => r.created_at ? r.created_at.split('T')[0] : '').filter(Boolean);
     return [...new Set(dates)].sort((a, b) => b.localeCompare(a));
-  }, [spinningReceipts]);
+  }, [spinningReceipts, millReceiptNos, millInvoiceNos, millPartners, millCounts]);
 
   const uniqueMillInvoiceNos = useMemo(() => {
-    return [...new Set(spinningReceipts.map(r => r.invoice_no).filter(Boolean))].sort();
-  }, [spinningReceipts]);
+    const data = getFilteredSpinning('invoice');
+    return [...new Set(data.map(r => r.invoice_no).filter(Boolean))].sort();
+  }, [spinningReceipts, millReceiptNos, millDates, millPartners, millCounts]);
 
   const uniqueMillPartners = useMemo(() => {
-    return [...new Set(spinningReceipts.map(r => r.master_partners?.partner_name).filter(Boolean))].sort();
-  }, [spinningReceipts]);
+    const data = getFilteredSpinning('partner');
+    return [...new Set(data.map(r => r.master_partners?.partner_name).filter(Boolean))].sort();
+  }, [spinningReceipts, millReceiptNos, millDates, millInvoiceNos, millCounts]);
 
   const uniqueMillCounts = useMemo(() => {
-    const counts = spinningReceipts.map(r => {
+    const data = getFilteredSpinning('count');
+    const counts = data.map(r => {
       if (!r.master_yarn_counts) return '';
       const { count_value, material, product_type } = r.master_yarn_counts;
       return `${count_value} - ${material} - ${product_type || ''}`.trim();
     }).filter(Boolean);
     return [...new Set(counts)].sort();
-  }, [spinningReceipts]);
+  }, [spinningReceipts, millReceiptNos, millDates, millInvoiceNos, millPartners]);
 
-  // ── Unique Options for Greige Input from Production Tab ──
+  // ── Dependent Filter Helper for Greige Input from Production Tab ──
+  const getFilteredProd = (excludeField) => {
+    return productionReceipts.filter(r => {
+      if (excludeField !== 'receipt' && prodReceiptNos.length > 0 && !prodReceiptNos.includes(r.receipt_no)) return false;
+      if (excludeField !== 'date' && prodDates.length > 0) {
+        const dateStr = r.created_at ? r.created_at.split('T')[0] : '';
+        if (!prodDates.includes(dateStr)) return false;
+      }
+      if (excludeField !== 'orderForm' && prodOrderForms.length > 0 && !prodOrderForms.includes(r.order_form_no || '')) return false;
+      if (excludeField !== 'count' && prodCounts.length > 0) {
+        const countLabel = r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}`.trim() : '-';
+        if (!prodCounts.includes(countLabel)) return false;
+      }
+      return true;
+    });
+  };
+
+  // ── Unique Options for Greige Input from Production Tab (Dependent) ──
   const uniqueProdReceiptNos = useMemo(() => {
-    return [...new Set(productionReceipts.map(r => r.receipt_no).filter(Boolean))].sort();
-  }, [productionReceipts]);
+    const data = getFilteredProd('receipt');
+    return [...new Set(data.map(r => r.receipt_no).filter(Boolean))].sort();
+  }, [productionReceipts, prodDates, prodOrderForms, prodCounts]);
 
   const uniqueProdDates = useMemo(() => {
-    const dates = productionReceipts.map(r => r.created_at ? r.created_at.split('T')[0] : '').filter(Boolean);
+    const data = getFilteredProd('date');
+    const dates = data.map(r => r.created_at ? r.created_at.split('T')[0] : '').filter(Boolean);
     return [...new Set(dates)].sort((a, b) => b.localeCompare(a));
-  }, [productionReceipts]);
+  }, [productionReceipts, prodReceiptNos, prodOrderForms, prodCounts]);
 
   const uniqueProdOrderForms = useMemo(() => {
-    return [...new Set(productionReceipts.map(r => r.order_form_no).filter(Boolean))].sort();
-  }, [productionReceipts]);
+    const data = getFilteredProd('orderForm');
+    return [...new Set(data.map(r => r.order_form_no).filter(Boolean))].sort();
+  }, [productionReceipts, prodReceiptNos, prodDates, prodCounts]);
 
   const uniqueProdCounts = useMemo(() => {
-    const counts = productionReceipts.map(r => {
+    const data = getFilteredProd('count');
+    const counts = data.map(r => {
       if (!r.master_yarn_counts) return '';
       const { count_value, material, product_type } = r.master_yarn_counts;
       return `${count_value} - ${material} - ${product_type || ''}`.trim();
     }).filter(Boolean);
     return [...new Set(counts)].sort();
-  }, [productionReceipts]);
+  }, [productionReceipts, prodReceiptNos, prodDates, prodOrderForms]);
 
-  // ── Unique Options for Greige Output Tab ──
+  // ── Dependent Filter Helper for Greige Output Tab ──
+  const getFilteredDeliveries = (excludeField) => {
+    return groupedDeliveries.filter(row => {
+      if (excludeField !== 'gydr' && outGydrNos.length > 0 && !outGydrNos.includes(row.gydr_number)) return false;
+      if (excludeField !== 'date' && outDates.length > 0) {
+        const dateStr = row.created_at ? row.created_at.split('T')[0] : '';
+        if (!outDates.includes(dateStr)) return false;
+      }
+      if (excludeField !== 'partner' && outPartners.length > 0 && !outPartners.includes(row.partner_name)) return false;
+      if (excludeField !== 'dof' && outDofs.length > 0 && !outDofs.includes(row.dof_number)) return false;
+      if (excludeField !== 'count' && outCounts.length > 0 && !outCounts.includes(row.yarn_label)) return false;
+      return true;
+    });
+  };
+
+  // ── Unique Options for Greige Output Tab (Dependent) ──
   const uniqueOutGydrNos = useMemo(() => {
-    return [...new Set(deliveries.map(r => r.gydr_number).filter(Boolean))].sort();
-  }, [deliveries]);
+    const data = getFilteredDeliveries('gydr');
+    return [...new Set(data.map(r => r.gydr_number).filter(Boolean))].sort();
+  }, [groupedDeliveries, outDates, outPartners, outDofs, outCounts]);
 
   const uniqueOutDates = useMemo(() => {
-    const dates = deliveries.map(r => r.created_at ? r.created_at.split('T')[0] : '').filter(Boolean);
+    const data = getFilteredDeliveries('date');
+    const dates = data.map(r => r.created_at ? r.created_at.split('T')[0] : '').filter(Boolean);
     return [...new Set(dates)].sort((a, b) => b.localeCompare(a));
-  }, [deliveries]);
+  }, [groupedDeliveries, outGydrNos, outPartners, outDofs, outCounts]);
 
   const uniqueOutPartners = useMemo(() => {
-    return [...new Set(deliveries.map(r => r.dyeing_order_forms?.master_partners?.partner_name).filter(Boolean))].sort();
-  }, [deliveries]);
+    const data = getFilteredDeliveries('partner');
+    return [...new Set(data.map(r => r.partner_name).filter(Boolean))].sort();
+  }, [groupedDeliveries, outGydrNos, outDates, outDofs, outCounts]);
 
   const uniqueOutDofs = useMemo(() => {
-    return [...new Set(deliveries.map(r => r.dof_number).filter(Boolean))].sort();
-  }, [deliveries]);
+    const data = getFilteredDeliveries('dof');
+    return [...new Set(data.map(r => r.dof_number).filter(Boolean))].sort();
+  }, [groupedDeliveries, outGydrNos, outDates, outPartners, outCounts]);
 
   const uniqueOutCounts = useMemo(() => {
-    const counts = [];
-    deliveries.forEach(r => {
-      (r.greige_yarn_delivery_items || []).forEach(item => {
-        if (item.master_yarn_counts) {
-          const { count_value, material, product_type } = item.master_yarn_counts;
-          counts.push(`${count_value} - ${material} - ${product_type || ''}`.trim());
-        }
-      });
-    });
-    return [...new Set(counts)].sort();
-  }, [deliveries]);
+    const data = getFilteredDeliveries('count');
+    return [...new Set(data.map(r => r.yarn_label).filter(Boolean))].sort();
+  }, [groupedDeliveries, outGydrNos, outDates, outPartners, outDofs]);
 
   // ── Client-side Filtered Receipts ──
   const filteredSpinningReceipts = useMemo(() => {
