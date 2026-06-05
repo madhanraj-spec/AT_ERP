@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader, Eye, Truck, CheckCircle, Clock, AlertCircle, Send } from 'lucide-react';
+import { ArrowLeft, Loader, Eye, Truck, CheckCircle, Clock, AlertCircle, Send, ChevronRight, ChevronDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const hasGreigeBalanceToSend = (form, deliveryItemsMap, returnsMap) => {
@@ -37,10 +37,24 @@ export default function DeliveriesList() {
   const [dyeingForms, setDyeingForms] = useState([]);
   const [deliveryItemsMap, setDeliveryItemsMap] = useState({});
   const [returnsMap, setReturnsMap] = useState({});
+  const [expandedDofs, setExpandedDofs] = useState({});
+  const [expandedGydrs, setExpandedGydrs] = useState({});
+  const [dofDetails, setDofDetails] = useState({});
+  const [yarnCounts, setYarnCounts] = useState([]);
 
   useEffect(() => {
     fetchDyeingForms();
+    fetchYarnCounts();
   }, []);
+
+  const fetchYarnCounts = async () => {
+    try {
+      const { data } = await supabase.from('master_yarn_counts').select('*');
+      setYarnCounts(data || []);
+    } catch (err) {
+      console.error('Error fetching yarn counts:', err);
+    }
+  };
 
   const fetchDyeingForms = async () => {
     setLoading(true);
@@ -66,7 +80,7 @@ export default function DeliveriesList() {
           if (!form.order_ids || form.order_ids.length === 0) return { ...form, orders: [] };
           const { data: orders } = await supabase
             .from('orders')
-            .select('id, order_number, design_no')
+            .select('id, order_number, design_no, design_name')
             .in('id', form.order_ids);
           return { ...form, orders: orders || [] };
         })),
@@ -123,6 +137,110 @@ export default function DeliveriesList() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchDofDetails = async (dofId, dofNumber) => {
+    if (dofDetails[dofId]) return;
+
+    setDofDetails(prev => ({
+      ...prev,
+      [dofId]: { loading: true, gydrs: [], gydrItems: [], dyrrs: [], dyrrItems: [] }
+    }));
+
+    try {
+      // 1. Fetch GYDRs
+      const { data: gydrsData, error: gydrErr } = await supabase
+        .from('greige_yarn_delivery_receipts')
+        .select('*')
+        .eq('dof_id', dofId)
+        .order('created_at', { ascending: false });
+
+      if (gydrErr) throw gydrErr;
+
+      const gydrIds = (gydrsData || []).map(r => r.id);
+      let gydrItemsData = [];
+      if (gydrIds.length > 0) {
+        const { data: itemsData, error: itemsErr } = await supabase
+          .from('greige_yarn_delivery_items')
+          .select(`
+            *,
+            master_yarn_counts(count, unit)
+          `)
+          .in('receipt_id', gydrIds);
+        if (itemsErr) throw itemsErr;
+        gydrItemsData = itemsData || [];
+      }
+
+      // 2. Fetch DYRRs
+      const { data: dyrrsData, error: dyrrErr } = await supabase
+        .from('dyed_yarn_receipts')
+        .select('*')
+        .eq('dof_id', dofId)
+        .order('received_date', { ascending: false });
+
+      if (dyrrErr) throw dyrrErr;
+
+      const dyrrIds = (dyrrsData || []).map(r => r.id);
+      let dyrrItemsData = [];
+      if (dyrrIds.length > 0) {
+        const { data: itemsData, error: itemsErr } = await supabase
+          .from('dyed_yarn_receipt_items')
+          .select(`
+            *,
+            master_yarn_counts(count, unit)
+          `)
+          .in('receipt_id', dyrrIds);
+        if (itemsErr) throw itemsErr;
+        dyrrItemsData = itemsData || [];
+      }
+
+      setDofDetails(prev => ({
+        ...prev,
+        [dofId]: {
+          loading: false,
+          gydrs: gydrsData || [],
+          gydrItems: gydrItemsData,
+          dyrrs: dyrrsData || [],
+          dyrrItems: dyrrItemsData
+        }
+      }));
+    } catch (err) {
+      console.error('Error fetching DOF details:', err);
+      setDofDetails(prev => ({
+        ...prev,
+        [dofId]: {
+          loading: false,
+          error: err.message,
+          gydrs: [],
+          gydrItems: [],
+          dyrrs: [],
+          dyrrItems: []
+        }
+      }));
+    }
+  };
+
+  const toggleDofExpand = (form) => {
+    const isExpanded = !!expandedDofs[form.id];
+    setExpandedDofs(prev => ({
+      ...prev,
+      [form.id]: !isExpanded
+    }));
+    if (!isExpanded) {
+      fetchDofDetails(form.id, form.dof_number);
+    }
+  };
+
+  const toggleGydrExpand = (gydrId) => {
+    setExpandedGydrs(prev => ({
+      ...prev,
+      [gydrId]: !prev[gydrId]
+    }));
+  };
+
+  const formatCount = (count) => {
+    if (!count) return '';
+    return `${count.count}${count.unit}`;
   };
 
   const getDeliveryStatusBadge = (status) => {
@@ -220,6 +338,7 @@ export default function DeliveriesList() {
               <table className="table" style={{ fontSize: '0.875rem' }}>
                 <thead>
                   <tr>
+                    <th style={{ width: '40px' }}></th>
                     <th>DOF Number</th>
                     <th>Created Date</th>
                     <th>Dyeing Unit</th>
@@ -237,12 +356,26 @@ export default function DeliveriesList() {
                       form.status !== 'fully_sent' &&
                       form.status !== 'received';
                     return (
-                      <tr key={form.id} className="fade-in">
-                        <td>
-                          <span style={{ fontWeight: 'bold', color: 'var(--color-primary)', fontSize: '0.9rem' }}>
-                            {form.dof_number}
-                          </span>
-                        </td>
+                      <React.Fragment key={form.id}>
+                        <tr className="fade-in">
+                          <td>
+                            <button
+                              onClick={() => toggleDofExpand(form)}
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center',
+                                padding: '4px', transform: expandedDofs[form.id] ? 'rotate(90deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.2s'
+                              }}
+                            >
+                              <ChevronRight size={16} />
+                            </button>
+                          </td>
+                          <td>
+                            <span style={{ fontWeight: 'bold', color: 'var(--color-primary)', fontSize: '0.9rem' }}>
+                              {form.dof_number}
+                            </span>
+                          </td>
                         <td style={{ fontSize: '0.8rem' }}>
                           {new Date(form.created_at).toLocaleDateString('en-IN')}
                         </td>
@@ -308,8 +441,214 @@ export default function DeliveriesList() {
                           </div>
                         </td>
                       </tr>
-                    );
-                  })}
+                      {expandedDofs[form.id] && (
+                        <tr>
+                          <td colSpan={9} style={{ backgroundColor: 'var(--bg-light-current, #f8fafc)', padding: '1.5rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                              
+                              {/* Section 1: Greige Yarn Delivery Receipts (GYDRs) */}
+                              <div>
+                                <h4 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '1rem', color: 'var(--text-current)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <Truck size={18} /> Greige Yarn Delivery Receipts (GYDR)
+                                </h4>
+                                
+                                {dofDetails[form.id]?.loading ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem', color: 'var(--text-muted-current)' }}>
+                                    <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> Loading delivery receipts...
+                                  </div>
+                                ) : dofDetails[form.id]?.error ? (
+                                  <div style={{ padding: '1rem', color: '#b91c1c', backgroundColor: '#fee2e2', borderRadius: '4px' }}>
+                                    Error loading receipts: {dofDetails[form.id].error}
+                                  </div>
+                                ) : !dofDetails[form.id]?.gydrs || dofDetails[form.id].gydrs.length === 0 ? (
+                                  <p style={{ color: 'var(--text-muted-current)', fontStyle: 'italic', margin: '0 0 0 1.5rem' }}>
+                                    No greige yarn deliveries have been made for this DOF yet.
+                                  </p>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', paddingLeft: '1.5rem' }}>
+                                    {dofDetails[form.id].gydrs.map(gydr => {
+                                      const gydrItems = (dofDetails[form.id]?.gydrItems || []).filter(item => item.receipt_id === gydr.id);
+                                      const isGydrExpanded = !!expandedGydrs[gydr.id];
+                                      return (
+                                        <div key={gydr.id} className="glass-panel" style={{ padding: '1rem', border: '1px solid var(--border-current)', borderRadius: '6px', backgroundColor: 'var(--bg-panel-current, #fff)' }}>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <div style={{ display: 'flex', gap: '2rem', fontSize: '0.85rem' }}>
+                                              <div>
+                                                <span style={{ color: 'var(--text-muted-current)' }}>Receipt No:</span>{' '}
+                                                <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{gydr.gydr_number}</span>
+                                              </div>
+                                              <div>
+                                                <span style={{ color: 'var(--text-muted-current)' }}>Date:</span>{' '}
+                                                <span style={{ fontWeight: '600' }}>{new Date(gydr.created_at).toLocaleDateString('en-IN')}</span>
+                                              </div>
+                                              <div>
+                                                <span style={{ color: 'var(--text-muted-current)' }}>Delivered By:</span>{' '}
+                                                <span style={{ fontWeight: '600' }}>{gydr.delivered_by}</span>
+                                              </div>
+                                              {gydr.vehicle_no && (
+                                                <div>
+                                                  <span style={{ color: 'var(--text-muted-current)' }}>Vehicle:</span>{' '}
+                                                  <span style={{ fontWeight: '600' }}>{gydr.vehicle_no}</span>
+                                                </div>
+                                              )}
+                                            </div>
+                                            <button
+                                              onClick={() => toggleGydrExpand(gydr.id)}
+                                              className="btn btn-secondary"
+                                              style={{ padding: '2px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                                            >
+                                              {isGydrExpanded ? 'Hide Items' : 'View Items'}
+                                            </button>
+                                          </div>
+                                          
+                                          {isGydrExpanded && (
+                                            <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--border-current)', paddingTop: '0.75rem' }}>
+                                              <table className="table" style={{ fontSize: '0.8rem', width: '100%', margin: 0 }}>
+                                                <thead>
+                                                  <tr>
+                                                    <th style={{ padding: '6px 12px' }}>Count</th>
+                                                    <th style={{ padding: '6px 12px' }}>Colour</th>
+                                                    <th style={{ padding: '6px 12px', textAlign: 'right' }}>Qty Sent (kg)</th>
+                                                    <th style={{ padding: '6px 12px' }}>Date</th>
+                                                    <th style={{ padding: '6px 12px' }}>Person</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {gydrItems.map(item => (
+                                                    <tr key={item.id}>
+                                                      <td style={{ padding: '6px 12px' }}>{formatCount(item.master_yarn_counts)}</td>
+                                                      <td style={{ padding: '6px 12px' }}>{item.colour}</td>
+                                                      <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 'bold' }}>
+                                                        {parseFloat(item.quantity_kg).toFixed(2)} kg
+                                                      </td>
+                                                      <td style={{ padding: '6px 12px' }}>{new Date(gydr.created_at).toLocaleDateString('en-IN')}</td>
+                                                      <td style={{ padding: '6px 12px' }}>{gydr.delivered_by}</td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Section 2: Dyeing & Delivery Summary Table */}
+                              <div>
+                                <h4 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '1rem', color: 'var(--text-current)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <CheckCircle size={18} /> Dyeing & Delivery Summary
+                                </h4>
+                                
+                                {dofDetails[form.id]?.loading ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem', color: 'var(--text-muted-current)' }}>
+                                    <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> Loading summary...
+                                  </div>
+                                ) : (
+                                  <div style={{ paddingLeft: '1.5rem' }}>
+                                    <table className="table" style={{ fontSize: '0.8rem', width: '100%', border: '1px solid var(--border-current)' }}>
+                                      <thead>
+                                        <tr>
+                                          <th>Order Number</th>
+                                          <th>Design No & Name</th>
+                                          <th>Colour</th>
+                                          <th>Count</th>
+                                          <th style={{ textAlign: 'right' }}>Qty Allotted (kg)</th>
+                                          <th style={{ textAlign: 'right' }}>Qty Sent (kg)</th>
+                                          <th style={{ textAlign: 'right' }}>Qty Received (kg)</th>
+                                          <th style={{ textAlign: 'right' }}>Balance to Receive (kg)</th>
+                                          <th>Associated DYRRs</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {(form.yarn_allocations || []).map((alloc, idx) => {
+                                          const order = (form.orders || []).find(o => o.id === alloc.orderId);
+                                          const count = yarnCounts.find(c => c.id === alloc.countId);
+                                          
+                                          // Get deliveries/sent for this specific allocation
+                                          const dofDeliveryItems = dofDetails[form.id]?.gydrItems || [];
+                                          const sentQty = dofDeliveryItems
+                                            .filter(d => d.order_id === alloc.orderId && d.yarn_count_id === alloc.countId && d.colour === alloc.colour && d.yarn_type === alloc.type)
+                                            .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+                                            
+                                          // Subtract production returns if any
+                                          const dofReturns = returnsMap[form.dof_number] || [];
+                                          const returnedQty = dofReturns
+                                            .filter(r => r.order_id === alloc.orderId && r.yarn_count_id === alloc.countId && r.colour === alloc.colour && r.yarn_type === alloc.type)
+                                            .reduce((sum, r) => sum + parseFloat(r.total_weight || 0), 0);
+                                            
+                                          const netSent = Math.max(0, sentQty - returnedQty);
+
+                                          // Get dyed receipts for this specific allocation
+                                          const dofDyrrItems = dofDetails[form.id]?.dyrrItems || [];
+                                          const receivedQty = dofDyrrItems
+                                            .filter(d => d.order_id === alloc.orderId && d.yarn_count_id === alloc.countId && d.colour === alloc.colour && (d.yarn_type || 'warp') === (alloc.type || 'warp'))
+                                            .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+
+                                          const allottedQty = parseFloat(alloc.total_kg || 0);
+                                          const balanceToReceive = Math.max(0, allottedQty - receivedQty);
+
+                                          // Find associated DYRRs
+                                          const allocDyrrItems = dofDyrrItems.filter(d => 
+                                            d.order_id === alloc.orderId && 
+                                            d.yarn_count_id === alloc.countId && 
+                                            d.colour === alloc.colour && 
+                                            (d.yarn_type || 'warp') === (alloc.type || 'warp')
+                                          );
+                                          const dofDyrrs = dofDetails[form.id]?.dyrrs || [];
+
+                                          return (
+                                            <tr key={idx}>
+                                              <td style={{ fontWeight: '600', color: 'var(--color-primary)' }}>
+                                                {order?.order_number || <span style={{ color: 'var(--text-muted-current)' }}>Unassigned</span>}
+                                              </td>
+                                              <td>
+                                                {order ? `${order.design_no} - ${order.design_name || ''}` : '-'}
+                                              </td>
+                                              <td>{alloc.colour}</td>
+                                              <td>
+                                                {count ? formatCount(count) : alloc.yarnLabel}
+                                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', marginLeft: '4px' }}>
+                                                  ({alloc.type || 'warp'})
+                                                </span>
+                                              </td>
+                                              <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{allottedQty.toFixed(2)}</td>
+                                              <td style={{ textAlign: 'right' }}>{netSent.toFixed(2)}</td>
+                                              <td style={{ textAlign: 'right', color: '#166534', fontWeight: 'bold' }}>{receivedQty.toFixed(2)}</td>
+                                              <td style={{ textAlign: 'right', color: balanceToReceive > 0.1 ? '#b91c1c' : 'var(--text-muted-current)', fontWeight: 'bold' }}>
+                                                {balanceToReceive.toFixed(2)}
+                                              </td>
+                                              <td>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                  {allocDyrrItems.map(item => {
+                                                    const r = dofDyrrs.find(rec => rec.id === item.receipt_id);
+                                                    return (
+                                                      <span key={item.id} style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                                        <span style={{ fontWeight: '600' }}>{r?.dyrr_number || 'Unknown'}</span>: {parseFloat(item.quantity_kg).toFixed(2)} kg
+                                                      </span>
+                                                    );
+                                                  })}
+                                                  {allocDyrrItems.length === 0 && <span style={{ color: 'var(--text-muted-current)', fontSize: '0.75rem' }}>-</span>}
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
                 </tbody>
               </table>
             </div>
