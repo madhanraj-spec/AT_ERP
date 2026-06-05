@@ -1,8 +1,156 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader } from 'lucide-react';
+import { ArrowLeft, Loader, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import ReceiptPrintModal from './ReceiptPrintModal';
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Reusable MultiSelectDropdown Component
+// ──────────────────────────────────────────────────────────────────────────────
+function MultiSelectDropdown({ label, options, selectedValues, onChange, placeholder = "Select..." }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredOptions = options.filter(opt => 
+    opt.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const toggleOption = (val) => {
+    if (selectedValues.includes(val)) {
+      onChange(selectedValues.filter(v => v !== val));
+    } else {
+      onChange([...selectedValues, val]);
+    }
+  };
+
+  const selectAll = () => {
+    onChange(options);
+  };
+
+  const clearAll = () => {
+    onChange([]);
+  };
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+      <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>
+        {label}
+      </label>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '0.5rem 0.75rem',
+          border: '1px solid var(--border-current)',
+          borderRadius: 'var(--radius-md)',
+          backgroundColor: 'var(--surface-current)',
+          color: selectedValues.length > 0 ? 'var(--text-current)' : 'var(--text-muted-current)',
+          fontSize: '0.85rem',
+          cursor: 'pointer',
+          width: '100%',
+          textAlign: 'left',
+          minHeight: '38px'
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>
+          {selectedValues.length === 0 
+            ? placeholder 
+            : selectedValues.length === 1 
+              ? selectedValues[0] 
+              : `${selectedValues.length} Selected`}
+        </span>
+        <span style={{ fontSize: '0.6rem', marginLeft: '0.5rem' }}>▼</span>
+      </button>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          backgroundColor: 'var(--surface-current)',
+          border: '1px solid var(--border-current)',
+          borderRadius: 'var(--radius-md)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          zIndex: 50,
+          marginTop: '4px',
+          padding: '0.5rem',
+          maxHeight: '250px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem'
+        }}>
+          {options.length > 5 && (
+            <input
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.25rem 0.5rem',
+                fontSize: '0.8rem',
+                border: '1px solid var(--border-current)',
+                borderRadius: '4px',
+                backgroundColor: 'transparent',
+                outline: 'none',
+                color: 'var(--text-current)'
+              }}
+            />
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', padding: '0 0.25rem' }}>
+            <button type="button" onClick={selectAll} style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: '600' }}>Select All</button>
+            <button type="button" onClick={clearAll} style={{ background: 'none', border: 'none', color: 'var(--text-muted-current)', cursor: 'pointer', fontWeight: '600' }}>Clear All</button>
+          </div>
+          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem', paddingRight: '0.25rem' }}>
+            {filteredOptions.length === 0 ? (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)', padding: '0.25rem' }}>No options found</span>
+            ) : (
+              filteredOptions.map(opt => {
+                const isChecked = selectedValues.includes(opt);
+                return (
+                  <label key={opt} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.25rem',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    borderRadius: '4px',
+                    backgroundColor: isChecked ? 'rgba(99, 102, 241, 0.05)' : 'transparent',
+                    transition: 'background-color 0.1s'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleOption(opt)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span style={{ color: 'var(--text-current)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function MovementTracking() {
   const navigate = useNavigate();
@@ -18,8 +166,49 @@ export default function MovementTracking() {
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [selectedGYDR, setSelectedGYDR] = useState(null);
 
+  // Expandable filters panel state
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+
+  // Greige Input Tab Filters
+  const [millReceiptNos, setMillReceiptNos] = useState([]);
+  const [millDates, setMillDates] = useState([]);
+  const [millInvoiceNos, setMillInvoiceNos] = useState([]);
+  const [millPartners, setMillPartners] = useState([]);
+  const [millCounts, setMillCounts] = useState([]);
+
+  // Greige Input from Production Tab Filters
+  const [prodReceiptNos, setProdReceiptNos] = useState([]);
+  const [prodDates, setProdDates] = useState([]);
+  const [prodOrderForms, setProdOrderForms] = useState([]);
+  const [prodCounts, setProdCounts] = useState([]);
+
+  // Greige Output Tab Filters
+  const [outGydrNos, setOutGydrNos] = useState([]);
+  const [outDates, setOutDates] = useState([]);
+  const [outPartners, setOutPartners] = useState([]);
+  const [outDofs, setOutDofs] = useState([]);
+  const [outCounts, setOutCounts] = useState([]);
+
   useEffect(() => {
     fetchMovements();
+
+    // Reset filters on tab switch
+    setMillReceiptNos([]);
+    setMillDates([]);
+    setMillInvoiceNos([]);
+    setMillPartners([]);
+    setMillCounts([]);
+
+    setProdReceiptNos([]);
+    setProdDates([]);
+    setProdOrderForms([]);
+    setProdCounts([]);
+
+    setOutGydrNos([]);
+    setOutDates([]);
+    setOutPartners([]);
+    setOutDofs([]);
+    setOutCounts([]);
   }, [activeTab]);
 
   const fetchMovements = async () => {
@@ -78,10 +267,128 @@ export default function MovementTracking() {
     }));
   };
 
+  // ── Unique Options for Greige Input Tab ──
+  const uniqueMillReceiptNos = useMemo(() => {
+    return [...new Set(spinningReceipts.map(r => r.receipt_no).filter(Boolean))].sort();
+  }, [spinningReceipts]);
+
+  const uniqueMillDates = useMemo(() => {
+    const dates = spinningReceipts.map(r => r.created_at ? r.created_at.split('T')[0] : '').filter(Boolean);
+    return [...new Set(dates)].sort((a, b) => b.localeCompare(a));
+  }, [spinningReceipts]);
+
+  const uniqueMillInvoiceNos = useMemo(() => {
+    return [...new Set(spinningReceipts.map(r => r.invoice_no).filter(Boolean))].sort();
+  }, [spinningReceipts]);
+
+  const uniqueMillPartners = useMemo(() => {
+    return [...new Set(spinningReceipts.map(r => r.master_partners?.partner_name).filter(Boolean))].sort();
+  }, [spinningReceipts]);
+
+  const uniqueMillCounts = useMemo(() => {
+    const counts = spinningReceipts.map(r => {
+      if (!r.master_yarn_counts) return '';
+      const { count_value, material, product_type } = r.master_yarn_counts;
+      return `${count_value} - ${material} - ${product_type || ''}`.trim();
+    }).filter(Boolean);
+    return [...new Set(counts)].sort();
+  }, [spinningReceipts]);
+
+  // ── Unique Options for Greige Input from Production Tab ──
+  const uniqueProdReceiptNos = useMemo(() => {
+    return [...new Set(productionReceipts.map(r => r.receipt_no).filter(Boolean))].sort();
+  }, [productionReceipts]);
+
+  const uniqueProdDates = useMemo(() => {
+    const dates = productionReceipts.map(r => r.created_at ? r.created_at.split('T')[0] : '').filter(Boolean);
+    return [...new Set(dates)].sort((a, b) => b.localeCompare(a));
+  }, [productionReceipts]);
+
+  const uniqueProdOrderForms = useMemo(() => {
+    return [...new Set(productionReceipts.map(r => r.order_form_no).filter(Boolean))].sort();
+  }, [productionReceipts]);
+
+  const uniqueProdCounts = useMemo(() => {
+    const counts = productionReceipts.map(r => {
+      if (!r.master_yarn_counts) return '';
+      const { count_value, material, product_type } = r.master_yarn_counts;
+      return `${count_value} - ${material} - ${product_type || ''}`.trim();
+    }).filter(Boolean);
+    return [...new Set(counts)].sort();
+  }, [productionReceipts]);
+
+  // ── Unique Options for Greige Output Tab ──
+  const uniqueOutGydrNos = useMemo(() => {
+    return [...new Set(deliveries.map(r => r.gydr_number).filter(Boolean))].sort();
+  }, [deliveries]);
+
+  const uniqueOutDates = useMemo(() => {
+    const dates = deliveries.map(r => r.created_at ? r.created_at.split('T')[0] : '').filter(Boolean);
+    return [...new Set(dates)].sort((a, b) => b.localeCompare(a));
+  }, [deliveries]);
+
+  const uniqueOutPartners = useMemo(() => {
+    return [...new Set(deliveries.map(r => r.dyeing_order_forms?.master_partners?.partner_name).filter(Boolean))].sort();
+  }, [deliveries]);
+
+  const uniqueOutDofs = useMemo(() => {
+    return [...new Set(deliveries.map(r => r.dof_number).filter(Boolean))].sort();
+  }, [deliveries]);
+
+  const uniqueOutCounts = useMemo(() => {
+    const counts = [];
+    deliveries.forEach(r => {
+      (r.greige_yarn_delivery_items || []).forEach(item => {
+        if (item.master_yarn_counts) {
+          const { count_value, material, product_type } = item.master_yarn_counts;
+          counts.push(`${count_value} - ${material} - ${product_type || ''}`.trim());
+        }
+      });
+    });
+    return [...new Set(counts)].sort();
+  }, [deliveries]);
+
+  // ── Client-side Filtered Receipts ──
+  const filteredSpinningReceipts = useMemo(() => {
+    return spinningReceipts.filter(r => {
+      if (millReceiptNos.length > 0 && !millReceiptNos.includes(r.receipt_no)) return false;
+      if (millDates.length > 0) {
+        const dateStr = r.created_at ? r.created_at.split('T')[0] : '';
+        if (!millDates.includes(dateStr)) return false;
+      }
+      if (millInvoiceNos.length > 0 && !millInvoiceNos.includes(r.invoice_no || '')) return false;
+      if (millPartners.length > 0) {
+        const partner = r.master_partners?.partner_name || '-';
+        if (!millPartners.includes(partner)) return false;
+      }
+      if (millCounts.length > 0) {
+        const countLabel = r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}`.trim() : '-';
+        if (!millCounts.includes(countLabel)) return false;
+      }
+      return true;
+    });
+  }, [spinningReceipts, millReceiptNos, millDates, millInvoiceNos, millPartners, millCounts]);
+
+  const filteredProductionReceipts = useMemo(() => {
+    return productionReceipts.filter(r => {
+      if (prodReceiptNos.length > 0 && !prodReceiptNos.includes(r.receipt_no)) return false;
+      if (prodDates.length > 0) {
+        const dateStr = r.created_at ? r.created_at.split('T')[0] : '';
+        if (!prodDates.includes(dateStr)) return false;
+      }
+      if (prodOrderForms.length > 0 && !prodOrderForms.includes(r.order_form_no || '')) return false;
+      if (prodCounts.length > 0) {
+        const countLabel = r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}`.trim() : '-';
+        if (!prodCounts.includes(countLabel)) return false;
+      }
+      return true;
+    });
+  }, [productionReceipts, prodReceiptNos, prodDates, prodOrderForms, prodCounts]);
+
   // Group spinning receipts by receipt_no
   const groupedSpinningReceipts = React.useMemo(() => {
     const groups = {};
-    spinningReceipts.forEach(r => {
+    filteredSpinningReceipts.forEach(r => {
       const key = r.receipt_no;
       if (!groups[key]) {
         groups[key] = {
@@ -107,12 +414,12 @@ export default function MovementTracking() {
       groups[key].rawReceipts.push(r);
     });
     return Object.values(groups);
-  }, [spinningReceipts]);
+  }, [filteredSpinningReceipts]);
 
   // Group production receipts by receipt_no
   const groupedProductionReceipts = React.useMemo(() => {
     const groups = {};
-    productionReceipts.forEach(r => {
+    filteredProductionReceipts.forEach(r => {
       const key = r.receipt_no;
       if (!groups[key]) {
         groups[key] = {
@@ -138,7 +445,7 @@ export default function MovementTracking() {
       groups[key].rawReceipts.push(r);
     });
     return Object.values(groups);
-  }, [productionReceipts]);
+  }, [filteredProductionReceipts]);
 
   // Group deliveries (greige yarn output) by receipt and countId
   const groupedDeliveries = React.useMemo(() => {
@@ -201,6 +508,21 @@ export default function MovementTracking() {
     return list;
   }, [deliveries]);
 
+  // Client-side Filtered Deliveries (flat filter on groupedDeliveries)
+  const filteredGroupedDeliveries = React.useMemo(() => {
+    return groupedDeliveries.filter(row => {
+      if (outGydrNos.length > 0 && !outGydrNos.includes(row.gydr_number)) return false;
+      if (outDates.length > 0) {
+        const dateStr = row.created_at ? row.created_at.split('T')[0] : '';
+        if (!outDates.includes(dateStr)) return false;
+      }
+      if (outPartners.length > 0 && !outPartners.includes(row.partner_name)) return false;
+      if (outDofs.length > 0 && !outDofs.includes(row.dof_number)) return false;
+      if (outCounts.length > 0 && !outCounts.includes(row.yarn_label)) return false;
+      return true;
+    });
+  }, [groupedDeliveries, outGydrNos, outDates, outPartners, outDofs, outCounts]);
+
   return (
     <div style={{ width: '100%', padding: '1rem' }} className="fade-in">
 
@@ -222,27 +544,183 @@ export default function MovementTracking() {
       </div>
 
       <div className="glass-panel" style={{ padding: 0 }}>
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-current)', padding: '0 1.5rem', gap: '2rem' }}>
-          {[
-            { key: 'input_mill', label: `Greige Input (${spinningReceipts.length})` },
-            { key: 'input_prod', label: `Greige Input from Production (${productionReceipts.length})` },
-            { key: 'output', label: `Greige Output (${deliveries.length})` },
-          ].map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              style={{
-                background: 'none', border: 'none', padding: '1.25rem 0', fontWeight: '600', cursor: 'pointer', fontSize: '0.9rem',
-                color: activeTab === tab.key ? 'var(--color-primary)' : 'var(--text-muted-current)',
-                borderBottom: activeTab === tab.key ? '3px solid var(--color-primary)' : '3px solid transparent',
-                transition: 'all 0.2s', whiteSpace: 'nowrap',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Tabs and Filters Toggle */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          borderBottom: '1px solid var(--border-current)',
+          padding: '0 1.5rem',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
+          <div style={{ display: 'flex', gap: '2rem' }}>
+            {[
+              { key: 'input_mill', label: `Greige Input (${spinningReceipts.length})` },
+              { key: 'input_prod', label: `Greige Input from Production (${productionReceipts.length})` },
+              { key: 'output', label: `Greige Output (${deliveries.length})` },
+            ].map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                style={{
+                  background: 'none', border: 'none', padding: '1.25rem 0', fontWeight: '600', cursor: 'pointer', fontSize: '0.9rem',
+                  color: activeTab === tab.key ? 'var(--color-primary)' : 'var(--text-muted-current)',
+                  borderBottom: activeTab === tab.key ? '3px solid var(--color-primary)' : '3px solid transparent',
+                  transition: 'all 0.2s', whiteSpace: 'nowrap',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+            style={{
+              padding: '0.5rem 1rem',
+              border: '1px solid var(--border-current)',
+              backgroundColor: isFilterExpanded ? 'var(--color-primary)' : 'transparent',
+              color: isFilterExpanded ? 'white' : 'var(--text-current)',
+              borderRadius: 'var(--radius-md)',
+              fontWeight: '600',
+              fontSize: '0.875rem',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              margin: '0.5rem 0'
+            }}
+          >
+            <SlidersHorizontal size={16} />
+            {isFilterExpanded ? 'Hide Filters' : 'Advanced Filters'}
+          </button>
         </div>
+
+        {/* Expandable filter panel */}
+        {isFilterExpanded && (
+          <div style={{
+            backgroundColor: 'var(--surface-current)',
+            borderBottom: '1px solid var(--border-current)',
+            padding: '1.25rem',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '1rem'
+          }} className="fade-in">
+            {activeTab === 'input_mill' && (
+              <>
+                <MultiSelectDropdown
+                  label="Receipt Number"
+                  options={uniqueMillReceiptNos}
+                  selectedValues={millReceiptNos}
+                  onChange={setMillReceiptNos}
+                  placeholder="All Receipts"
+                />
+                <MultiSelectDropdown
+                  label="Date"
+                  options={uniqueMillDates}
+                  selectedValues={millDates}
+                  onChange={setMillDates}
+                  placeholder="All Dates"
+                />
+                <MultiSelectDropdown
+                  label="Invoice Number"
+                  options={uniqueMillInvoiceNos}
+                  selectedValues={millInvoiceNos}
+                  onChange={setMillInvoiceNos}
+                  placeholder="All Invoices"
+                />
+                <MultiSelectDropdown
+                  label="Mill Name"
+                  options={uniqueMillPartners}
+                  selectedValues={millPartners}
+                  onChange={setMillPartners}
+                  placeholder="All Mills"
+                />
+                <MultiSelectDropdown
+                  label="Yarn Count"
+                  options={uniqueMillCounts}
+                  selectedValues={millCounts}
+                  onChange={setMillCounts}
+                  placeholder="All Counts"
+                />
+              </>
+            )}
+
+            {activeTab === 'input_prod' && (
+              <>
+                <MultiSelectDropdown
+                  label="Receipt Number"
+                  options={uniqueProdReceiptNos}
+                  selectedValues={prodReceiptNos}
+                  onChange={setProdReceiptNos}
+                  placeholder="All Receipts"
+                />
+                <MultiSelectDropdown
+                  label="Date"
+                  options={uniqueProdDates}
+                  selectedValues={prodDates}
+                  onChange={setProdDates}
+                  placeholder="All Dates"
+                />
+                <MultiSelectDropdown
+                  label="Order Form Number"
+                  options={uniqueProdOrderForms}
+                  selectedValues={prodOrderForms}
+                  onChange={setProdOrderForms}
+                  placeholder="All Orders"
+                />
+                <MultiSelectDropdown
+                  label="Yarn Count"
+                  options={uniqueProdCounts}
+                  selectedValues={prodCounts}
+                  onChange={setProdCounts}
+                  placeholder="All Counts"
+                />
+              </>
+            )}
+
+            {activeTab === 'output' && (
+              <>
+                <MultiSelectDropdown
+                  label="GYDR Number"
+                  options={uniqueOutGydrNos}
+                  selectedValues={outGydrNos}
+                  onChange={setOutGydrNos}
+                  placeholder="All GYDRs"
+                />
+                <MultiSelectDropdown
+                  label="Date"
+                  options={uniqueOutDates}
+                  selectedValues={outDates}
+                  onChange={setOutDates}
+                  placeholder="All Dates"
+                />
+                <MultiSelectDropdown
+                  label="Partner / Unit"
+                  options={uniqueOutPartners}
+                  selectedValues={outPartners}
+                  onChange={setOutPartners}
+                  placeholder="All Partners"
+                />
+                <MultiSelectDropdown
+                  label="DOF Number"
+                  options={uniqueOutDofs}
+                  selectedValues={outDofs}
+                  onChange={setOutDofs}
+                  placeholder="All DOFs"
+                />
+                <MultiSelectDropdown
+                  label="Yarn Count"
+                  options={uniqueOutCounts}
+                  selectedValues={outCounts}
+                  onChange={setOutCounts}
+                  placeholder="All Counts"
+                />
+              </>
+            )}
+          </div>
+        )}
 
         {/* Table */}
         <div className="table-container" style={{ border: 'none', borderRadius: '0' }}>
@@ -347,9 +825,9 @@ export default function MovementTracking() {
 
                 {/* ── GYDR Output ── */}
                 {activeTab === 'output' && (
-                  groupedDeliveries.length === 0
+                  filteredGroupedDeliveries.length === 0
                     ? <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>No greige yarn deliveries logged yet.</td></tr>
-                    : groupedDeliveries.map(row => {
+                    : filteredGroupedDeliveries.map(row => {
                         const expandKey = `${row.receiptId}-${row.countId}`;
                         const isExpanded = !!expandedOutputs[expandKey];
                         
