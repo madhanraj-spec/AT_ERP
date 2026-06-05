@@ -171,6 +171,7 @@ export default function ReceiptsList() {
   const [selectedReceiptNos, setSelectedReceiptNos] = useState([]);
   const [selectedMillNames, setSelectedMillNames] = useState([]);
   const [selectedCounts, setSelectedCounts] = useState([]);
+  const [selectedDofNos, setSelectedDofNos] = useState([]);
 
   // Reset filters on tab switch
   useEffect(() => {
@@ -179,6 +180,7 @@ export default function ReceiptsList() {
     setSelectedReceiptNos([]);
     setSelectedMillNames([]);
     setSelectedCounts([]);
+    setSelectedDofNos([]);
   }, [activeTab]);
 
   // Options derived from receipts list
@@ -193,6 +195,10 @@ export default function ReceiptsList() {
 
   const uniqueMillNames = useMemo(() => {
     return [...new Set(receipts.map(r => r.master_partners?.partner_name).filter(Boolean))].sort();
+  }, [receipts]);
+
+  const uniqueDofNos = useMemo(() => {
+    return [...new Set(receipts.map(r => r.order_form_no).filter(Boolean))].sort();
   }, [receipts]);
 
   const uniqueCounts = useMemo(() => {
@@ -239,9 +245,14 @@ export default function ReceiptsList() {
         if (!selectedCounts.includes(countStr)) return false;
       }
 
+      // 5. DOF Number Filter (Production returns tab only)
+      if (activeTab === 'production' && selectedDofNos.length > 0) {
+        if (!selectedDofNos.includes(row.order_form_no)) return false;
+      }
+
       return true;
     });
-  }, [receipts, selectedDates, searchReceiptNoText, selectedReceiptNos, selectedMillNames, selectedCounts, activeTab]);
+  }, [receipts, selectedDates, searchReceiptNoText, selectedReceiptNos, selectedMillNames, selectedCounts, selectedDofNos, activeTab]);
 
   // Group receipts by receipt_no to display multi-count receipts on the same line (using rowspan)
   const groupedReceipts = useMemo(() => {
@@ -440,6 +451,17 @@ export default function ReceiptsList() {
               />
             )}
 
+            {/* Filter by DOF Numbers (Only visible for Production Returns) */}
+            {activeTab === 'production' && (
+              <MultiSelectDropdown
+                label="Select DOF Numbers"
+                options={uniqueDofNos}
+                selectedValues={selectedDofNos}
+                onChange={setSelectedDofNos}
+                placeholder="All DOFs"
+              />
+            )}
+
             {/* Filter by Yarn Counts */}
             <MultiSelectDropdown
               label="Select Yarn Counts"
@@ -458,6 +480,7 @@ export default function ReceiptsList() {
                   setSelectedReceiptNos([]);
                   setSelectedMillNames([]);
                   setSelectedCounts([]);
+                  setSelectedDofNos([]);
                 }}
                 className="btn btn-secondary"
                 style={{ padding: '0.5rem 1.25rem', fontSize: '0.875rem', fontWeight: '600' }}
