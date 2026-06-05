@@ -331,6 +331,8 @@ function TabOrderInfo({ order }) {
       
       <DetailItem label="Production Qty" value={specs.production_quantity ? `${specs.production_quantity} Mtrs` : '-'} />
       <DetailItem label="Weave Type" value={specs.weave_type} />
+      <DetailItem label="GSM" value={specs.gsm || '-'} />
+      <DetailItem label="Merchandiser" value={order.merchandiser_name || '-'} />
 
       <div style={{ gridColumn: 'span 4', borderTop: '1px dashed #ddd', margin: '0.5rem 0' }}></div>
       

@@ -42,6 +42,7 @@ export default function CreateOrder() {
       finished_width: '',
       order_width: '',
       weave_type: '',
+      gsm: '',
       production_quantity: ''
     },
     // color_mapping: { type: 'warp'|'weft', countId: '', colors: [{ name: '', kg: '' }] }
@@ -512,6 +513,10 @@ export default function CreateOrder() {
                   {WEAVE_TYPES.map(w => <option key={w} value={w}>{w}</option>)}
                 </select>
               </div>
+              <div className="input-group">
+                <label className="input-label">GSM</label>
+                <input type="text" className="input-field" value={formData.technical_specs.gsm || ''} onChange={e => updateTechnicalSpecs('gsm', e.target.value)} placeholder="e.g. 150" />
+              </div>
             </div>
 
             <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
@@ -801,8 +806,8 @@ export default function CreateOrder() {
                   <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
                     <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Finished Width / Order Width</td>
                     <td className="spec-value" style={{ padding: '0.6rem 0.75rem', borderRight: '1px solid var(--border-current)' }}>{formData.technical_specs.finished_width || '-'} / {formData.technical_specs.order_width || '-'}</td>
-                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Weave Type</td>
-                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.technical_specs.weave_type || '-'}</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Weave Type / GSM</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.technical_specs.weave_type || '-'} / {formData.technical_specs.gsm || '-'}</td>
                   </tr>
                   <tr>
                     <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>FOB Date</td>
