@@ -38,26 +38,26 @@ const getDofAlertInfo = (dof, dyrrs) => {
         return {
           type: 'received_on_time',
           label: 'Received On Time',
-          color: '#475569',
-          bgColor: '#f1f5f9',
-          borderColor: '#cbd5e1'
+          color: '#166534',
+          bgColor: '#dcfce7',
+          borderColor: '#bbf7d0'
         };
       } else {
         return {
           type: 'received_late',
           label: 'Received Late',
-          color: '#475569',
-          bgColor: '#f1f5f9',
-          borderColor: '#cbd5e1'
+          color: '#b91c1c',
+          bgColor: '#fee2e2',
+          borderColor: '#fca5a5'
         };
       }
     }
     return {
       type: 'received_on_time',
       label: 'Received On Time',
-      color: '#475569',
-      bgColor: '#f1f5f9',
-      borderColor: '#cbd5e1'
+      color: '#166534',
+      bgColor: '#dcfce7',
+      borderColor: '#bbf7d0'
     };
   }
 

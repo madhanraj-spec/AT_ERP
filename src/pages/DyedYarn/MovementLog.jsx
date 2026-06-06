@@ -8,6 +8,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import DyedReceiptPrintModal from './DyedReceiptPrintModal';
+import DyedDeliveryPrintModal from './DyedDeliveryPrintModal';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Reusable MultiSelectDropdown Component
@@ -163,6 +164,8 @@ export default function DyedYarnMovement() {
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState([]);
   const [yarnCounts, setYarnCounts] = useState([]);
+  const [wofs, setWofs] = useState([]);
+  const [weavings, setWeavings] = useState([]);
   
   // Filters
   const [selectedReceipt, setSelectedReceipt] = useState(null);
@@ -179,6 +182,9 @@ export default function DyedYarnMovement() {
   const [selectedDesignNos, setSelectedDesignNos] = useState([]);
   const [selectedDesignNames, setSelectedDesignNames] = useState([]);
 
+  const wofsMap = useMemo(() => new Map(wofs.map(w => [w.id, w])), [wofs]);
+  const weavingsMap = useMemo(() => new Map(weavings.map(w => [w.id, w])), [weavings]);
+
   useEffect(() => {
     fetchMastersAndData();
     // Reset filters on tab switch
@@ -194,8 +200,14 @@ export default function DyedYarnMovement() {
   const fetchMastersAndData = async () => {
     setLoading(true);
     try {
-      const { data: yarnData } = await supabase.from('master_yarn_counts').select('*');
-      setYarnCounts(yarnData || []);
+      const [yarnData, wofData, weavingData] = await Promise.all([
+        supabase.from('master_yarn_counts').select('*'),
+        supabase.from('warping_order_forms').select('*, partner:master_partners(partner_name)'),
+        supabase.from('weaving_orders').select('*, order:orders(*)')
+      ]);
+      setYarnCounts(yarnData.data || []);
+      setWofs(wofData.data || []);
+      setWeavings(weavingData.data || []);
 
       if (activeTab === 'receipts') {
         const { data, error } = await supabase
@@ -207,7 +219,7 @@ export default function DyedYarnMovement() {
       } else {
         const { data, error } = await supabase
           .from('dyed_yarn_deliveries')
-          .select('*, items:dyed_yarn_delivery_items(*)')
+          .select('*, items:dyed_yarn_delivery_items(*, location:master_locations(location_name), orders(*), yarn_count:master_yarn_counts(*))')
           .order('created_at', { ascending: false });
         if (error) throw error;
         setRecords(data || []);
@@ -357,15 +369,24 @@ export default function DyedYarnMovement() {
 
   const formatYarn = (id) => {
     const y = yarnCounts.find(c => c.id === id);
-    return y ? `${y.count_value}-${y.material}` : '-';
+    return y ? `${y.count_value} ${y.material} ${y.product_type || ''}`.trim() : '-';
   };
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1.5rem' }}>
-      {selectedReceipt && (
+      {selectedReceipt && activeTab === 'receipts' && (
         <DyedReceiptPrintModal 
           receipt={selectedReceipt} 
           onClose={() => setSelectedReceipt(null)} 
+        />
+      )}
+      {selectedReceipt && activeTab === 'deliveries' && (
+        <DyedDeliveryPrintModal 
+          delivery={selectedReceipt} 
+          wof={wofsMap.get(selectedReceipt.items?.[0]?.production_form_id)}
+          weaving={weavingsMap.get(selectedReceipt.items?.[0]?.production_form_id)}
+          onClose={() => setSelectedReceipt(null)} 
+          getFormatCount={formatYarn}
         />
       )}
       
@@ -555,10 +576,33 @@ export default function DyedYarnMovement() {
                           </div>
                         </>
                       ) : (
-                        <>
-                          <div style={{ fontWeight: '700' }}>{r.items?.[0]?.process_type || '-'} Process</div>
-                          <div style={{ fontSize: '0.75rem', color: '#999' }}>Delivered by: {r.delivered_by || '-'}</div>
-                        </>
+                        (() => {
+                          const firstItem = r.items?.[0] || {};
+                          let formNo = '—';
+                          let machineName = '';
+                          if (firstItem.process_type === 'warping') {
+                            const wof = wofsMap.get(firstItem.production_form_id);
+                            if (wof) {
+                              formNo = wof.wof_number;
+                              machineName = wof.machine_name || '';
+                            }
+                          } else if (firstItem.process_type === 'weaving') {
+                            const weaving = weavingsMap.get(firstItem.production_form_id);
+                            if (weaving) {
+                              formNo = weaving.weaving_number;
+                              machineName = '—';
+                            }
+                          }
+                          return (
+                            <>
+                              <div style={{ fontWeight: '700' }}>{formNo}</div>
+                              {machineName && machineName !== '—' && (
+                                <div style={{ fontSize: '0.75rem', color: '#666' }}>Machine: {machineName}</div>
+                              )}
+                              <div style={{ fontSize: '0.75rem', color: '#999' }}>Delivered by: {r.delivered_by || '-'}</div>
+                            </>
+                          );
+                        })()
                       )}
                     </td>
                     <td style={{ padding: '1rem' }}>

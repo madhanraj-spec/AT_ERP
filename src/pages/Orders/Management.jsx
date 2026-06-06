@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Plus, ArrowLeft, Trash2, Loader, 
-  ChevronDown, ChevronUp, Info, Layers, 
+  ChevronDown, ChevronUp, ChevronRight, Info, Layers, 
   Zap, Search, Check, Eye, FileText, 
   Truck, ArrowRight, Package, Calculator,
   ExternalLink, X, CheckCircle, Clock,
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import OrderWarpingTab from './OrderWarpingTab';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers for Expected Delivery Dates & Warning Alerts
@@ -37,26 +38,26 @@ const getDofAlertInfo = (dof, dyrrs) => {
         return {
           type: 'received_on_time',
           label: 'Received On Time',
-          color: '#475569',
-          bgColor: '#f1f5f9',
-          borderColor: '#cbd5e1'
+          color: '#166534',
+          bgColor: '#dcfce7',
+          borderColor: '#bbf7d0'
         };
       } else {
         return {
           type: 'received_late',
           label: 'Received Late',
-          color: '#475569',
-          bgColor: '#f1f5f9',
-          borderColor: '#cbd5e1'
+          color: '#b91c1c',
+          bgColor: '#fee2e2',
+          borderColor: '#fca5a5'
         };
       }
     }
     return {
       type: 'received_on_time',
       label: 'Received On Time',
-      color: '#475569',
-      bgColor: '#f1f5f9',
-      borderColor: '#cbd5e1'
+      color: '#166534',
+      bgColor: '#dcfce7',
+      borderColor: '#bbf7d0'
     };
   }
 
@@ -307,7 +308,10 @@ function OrderCard({ order, basePath, onDelete, yarnCounts, onViewDOF, onViewGYD
                 onViewGYDR={onViewGYDR}
               />
             )}
-            {['warping', 'weaving', 'inspection'].includes(activeTab) && <TabUnderDevelopment title={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} />}
+            {activeTab === 'warping' && (
+              <OrderWarpingTab order={order} />
+            )}
+            {['weaving', 'inspection'].includes(activeTab) && <TabUnderDevelopment title={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} />}
           </div>
         </div>
       )}

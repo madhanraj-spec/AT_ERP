@@ -52,6 +52,14 @@ export default function DyedYarnDashboard() {
       description: 'View all orders with dyed yarn inventory status. Track received quantities, available stock, and receipt details by count and color.',
       linkText: 'View Order Stock',
       path: '/dyed-yarn/orders'
+    },
+    {
+      title: 'Dyed Yarn Stock Inventory',
+      icon: <BarChart size={24} color="#059669" />, 
+      iconBg: '#ecfdf5',
+      description: 'View stock balances by Dyeing Order Form. Track greige sent, dyed received, delivered quantities, and locations.',
+      linkText: 'View Inventory',
+      path: '/dyed-yarn/inventory'
     }
   ];
 
@@ -237,6 +245,25 @@ export default function DyedYarnDashboard() {
             }}
           >
             View Orders
+          </button>
+
+          <button 
+            onClick={() => navigate('/dyed-yarn/inventory')}
+            style={{ 
+              backgroundColor: 'transparent',
+              border: '1px solid var(--border-current)',
+              color: 'var(--text-current)',
+              borderRadius: 'var(--radius-md)',
+              display: 'inline-flex', 
+              gap: '0.5rem', 
+              alignItems: 'center', 
+              fontWeight: '700', 
+              padding: '0.75rem 1.75rem', 
+              fontSize: '0.875rem',
+              cursor: 'pointer'
+            }}
+          >
+            View Inventory
           </button>
         </div>
       </div>

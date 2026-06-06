@@ -43,7 +43,14 @@ export default function MasterDetail() {
 
   const fetchData = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from(config.table).select('*').order('created_at', { ascending: false });
+    let selectQuery = '*';
+    if (type === 'machines') {
+      selectQuery = '*, master_departments(department_name), master_partners(partner_name)';
+    }
+    const { data, error } = await supabase
+      .from(config.table)
+      .select(selectQuery)
+      .order('created_at', { ascending: false });
     if (error) console.error("Fetch error:", error);
     else setItems(data || []);
     setLoading(false);
@@ -214,10 +221,20 @@ export default function MasterDetail() {
         );
       case 'beams':
         return (
-          <div className="input-group">
-            <label className="input-label">Beam Name / Identification</label>
-            <input type="text" name="beam_name" className="input-field" value={formData.beam_name || ''} onChange={handleInputChange} required />
-          </div>
+          <>
+            <div className="input-group">
+              <label className="input-label">Beam Name / Identification</label>
+              <input type="text" name="beam_name" className="input-field" value={formData.beam_name || ''} onChange={handleInputChange} required />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Owner</label>
+              <input type="text" name="owner" className="input-field" value={formData.owner || ''} onChange={handleInputChange} placeholder="e.g. Company / In-House" />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Weight (kg)</label>
+              <input type="number" name="weight" className="input-field" value={formData.weight || ''} onChange={handleInputChange} step="0.01" min="0" placeholder="Beam weight in kg" />
+            </div>
+          </>
         );
       default: return null;
     }
@@ -230,9 +247,21 @@ export default function MasterDetail() {
       case 'brands': return item.brand_name;
       case 'partners': return `${item.partner_name} - [${item.partner_type}]`;
       case 'departments': return item.department_name;
-      case 'machines': return `${item.machine_name} (${item.scope === 'job_work' ? 'Job Work' : 'In-House'})`;
+      case 'machines': {
+        const deptName = item.master_departments?.department_name || 'N/A';
+        if (item.scope === 'job_work') {
+          const partnerName = item.master_partners?.partner_name || 'N/A';
+          return `${item.machine_name} - [Dept: ${deptName}] (Job Work - ${partnerName})`;
+        }
+        return `${item.machine_name} - [Dept: ${deptName}] (In-House)`;
+      }
       case 'locations': return `[${item.warehouse_type}] ${item.location_name}`;
-      case 'beams': return item.beam_name;
+      case 'beams': {
+        const parts = [item.beam_name];
+        if (item.owner) parts.push(`Owner: ${item.owner}`);
+        if (item.weight) parts.push(`${Number(item.weight).toFixed(2)} kg`);
+        return parts.join(' — ');
+      }
       default: return JSON.stringify(item);
     }
   };

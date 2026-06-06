@@ -1,88 +1,224 @@
-import React, { useState } from 'react';
-import { mockProductionJobs, mockForms } from '../../lib/mockData';
-import { PlayCircle, CheckCircle, Clock } from 'lucide-react';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Layers, Package, Zap, ArrowRight, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 
-export default function ProductionBoard() {
-  const [jobs, setJobs] = useState(mockProductionJobs);
+const modules = [
+  {
+    id: 'warping',
+    title: 'Warping Order Form',
+    description: 'Create and manage warping order forms for in-house machines and job work partners. Track colour allotments, machine assignments, and progress.',
+    icon: Layers,
+    color: '#800000',
+    lightColor: 'rgba(128,0,0,0.08)',
+    path: '/production/warping-forms',
+    available: true,
+    stats: [
+      { label: 'In-House', icon: '🏭' },
+      { label: 'Job Work', icon: '🤝' },
+    ]
+  },
+  {
+    id: 'sizing',
+    title: 'Sizing Order Form',
+    description: 'Manage sizing processes for warp beams, track starch recipes, machine allocations, and beam handover records.',
+    icon: Package,
+    color: '#0ea5e9',
+    lightColor: 'rgba(14,165,233,0.08)',
+    path: '/production/sizing-forms',
+    available: false,
+  },
+  {
+    id: 'weaving',
+    title: 'Weaving Order Form',
+    description: 'Issue weaving order forms to loom operators, assign sized beams to looms, and monitor fabric production progress.',
+    icon: Zap,
+    color: '#10b981',
+    lightColor: 'rgba(16,185,129,0.08)',
+    path: '/production/weaving-forms',
+    available: false,
+  },
+];
 
-  const startJob = (id) => {
-    setJobs(jobs.map(j => j.id === id ? { ...j, status: 'in_progress' } : j));
-  };
-
-  const completeJob = (id) => {
-    setJobs(jobs.map(j => j.id === id ? { ...j, status: 'completed' } : j));
-  };
+export default function ProductionHub() {
+  const navigate = useNavigate();
 
   return (
-    <div>
-      <h1 style={{ marginBottom: '0.5rem' }}>Production Kanban Board</h1>
-      <p style={{ color: 'var(--text-muted-current)', marginBottom: '2rem' }}>
-        Track ongoing production jobs across in-house and vendor units.
-      </p>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-        {/* Scheduled Column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted-current)' }}>
-            <Clock size={18} /> Scheduled
-          </h3>
-          {jobs.filter(j => j.status === 'pending' || j.status === 'scheduled').map(job => (
-             <JobCard key={job.id} job={job} action={() => startJob(job.id)} actionLabel="Start Job" icon={<PlayCircle size={16}/>} btnClass="btn-primary" />
-          ))}
-          {jobs.filter(j => j.status === 'pending' || j.status === 'scheduled').length === 0 && (
-            <div className="glass-panel" style={{ textAlign: 'center', color: 'var(--text-muted-current)' }}>No pending jobs</div>
-          )}
+    <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '1rem' }}>
+      {/* Header */}
+      <div style={{ marginBottom: '2.5rem' }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+          marginBottom: '0.5rem'
+        }}>
+          <div style={{
+            width: '42px', height: '42px',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, #800000, #4d0000)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Layers size={22} color="white" />
+          </div>
+          <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '800', color: 'var(--text-current)' }}>
+            Production Management
+          </h1>
         </div>
-
-        {/* In Progress Column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#3b82f6' }}>
-            <PlayCircle size={18} /> In Progress
-          </h3>
-          {jobs.filter(j => j.status === 'in_progress').map(job => (
-             <JobCard key={job.id} job={job} action={() => completeJob(job.id)} actionLabel="Mark Complete" icon={<CheckCircle size={16}/>} btnClass="btn-success" />
-          ))}
-        </div>
-
-        {/* Completed Column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-success)' }}>
-            <CheckCircle size={18} /> Completed
-          </h3>
-          {jobs.filter(j => j.status === 'completed').map(job => (
-             <JobCard key={job.id} job={job} action={null} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function JobCard({ job, action, actionLabel, icon, btnClass }) {
-  const form = mockForms.find(f => f.id === job.form_id);
-  
-  return (
-    <div className="glass-panel fade-in hover-lift" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <span className="badge badge-info" style={{ textTransform: 'capitalize' }}>{job.job_type}</span>
-        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>{job.id}</span>
-      </div>
-      
-      <div>
-        <div style={{ fontWeight: 500, fontSize: '0.875rem' }}>Vendor: {job.vendor_name || 'Unassigned'}</div>
-        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>Order Ref: {form?.order_id}</div>
+        <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.9rem', paddingLeft: '3.25rem' }}>
+          Manage your production pipeline — from warping to weaving. Select a module to get started.
+        </p>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-         <div>Qty Issued: <strong>{job.qty_issued || 0}</strong></div>
-         <div>Qty Received: <strong>{job.qty_received || 0}</strong></div>
+      {/* Module Cards */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+        gap: '1.5rem'
+      }}>
+        {modules.map((mod) => {
+          const Icon = mod.icon;
+          return (
+            <div
+              key={mod.id}
+              className="hover-lift"
+              onClick={() => mod.available && navigate(mod.path)}
+              style={{
+                backgroundColor: 'var(--surface-current)',
+                border: '1px solid var(--border-current)',
+                borderRadius: '16px',
+                padding: '1.75rem',
+                cursor: mod.available ? 'pointer' : 'default',
+                transition: 'all 0.2s ease',
+                position: 'relative',
+                overflow: 'hidden',
+                opacity: mod.available ? 1 : 0.72,
+              }}
+            >
+              {/* Subtle gradient background accent */}
+              <div style={{
+                position: 'absolute',
+                top: 0, right: 0,
+                width: '120px', height: '120px',
+                borderRadius: '0 16px 0 120px',
+                background: mod.lightColor,
+                pointerEvents: 'none'
+              }} />
+
+              {/* Coming Soon badge */}
+              {!mod.available && (
+                <div style={{
+                  position: 'absolute',
+                  top: '1rem', right: '1rem',
+                  backgroundColor: '#f1f5f9',
+                  color: '#64748b',
+                  fontSize: '0.65rem',
+                  fontWeight: '800',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  padding: '3px 10px',
+                  borderRadius: '20px',
+                  border: '1px solid #e2e8f0'
+                }}>
+                  Coming Soon
+                </div>
+              )}
+
+              {/* Icon */}
+              <div style={{
+                width: '52px', height: '52px',
+                borderRadius: '12px',
+                backgroundColor: mod.lightColor,
+                border: `1.5px solid ${mod.color}30`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: '1.25rem'
+              }}>
+                <Icon size={26} color={mod.color} />
+              </div>
+
+              {/* Title */}
+              <h2 style={{
+                margin: '0 0 0.5rem 0',
+                fontSize: '1.1rem',
+                fontWeight: '800',
+                color: 'var(--text-current)'
+              }}>
+                {mod.title}
+              </h2>
+
+              {/* Description */}
+              <p style={{
+                margin: '0 0 1.5rem 0',
+                color: 'var(--text-muted-current)',
+                fontSize: '0.85rem',
+                lineHeight: '1.55'
+              }}>
+                {mod.description}
+              </p>
+
+              {/* Stats chips */}
+              {mod.stats && (
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                  {mod.stats.map((s, i) => (
+                    <span key={i} style={{
+                      backgroundColor: mod.lightColor,
+                      color: mod.color,
+                      border: `1px solid ${mod.color}25`,
+                      padding: '3px 10px',
+                      borderRadius: '20px',
+                      fontSize: '0.75rem',
+                      fontWeight: '700'
+                    }}>
+                      {s.icon} {s.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* CTA */}
+              {mod.available ? (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  color: mod.color,
+                  fontWeight: '700',
+                  fontSize: '0.875rem'
+                }}>
+                  Open Module <ArrowRight size={16} />
+                </div>
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  color: '#94a3b8',
+                  fontWeight: '600',
+                  fontSize: '0.875rem'
+                }}>
+                  <Clock size={15} /> Under Development
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {action && (
-        <button onClick={action} className={`btn ${btnClass}`} style={{ width: '100%', marginTop: '0.5rem', padding: '0.4rem', backgroundColor: btnClass==='btn-success' ? 'var(--color-success)' : '' }}>
-          {icon} {actionLabel}
-        </button>
-      )}
+      {/* Info note */}
+      <div style={{
+        marginTop: '2.5rem',
+        padding: '1rem 1.25rem',
+        backgroundColor: 'rgba(128,0,0,0.05)',
+        border: '1px solid rgba(128,0,0,0.15)',
+        borderRadius: '10px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '0.75rem'
+      }}>
+        <AlertCircle size={18} color="#800000" style={{ marginTop: '1px', flexShrink: 0 }} />
+        <p style={{ margin: 0, fontSize: '0.825rem', color: 'var(--text-muted-current)', lineHeight: '1.5' }}>
+          Production order forms are linked to approved orders. Ensure orders are created and approved in the Orders module before creating warping order forms.
+        </p>
+      </div>
     </div>
   );
 }

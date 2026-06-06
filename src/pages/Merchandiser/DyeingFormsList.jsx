@@ -38,9 +38,9 @@ const getDofAlertInfo = (form, dyrrs) => {
         return {
           type: 'received_late',
           label: 'Received Late',
-          color: '#475569',
-          bgColor: '#f1f5f9',
-          borderColor: '#cbd5e1'
+          color: '#b91c1c',
+          bgColor: '#fee2e2',
+          borderColor: '#fca5a5'
         };
       }
     }

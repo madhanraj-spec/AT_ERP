@@ -1,0 +1,97 @@
+import React, { useState } from 'react';
+import { ChevronDown, ChevronRight, Printer } from 'lucide-react';
+
+/**
+ * DYDRDetail renders a single Dyed Yarn Delivery Receipt (DYDR) entry.
+ * Initially shows only DYDR Number, Date, and Delivered By.
+ * Clicking the row expands to reveal a table of colour, yarn count, lot, and quantity.
+ * A Print button triggers the onPrint callback.
+ */
+export default function DYDRDetail({ dydr, onPrint }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const toggle = () => setExpanded(!expanded);
+
+  const date = dydr.delivered_date
+    ? new Date(dydr.delivered_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '—';
+  const deliveredBy = dydr.delivered_by || '—';
+
+  return (
+    <div style={{ marginBottom: '0.75rem', maxWidth: '800px' }}>
+      {/* Collapsed row */}
+      <div
+        onClick={toggle}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          cursor: 'pointer',
+          padding: '0.6rem 1rem',
+          backgroundColor: expanded ? 'var(--surface-current)' : 'transparent',
+          border: '1px solid var(--border-current)',
+          borderRadius: '6px',
+          gap: '1rem',
+          fontSize: '0.8rem',
+          transition: 'all 0.2s ease-in-out'
+        }}
+      >
+        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <div style={{ minWidth: '120px', fontWeight: '700', color: '#800000', fontFamily: 'monospace' }}>
+          {dydr.dydr_number || '—'}
+        </div>
+        <div style={{ minWidth: '120px', color: 'var(--text-current)' }}>{date}</div>
+        <div style={{ minWidth: '150px', color: 'var(--text-current)' }}>{deliveredBy}</div>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onPrint && onPrint(dydr); }}
+          style={{
+            marginLeft: 'auto',
+            background: 'transparent',
+            border: '1px solid #800000',
+            borderRadius: '4px',
+            padding: '0.25rem 0.5rem',
+            fontSize: '0.75rem',
+            color: '#800000',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.25rem',
+            fontWeight: '600'
+          }}
+        >
+          <Printer size={12} /> Print
+        </button>
+      </div>
+
+      {/* Expanded details */}
+      {expanded && (
+        <div style={{ padding: '0.75rem 1rem', borderLeft: '3px solid #800000', backgroundColor: '#fff', borderBottom: '1px solid var(--border-current)', borderRight: '1px solid var(--border-current)', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)' }}>
+                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', textAlign: 'left', color: '#800000' }}>Colour</th>
+                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', textAlign: 'left', color: '#800000' }}>Yarn Count</th>
+                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', textAlign: 'left', color: '#800000' }}>Lot Number</th>
+                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', textAlign: 'right', color: '#800000' }}>Qty (kg)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dydr.items.map((item, idx) => {
+                const yc = item.yarn_count;
+                const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : '—';
+                return (
+                  <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>{item.colour || '—'}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{countDisplay}</td>
+                    <td style={{ padding: '0.5rem 0.75rem' }}>{item.lot_number || '—'}</td>
+                    <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '600' }}>{Number(item.quantity_kg || 0).toFixed(2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

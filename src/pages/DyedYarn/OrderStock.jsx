@@ -7,6 +7,22 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
+function getYarnStatusBadge(allotments, associatedDydrs) {
+  const totalAllotted = (allotments || []).reduce((sum, a) => sum + parseFloat(a.allotted_qty || a.kg || a.allottedQty || 0), 0);
+  const totalDelivered = (associatedDydrs || []).reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+
+  if (totalAllotted === 0) {
+    return { label: 'Not Required', bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' };
+  }
+  if (totalDelivered === 0) {
+    return { label: 'Not Delivered', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
+  }
+  if (totalDelivered < totalAllotted - 0.05) {
+    return { label: 'Partially Delivered', bg: '#fef9c3', color: '#854d0e', border: '#fde047' };
+  }
+  return { label: 'Delivered', bg: '#dcfce7', color: '#166534', border: '#86efac' };
+}
+
 export default function OrderStock() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -33,6 +49,22 @@ export default function OrderStock() {
   // Expanded Order State
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [activeSubTab, setActiveSubTab] = useState('dyeing'); // 'dyeing' | 'warping' | 'weaving'
+  const [expandedWofs, setExpandedWofs] = useState({});
+  const [expandedDydrs, setExpandedDydrs] = useState({});
+
+  const handleToggleExpandWof = (wofId) => {
+    setExpandedWofs(prev => ({
+      ...prev,
+      [wofId]: !prev[wofId]
+    }));
+  };
+
+  const handleToggleExpandDydr = (dydrNo) => {
+    setExpandedDydrs(prev => ({
+      ...prev,
+      [dydrNo]: !prev[dydrNo]
+    }));
+  };
 
   // Advanced Filters State
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
@@ -134,11 +166,11 @@ export default function OrderStock() {
           .eq('order_id', order.id),
         supabase
           .from('dyed_yarn_delivery_items')
-          .select('*, delivery:dyed_yarn_deliveries(*)')
+          .select('*, delivery:dyed_yarn_deliveries(*), location:master_locations(location_name), yarn_count:master_yarn_counts(*)')
           .eq('order_id', order.id),
         supabase
-          .from('warping_orders')
-          .select('*')
+          .from('warping_order_forms')
+          .select('*, machine:master_machines(machine_name), partner:master_partners(partner_name)')
           .eq('order_id', order.id),
         supabase
           .from('weaving_orders')
@@ -894,9 +926,9 @@ export default function OrderStock() {
                                       <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
                                         <th style={thStyle}>Count</th>
                                         <th style={thStyle}>Colour</th>
-                                        <th style={numericThStyle}>Required (kg)</th>
-                                        <th style={numericThStyle}>Dyed Received (kg)</th>
-                                        <th style={numericThStyle}>Delivered to Warping (kg)</th>
+                                        <th style={numericThStyle}>Total Dyed Yarn Requirement (kg)</th>
+                                        <th style={numericThStyle}>Dyed Yarn Received (kg)</th>
+                                        <th style={numericThStyle}>Dyed Yarn Delivered (kg)</th>
                                         <th style={numericThStyle}>Received from Warping (kg)</th>
                                       </tr>
                                     </thead>
@@ -929,55 +961,303 @@ export default function OrderStock() {
                                 <h4 style={{ fontSize: '0.95rem', fontWeight: '800', margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                   <FileText size={16} color="var(--color-primary)" /> Warping Stage Documents
                                 </h4>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
-                                  
-                                  {/* DYDR list for warping */}
-                                  <div style={docBoxStyle}>
-                                    <h5 style={docBoxTitleStyle}>Dyed Deliveries (DYDR)</h5>
-                                    <div style={docListContainerStyle}>
-                                      {associatedDocs.dydrs.filter(d => (d.greige_yarn_delivery_items || d.dyed_yarn_delivery_items || []).some(item => item.process_type === 'warping')).length === 0 ? (
-                                        <div style={emptyDocStyle}>No DYDRs linked</div>
-                                      ) : (
-                                        associatedDocs.dydrs.filter(d => (d.greige_yarn_delivery_items || d.dyed_yarn_delivery_items || []).some(item => item.process_type === 'warping')).map(d => (
-                                          <div 
-                                            key={d.id} 
-                                            onClick={() => setActiveModal({ type: 'dydr', data: d })}
-                                            style={docItemStyle}
-                                            className="hover-lift"
-                                          >
-                                            <div style={{ fontWeight: '700' }}>{d.dydr_number}</div>
-                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
-                                              {d.delivered_by} • {new Date(d.created_at).toLocaleDateString()}
-                                            </div>
-                                          </div>
-                                        ))
-                                      )}
-                                    </div>
-                                  </div>
+                                
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                  {associatedDocs.warping.length === 0 ? (
+                                    <div style={emptyDocStyle}>No Warping Orders linked</div>
+                                  ) : (
+                                    associatedDocs.warping.map(w => {
+                                      const isWofExpanded = expandedWofs[w.id];
+                                      const wofDydi = dydi.filter(item => item.production_form_id === w.id && item.process_type === 'warping');
+                                      const yarnBadge = getYarnStatusBadge(w.colour_allotments, wofDydi);
 
-                                  {/* Warping orders list */}
-                                  <div style={docBoxStyle}>
-                                    <h5 style={docBoxTitleStyle}>Warping Orders</h5>
-                                    <div style={docListContainerStyle}>
-                                      {associatedDocs.warping.length === 0 ? (
-                                        <div style={emptyDocStyle}>No Warping Orders linked</div>
-                                      ) : (
-                                        associatedDocs.warping.map(w => (
+                                      // Group delivery items by delivery dydr_number
+                                      const dydrGroups = {};
+                                      wofDydi.forEach(item => {
+                                        const delivery = item.delivery;
+                                        if (!delivery) return;
+                                        if (!dydrGroups[delivery.dydr_number]) {
+                                          dydrGroups[delivery.dydr_number] = {
+                                            dydr_number: delivery.dydr_number,
+                                            delivered_date: delivery.delivered_date,
+                                            delivered_by: delivery.delivered_by || '—',
+                                            vehicle_no: delivery.vehicle_no || '—',
+                                            items: []
+                                          };
+                                        }
+                                        dydrGroups[delivery.dydr_number].items.push(item);
+                                      });
+
+                                      return (
+                                        <div 
+                                          key={w.id} 
+                                          style={{ 
+                                            border: '1px solid var(--border-current)', 
+                                            borderRadius: '8px', 
+                                            backgroundColor: '#fff', 
+                                            overflow: 'hidden',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.01)'
+                                          }}
+                                        >
+                                          {/* WOF Header Row */}
                                           <div 
-                                            key={w.id} 
-                                            onClick={() => setActiveModal({ type: 'warping', data: w })}
-                                            style={docItemStyle}
-                                            className="hover-lift"
+                                            onClick={() => handleToggleExpandWof(w.id)}
+                                            style={{ 
+                                              padding: '0.85rem 1.25rem', 
+                                              backgroundColor: '#fdfdfd', 
+                                              cursor: 'pointer', 
+                                              display: 'flex', 
+                                              justifyContent: 'space-between', 
+                                              alignItems: 'center',
+                                              borderBottom: isWofExpanded ? '1px solid var(--border-current)' : '1px solid transparent'
+                                            }}
                                           >
-                                            <div style={{ fontWeight: '700' }}>{w.warping_number}</div>
-                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
-                                              Design: {w.design_no} • Status: {w.status}
+                                            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1.2fr 0.9fr 0.9fr 1.3fr 1.2fr 0.9fr 1.1fr', gap: '1rem', alignItems: 'center' }}>
+                                              <div>
+                                                <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)', display: 'block' }}>WOF Number</span>
+                                                <span style={{ fontWeight: '800', fontSize: '0.9rem', color: '#800000', fontFamily: 'monospace' }}>{w.wof_number}</span>
+                                              </div>
+                                              <div>
+                                                <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)', display: 'block' }}>Quantity</span>
+                                                <span style={{ fontWeight: '700', fontSize: '0.825rem' }}>{w.qty ? `${w.qty} m` : '—'}</span>
+                                              </div>
+                                              <div>
+                                                <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)', display: 'block' }}>Type</span>
+                                                <span style={{ 
+                                                  fontSize: '0.7rem', 
+                                                  fontWeight: '800', 
+                                                  color: w.wof_type === 'job_work' ? '#059669' : '#800000',
+                                                  textTransform: 'uppercase'
+                                                }}>
+                                                  {w.wof_type === 'job_work' ? 'Job Work' : 'In House'}
+                                                </span>
+                                              </div>
+                                              <div>
+                                                <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)', display: 'block' }}>
+                                                  {w.wof_type === 'job_work' ? 'Partner' : 'Machine'}
+                                                </span>
+                                                <span style={{ fontSize: '0.825rem', fontWeight: '600' }}>
+                                                  {w.wof_type === 'job_work' 
+                                                    ? (w.partner_name || w.partner?.partner_name || '—') 
+                                                    : (w.machine_name || w.machine?.machine_name || '—')}
+                                                </span>
+                                              </div>
+                                              <div>
+                                                <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)', display: 'block' }}>Timeline</span>
+                                                <span style={{ fontSize: '0.75rem', color: '#334155', fontWeight: '500' }}>
+                                                  {w.start_date ? new Date(w.start_date).toLocaleDateString() : '—'} to {w.end_date ? new Date(w.end_date).toLocaleDateString() : '—'}
+                                                </span>
+                                              </div>
+                                              <div>
+                                                <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)', display: 'block' }}>Status</span>
+                                                <span style={{
+                                                  backgroundColor: w.status === 'completed' ? '#dcfce7' : w.status === 'stopped' ? '#fff7ed' : w.status === 'on_process' ? '#dbeafe' : '#fef9c3',
+                                                  color: w.status === 'completed' ? '#166534' : w.status === 'stopped' ? '#c2410c' : w.status === 'on_process' ? '#1d4ed8' : '#854d0e',
+                                                  padding: '2px 8px', borderRadius: '12px', fontSize: '0.65rem', fontWeight: '800', textTransform: 'uppercase', display: 'inline-block', marginTop: '2px'
+                                                }}>
+                                                  {w.status || 'created'}
+                                                </span>
+                                              </div>
+                                              <div>
+                                                <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)', display: 'block' }}>Yarn Status</span>
+                                                <span style={{
+                                                  backgroundColor: yarnBadge.bg,
+                                                  color: yarnBadge.color,
+                                                  border: `1px solid ${yarnBadge.border}`,
+                                                  padding: '2px 8px', borderRadius: '12px', fontSize: '0.65rem', fontWeight: '800', textTransform: 'uppercase', display: 'inline-block', marginTop: '2px'
+                                                }}>
+                                                  {yarnBadge.label}
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <div style={{ marginLeft: '1rem', color: '#64748b' }}>
+                                              <ChevronDown size={18} style={{ transform: isWofExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                                             </div>
                                           </div>
-                                        ))
-                                      )}
-                                    </div>
-                                  </div>
+
+                                          {/* WOF Expanded Content */}
+                                          {isWofExpanded && (
+                                            <div style={{ padding: '1.25rem', backgroundColor: '#fff', borderTop: '1px solid var(--border-current)' }}>
+                                              
+                                              {/* 1. WOF Specific Yarn Status Table */}
+                                              <h6 style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                Yarn Allotments & Status for WOF
+                                              </h6>
+                                              {(!w.colour_allotments || w.colour_allotments.length === 0) ? (
+                                                <p style={{ margin: '0 0 1.5rem 0', color: 'var(--text-muted-current)', fontSize: '0.78rem', fontStyle: 'italic' }}>
+                                                  No allotments specified for this warping order form.
+                                                </p>
+                                              ) : (
+                                                <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)', marginBottom: '1.5rem' }}>
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                                                    <thead>
+                                                      <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                                                        <th style={thStyle}>Colour</th>
+                                                        <th style={thStyle}>Count</th>
+                                                        <th style={numericThStyle}>Qty Allotted for this WOF (kg)</th>
+                                                        <th style={numericThStyle}>Qty Received (kg)</th>
+                                                        <th style={numericThStyle}>Qty Delivered (kg)</th>
+                                                        <th style={numericThStyle}>Qty Balance (kg)</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {w.colour_allotments.map((a, rIdx) => {
+                                                        const yc = yarnCounts.find(y => y.id === a.countId);
+                                                        const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (a.countValue || '—');
+                                                        
+                                                        const allottedThisWof = parseFloat(a.allotted_qty || a.kg || a.allottedQty || 0);
+
+                                                        // Dyed yarn received (matching both count and colour) for the whole order
+                                                        const receivedItems = dyri.filter(item => {
+                                                          const matchCount = (item.yarn_count_id && a.countId && item.yarn_count_id === a.countId) || 
+                                                                             (item.yarn_count?.count_value === a.countValue);
+                                                          const matchColour = (item.colour === a.colour);
+                                                          return matchCount && matchColour;
+                                                        });
+                                                        const receivedQty = receivedItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+                                                        // Dyed yarn delivered (matching both count and colour) for this WOF
+                                                        const deliveredItems = wofDydi.filter(item => {
+                                                          const matchCount = (item.yarn_count_id && a.countId && item.yarn_count_id === a.countId) || 
+                                                                             (item.yarn_count?.count_value === a.countValue);
+                                                          const matchColour = (item.colour === a.colour);
+                                                          return matchCount && matchColour;
+                                                        });
+                                                        const deliveredQty = deliveredItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+                                                        
+                                                        const qtyBalance = Math.max(0, allottedThisWof - deliveredQty);
+
+                                                        return (
+                                                          <tr key={rIdx} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                                                            <td style={{ ...tdStyle, fontWeight: '700', color: 'var(--color-primary)' }}>{a.colour || '—'}</td>
+                                                            <td style={tdStyle}>{countDisplay}</td>
+                                                            <td style={numericTdStyle}>{allottedThisWof.toFixed(2)}</td>
+                                                            <td style={{ ...numericTdStyle, color: '#1d4ed8' }}>{receivedQty.toFixed(2)}</td>
+                                                            <td style={{ ...numericTdStyle, color: '#047857' }}>{deliveredQty.toFixed(2)}</td>
+                                                            <td style={{ ...numericTdStyle, color: qtyBalance > 0.01 ? '#b45309' : '#047857' }}>{qtyBalance.toFixed(2)}</td>
+                                                          </tr>
+                                                        );
+                                                      })}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                              )}
+
+                                              {/* 2. Collapsible DYDR Details */}
+                                              <h6 style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                Delivered Dyed Yarn (DYDR) Details ({Object.keys(dydrGroups).length})
+                                              </h6>
+
+                                              {Object.keys(dydrGroups).length === 0 ? (
+                                                <div style={{ padding: '1rem', border: '1px dashed var(--border-current)', borderRadius: '6px', textAlign: 'center', color: '#94a3b8', fontSize: '0.75rem' }}>
+                                                  No dyed yarn deliveries made to this WOF yet.
+                                                </div>
+                                              ) : (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                                  {Object.values(dydrGroups).map(dydr => {
+                                                    const isDydrExpanded = expandedDydrs[dydr.dydr_number];
+                                                    const totalQty = dydr.items.reduce((s, i) => s + i.quantity_kg, 0);
+
+                                                    return (
+                                                      <div 
+                                                        key={dydr.dydr_number} 
+                                                        style={{ 
+                                                          border: '1px solid #f1f5f9', 
+                                                          borderRadius: '8px', 
+                                                          backgroundColor: '#fafbfc', 
+                                                          overflow: 'hidden'
+                                                        }}
+                                                      >
+                                                        {/* Collapsed DYDR Bar / Header */}
+                                                        <div 
+                                                          onClick={() => handleToggleExpandDydr(dydr.dydr_number)}
+                                                          style={{
+                                                            display: 'flex',
+                                                            justifyContent: 'space-between',
+                                                            alignItems: 'center',
+                                                            padding: '0.65rem 0.85rem',
+                                                            cursor: 'pointer',
+                                                            backgroundColor: '#f8fafc',
+                                                            borderBottom: isDydrExpanded ? '1px solid #e2e8f0' : 'none'
+                                                          }}
+                                                        >
+                                                          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                                                            <div>
+                                                              <span style={{ fontSize: '0.6rem', textTransform: 'uppercase', fontWeight: '800', color: '#94a3b8', display: 'block' }}>DYDR Number</span>
+                                                              <span style={{ fontWeight: '800', fontSize: '0.85rem', color: '#b91c1c', fontFamily: 'monospace' }}>{dydr.dydr_number}</span>
+                                                            </div>
+                                                            <div>
+                                                              <span style={{ fontSize: '0.6rem', textTransform: 'uppercase', fontWeight: '800', color: '#94a3b8', display: 'block' }}>Total Delivered Qty</span>
+                                                              <span style={{ fontWeight: '800', fontSize: '0.85rem', color: '#16a34a' }}>{totalQty.toFixed(2)} kg</span>
+                                                            </div>
+                                                          </div>
+                                                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#64748b' }}>
+                                                            <span style={{ fontSize: '0.7rem', fontWeight: '600' }}>{isDydrExpanded ? 'Hide Details' : 'Show Details'}</span>
+                                                            <ChevronDown size={14} style={{ transform: isDydrExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                                                          </div>
+                                                        </div>
+
+                                                        {/* Expanded DYDR details / table */}
+                                                        {isDydrExpanded && (
+                                                          <div style={{ padding: '0.85rem', backgroundColor: '#fff' }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.725rem', color: '#475569', fontWeight: '600', marginBottom: '0.6rem', paddingBottom: '0.4rem', borderBottom: '1px solid #f1f5f9' }}>
+                                                              <div>
+                                                                Delivered By: <strong>{dydr.delivered_by}</strong>
+                                                              </div>
+                                                              {dydr.vehicle_no && dydr.vehicle_no !== '—' && (
+                                                                <div>
+                                                                  Vehicle: <strong>{dydr.vehicle_no}</strong>
+                                                                </div>
+                                                              )}
+                                                            </div>
+
+                                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                                                              <thead>
+                                                                <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                                                                  <th style={{ padding: '0.4rem 0.5rem' }}>Date</th>
+                                                                  <th style={{ padding: '0.4rem 0.5rem' }}>Colour</th>
+                                                                  <th style={{ padding: '0.4rem 0.5rem' }}>Yarn Count</th>
+                                                                  <th style={{ padding: '0.4rem 0.5rem' }}>Lot Number</th>
+                                                                  <th style={{ padding: '0.4rem 0.5rem' }}>Storage Location</th>
+                                                                  <th style={{ padding: '0.4rem 0.5rem', textAlign: 'right' }}>Qty Delivered (kg)</th>
+                                                                </tr>
+                                                              </thead>
+                                                              <tbody>
+                                                                {dydr.items.map((it, idx) => (
+                                                                  <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: '#fff' }}>
+                                                                    <td style={{ padding: '0.4rem 0.5rem', color: '#64748b' }}>
+                                                                      {dydr.delivered_date ? new Date(dydr.delivered_date).toLocaleDateString() : '—'}
+                                                                    </td>
+                                                                    <td style={{ padding: '0.4rem 0.5rem', fontWeight: '700', color: '#800000' }}>{it.colour}</td>
+                                                                    <td style={{ padding: '0.4rem 0.5rem', fontWeight: '600' }}>
+                                                                      {it.yarn_count ? `${it.yarn_count.count_value} ${it.yarn_count.material}` : formatYarnCount(it.yarn_count_id)}
+                                                                    </td>
+                                                                    <td style={{ padding: '0.4rem 0.5rem', fontWeight: '750', fontFamily: 'monospace' }}>{it.lot_number || '—'}</td>
+                                                                    <td style={{ padding: '0.4rem 0.5rem', color: '#64748b' }}>{it.location?.location_name || '—'}</td>
+                                                                    <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', fontWeight: '800' }}>{it.quantity_kg.toFixed(2)} kg</td>
+                                                                  </tr>
+                                                                ))}
+                                                                <tr style={{ fontWeight: 'bold', backgroundColor: '#f8fafc' }}>
+                                                                  <td colSpan={5} style={{ padding: '0.4rem 0.5rem', textAlign: 'right' }}>Total:</td>
+                                                                  <td style={{ padding: '0.4rem 0.5rem', textAlign: 'right', color: '#b91c1c', fontWeight: '850' }}>
+                                                                    {totalQty.toFixed(2)} kg
+                                                                  </td>
+                                                                </tr>
+                                                              </tbody>
+                                                            </table>
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })
+                                  )}
                                 </div>
                               </div>
                             )}

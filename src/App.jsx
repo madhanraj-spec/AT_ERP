@@ -17,6 +17,9 @@ import DeliverYarn from './pages/GreigeYarn/DeliverYarn';
 import NewDelivery from './pages/GreigeYarn/NewDelivery';
 import AdminApprovals from './pages/Admin/Approvals';
 import ProductionBoard from './pages/Production/Board';
+import WarpingOrderForms from './pages/Production/WarpingOrderForms';
+import CreateWarpingOrderForm from './pages/Production/CreateWarpingOrderForm';
+import WarpingSizing from './pages/Production/WarpingSizing';
 import MastersDashboard from './pages/Masters/Dashboard';
 import MasterDetail from './pages/Masters/MasterDetail';
 import DyeingFormsList from './pages/Merchandiser/DyeingFormsList';
@@ -27,6 +30,7 @@ import ReceiveYarn from './pages/DyedYarn/ReceiveYarn';
 import DeliverDyedYarn from './pages/DyedYarn/DeliverYarn';
 import DyedYarnMovement from './pages/DyedYarn/MovementLog';
 import DyedYarnOrders from './pages/DyedYarn/OrderStock';
+import StockInventory from './pages/DyedYarn/StockInventory';
 import { Loader } from 'lucide-react';
 
 function AppRoutes() {
@@ -84,20 +88,21 @@ function AppRoutes() {
               {/* DOF view accessible from greige yarn context */}
               <Route path="dof-view/:id" element={<DyeingFormView />} />
             </Route>
-            <Route path="/dyed-yarn">
-              <Route index element={<DyedYarnDashboard />} />
-              <Route path="receive" element={<ReceiveYarn />} />
-              <Route path="deliver" element={<DeliverDyedYarn />} />
-              <Route path="movement" element={<DyedYarnMovement />} />
-              <Route path="orders" element={<DyedYarnOrders />} />
-            </Route>
+            <Route path="/dyed-yarn" element={<DyedYarnDashboard />} />
+            <Route path="/dyed-yarn/receive" element={<ReceiveYarn />} />
+            <Route path="/dyed-yarn/deliver" element={<DeliverDyedYarn />} />
+            <Route path="/dyed-yarn/movement" element={<DyedYarnMovement />} />
+            <Route path="/dyed-yarn/orders" element={<DyedYarnOrders />} />
+            <Route path="/dyed-yarn/inventory" element={<StockInventory />} />
 
             {/* Production Routes */}
             <Route path="/production">
               <Route index element={<ProductionBoard />} />
+              <Route path="warping-forms" element={<WarpingOrderForms />} />
+              <Route path="warping-forms/new" element={<CreateWarpingOrderForm />} />
             </Route>
             <Route path="/warping-sizing">
-              <Route index element={<PlaceholderPage title="Warping & Sizing" />} />
+              <Route index element={<WarpingSizing />} />
             </Route>
             <Route path="/weaving">
               <Route index element={<PlaceholderPage title="Weaving" />} />
