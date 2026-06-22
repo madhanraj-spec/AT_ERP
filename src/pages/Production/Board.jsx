@@ -2408,7 +2408,7 @@ function WarpingFinancesTab() {
   // Fetch Available Completed Job-Work WOFs that are not in a pending/approved bill
   const loadModalData = async () => {
     try {
-      // 1. Fetch completed job-work warping order forms
+      // 1. Fetch completed/stopped job-work warping order forms
       const { data: completedWofs, error: wofErr } = await supabase
         .from('warping_order_forms')
         .select(`
@@ -2416,7 +2416,7 @@ function WarpingFinancesTab() {
           order:orders(id, order_number, design_no, design_name)
         `)
         .eq('wof_type', 'job_work')
-        .eq('status', 'completed')
+        .in('status', ['completed', 'stopped'])
         .order('created_at', { ascending: false });
 
       if (wofErr) throw wofErr;
@@ -2435,7 +2435,7 @@ function WarpingFinancesTab() {
         b.selected_form_ids?.forEach(id => billedWofIds.add(id));
       });
 
-      const unbilledWofs = completedWofs?.filter(w => !billedWofIds.has(w.id)) || [];
+      const unbilledWofs = completedWofs?.filter(w => !billedWofIds.has(w.id) && (parseFloat(w.qty || 0) > 0)) || [];
       setAvailableWofs(unbilledWofs);
 
       // Extract unique partners
@@ -3404,7 +3404,7 @@ function SizingFinancesTab() {
   // Fetch Available Completed Job-Work SOFs that are not in a pending/approved bill
   const loadModalData = async () => {
     try {
-      // 1. Fetch completed job-work sizing order forms
+      // 1. Fetch completed/stopped job-work sizing order forms
       const { data: completedSofs, error: sofErr } = await supabase
         .from('sizing_order_forms')
         .select(`
@@ -3412,7 +3412,7 @@ function SizingFinancesTab() {
           order:orders(id, order_number, design_no, design_name)
         `)
         .eq('sizing_type', 'job_work')
-        .eq('status', 'completed')
+        .in('status', ['completed', 'stopped'])
         .order('created_at', { ascending: false });
 
       if (sofErr) throw sofErr;
@@ -3431,7 +3431,7 @@ function SizingFinancesTab() {
         b.selected_form_ids?.forEach(id => billedSofIds.add(id));
       });
 
-      const unbilledSofs = completedSofs?.filter(s => !billedSofIds.has(s.id)) || [];
+      const unbilledSofs = completedSofs?.filter(s => !billedSofIds.has(s.id) && (parseFloat(s.qty || 0) > 0)) || [];
       setAvailableSofs(unbilledSofs);
 
       // Extract unique partners
@@ -4561,7 +4561,7 @@ function WeavingFinancesTab() {
   const fetchWeavingData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch completed/late completed job-work weaving orders
+      // 1. Fetch completed/late completed/stopped job-work weaving orders
       const { data: ordersData, error: ordersErr } = await supabase
         .from('weaving_orders')
         .select(`
@@ -4569,7 +4569,7 @@ function WeavingFinancesTab() {
           order:orders(id, order_number, design_no, design_name, total_quantity, yarn_requirements, technical_specs)
         `)
         .eq('weaving_type', 'job_work')
-        .in('status', ['completed', 'late_complete'])
+        .in('status', ['completed', 'late_complete', 'stopped'])
         .order('created_at', { ascending: false });
 
       if (ordersErr) throw ordersErr;
@@ -4592,11 +4592,13 @@ function WeavingFinancesTab() {
       });
 
       // Filter/decorate weaving orders with billing status
-      const decoratedOrders = (ordersData || []).map(o => ({
-        ...o,
-        isBilled: billedWvofIds.has(o.id),
-        billStatus: billsData?.find(b => b.selected_form_ids?.includes(o.id) && b.status !== 'rejected')?.status || null
-      }));
+      const decoratedOrders = (ordersData || [])
+        .filter(o => parseFloat(o.qty || 0) > 0)
+        .map(o => ({
+          ...o,
+          isBilled: billedWvofIds.has(o.id),
+          billStatus: billsData?.find(b => b.selected_form_ids?.includes(o.id) && b.status !== 'rejected')?.status || null
+        }));
       setWeavingOrders(decoratedOrders);
 
       // 3. Fetch yarn count master

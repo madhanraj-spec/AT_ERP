@@ -13,7 +13,7 @@ function PrintableWOFDC({ wof, order, splits, yarnReturns }) {
           <title>Delivery Receipt - ${wof.wofdc_number || 'WOFDC'}</title>
           <style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { font-family: 'Arial', sans-serif; color: #111; background: white; padding: 24px; }
+            body { font-family: 'Arial', sans-serif; color: #111; background: white; padding: 24px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #800000; padding-bottom: 16px; margin-bottom: 20px; }
             .logo-block { display: flex; align-items: center; gap: 12px; }
             .logo-box { width: 48px; height: 48px; background: #800000; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; font-weight: 900; }
@@ -148,8 +148,15 @@ function PrintableWOFDC({ wof, order, splits, yarnReturns }) {
             </div>
             <div>
               <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#888', fontWeight: '700', display: 'block' }}>Status</label>
-              <div style={{ fontWeight: '700', color: wof.process_completed_at && wof.end_date && new Date(wof.process_completed_at).toISOString().split('T')[0] > wof.end_date ? '#b91c1c' : '#166534' }}>
-                {wof.process_completed_at && wof.end_date && new Date(wof.process_completed_at).toISOString().split('T')[0] > wof.end_date ? 'Completed Late' : 'Completed'}
+              <div style={{ 
+                fontWeight: '700', 
+                color: wof.status === 'stopped' 
+                  ? '#c2410c' 
+                  : (wof.process_completed_at && wof.end_date && new Date(wof.process_completed_at).toISOString().split('T')[0] > wof.end_date ? '#b91c1c' : '#166534') 
+              }}>
+                {wof.status === 'stopped' 
+                  ? 'Stopped' 
+                  : (wof.process_completed_at && wof.end_date && new Date(wof.process_completed_at).toISOString().split('T')[0] > wof.end_date ? 'Completed Late' : 'Completed')}
               </div>
             </div>
             <div>
@@ -160,27 +167,29 @@ function PrintableWOFDC({ wof, order, splits, yarnReturns }) {
         </div>
 
         {/* Splits Configuration */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '800', color: '#800000', marginBottom: '8px', borderBottom: '1px solid rgba(128,0,0,0.2)', paddingBottom: '4px' }}>Warp Split Configuration</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-            <thead>
-              <tr style={{ background: '#800000', color: 'white' }}>
-                <th style={{ padding: '6px 8px', textAlign: 'left' }}>Warp Split Ref</th>
-                <th style={{ padding: '6px 8px', textAlign: 'left' }}>Beam Number</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Actual Qty (Mtrs)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {splits.map((s, idx) => (
-                <tr key={idx} style={{ background: idx % 2 === 1 ? '#fdf8f8' : 'white' }}>
-                  <td style={{ padding: '6px 8px', fontWeight: '700', fontFamily: 'monospace' }}>{s.warp_no}</td>
-                  <td style={{ padding: '6px 8px', fontWeight: '600' }}>{s.beam_name || '—'}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700' }}>{Number(s.qty).toLocaleString()}</td>
+        {splits && splits.length > 0 && (
+          <div style={{ marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '800', color: '#800000', marginBottom: '8px', borderBottom: '1px solid rgba(128,0,0,0.2)', paddingBottom: '4px' }}>Warp Split Configuration</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+              <thead>
+                <tr style={{ background: '#800000', color: 'white' }}>
+                  <th style={{ padding: '6px 8px', textAlign: 'left' }}>Warp Split Ref</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'left' }}>Beam Number</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right' }}>Actual Qty (Mtrs)</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {splits.map((s, idx) => (
+                  <tr key={idx} style={{ background: idx % 2 === 1 ? '#fdf8f8' : 'white' }}>
+                    <td style={{ padding: '6px 8px', fontWeight: '700', fontFamily: 'monospace' }}>{s.warp_no}</td>
+                    <td style={{ padding: '6px 8px', fontWeight: '600' }}>{s.beam_name || '—'}</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700' }}>{Number(s.qty).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Dyed Yarn Returns */}
         <div style={{ marginBottom: '1.5rem' }}>

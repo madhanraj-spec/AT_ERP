@@ -1,0 +1,1 @@
+console.log(Object.keys(process.env).filter(k => k.toLowerCase().includes('supabase') || k.toLowerCase().includes('key') || k.toLowerCase().includes('secret') || k.toLowerCase().includes('pass') || k.toLowerCase().includes('db') || k.toLowerCase().includes('conn')));

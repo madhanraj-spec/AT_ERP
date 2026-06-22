@@ -146,6 +146,22 @@ export default function CreateWarpingOrderForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [createdWof, setCreatedWof] = useState(null); // after creation
+  
+  // Custom dropdown state
+  const [orderSearchTerm, setOrderSearchTerm] = useState('');
+  const [isOrderDropdownOpen, setIsOrderDropdownOpen] = useState(false);
+  const orderDropdownRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (orderDropdownRef.current && !orderDropdownRef.current.contains(event.target)) {
+        setIsOrderDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // ── Load initial data ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -156,7 +172,29 @@ export default function CreateWarpingOrderForm() {
         .select('id, order_number, design_no, design_name, total_quantity, technical_specs, yarn_requirements, status')
         .in('status', ['active', 'in_progress', 'approved'])
         .order('created_at', { ascending: false });
-      setOrders(data || []);
+        
+      if (data && data.length > 0) {
+        // Fetch existing WOFs to calculate warped quantity per order
+        const { data: wofData } = await supabase
+          .from('warping_order_forms')
+          .select('order_id, qty')
+          .in('order_id', data.map(o => o.id));
+          
+        const wofQtyMap = {};
+        if (wofData) {
+          wofData.forEach(w => {
+            wofQtyMap[w.order_id] = (wofQtyMap[w.order_id] || 0) + parseFloat(w.qty || 0);
+          });
+        }
+        
+        const ordersWithWarpedQty = data.map(o => ({
+          ...o,
+          warped_qty: wofQtyMap[o.id] || 0
+        }));
+        setOrders(ordersWithWarpedQty);
+      } else {
+        setOrders([]);
+      }
       setLoadingOrders(false);
     };
     const fetchYarnCounts = async () => {
@@ -521,38 +559,118 @@ export default function CreateWarpingOrderForm() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted-current)' }}><Loader size={16} className="spin" /> Loading orders…</div>
             ) : (
               <div>
-                <select
-                  value={selectedOrder?.id || ''}
-                  onChange={e => {
-                    const selectedId = e.target.value;
-                    const ord = orders.find(o => o.id === selectedId);
-                    setSelectedOrder(ord || null);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem 1rem',
-                    border: '2px solid var(--border-current)',
-                    borderRadius: '10px',
-                    fontSize: '0.875rem',
-                    background: 'var(--surface-current)',
-                    color: 'var(--text-current)',
-                    cursor: 'pointer',
-                    fontWeight: '700',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                >
-                  <option value="">— Select Order —</option>
-                  {orders.map(ord => {
-                    const specs = ord.technical_specs || {};
-                    const label = `Order: ${ord.order_number} | Design: ${ord.design_no} - ${ord.design_name} | Qty: ${Number(ord.total_quantity).toLocaleString()} Mtrs | Prod Qty: ${specs.production_quantity ? Number(specs.production_quantity).toLocaleString() : '—'} Mtrs | Const: ${specs.order_reed || '—'}/${specs.order_pick || '—'}`;
-                    return (
-                      <option key={ord.id} value={ord.id}>
-                        {label}
-                      </option>
-                    );
-                  })}
-                </select>
+                {/* Searchable Dropdown */}
+                <div style={{ position: 'relative' }} ref={orderDropdownRef}>
+                  <div
+                    onClick={() => setIsOrderDropdownOpen(!isOrderDropdownOpen)}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      border: `2px solid ${isOrderDropdownOpen ? '#800000' : 'var(--border-current)'}`,
+                      borderRadius: '10px',
+                      fontSize: '0.875rem',
+                      background: 'var(--surface-current)',
+                      color: 'var(--text-current)',
+                      cursor: 'pointer',
+                      fontWeight: '700',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <span>
+                      {selectedOrder
+                        ? `${selectedOrder.order_number} | ${selectedOrder.design_no} - ${selectedOrder.design_name}`
+                        : '— Select Order —'}
+                    </span>
+                    <ChevronDown size={18} style={{ transform: isOrderDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                  </div>
+
+                  {isOrderDropdownOpen && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      marginTop: '0.5rem',
+                      backgroundColor: 'var(--surface-current)',
+                      border: '1px solid var(--border-current)',
+                      borderRadius: '10px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                      zIndex: 10,
+                      maxHeight: '300px',
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}>
+                      <div style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-current)' }}>
+                        <input
+                          type="text"
+                          placeholder="Type to search order..."
+                          value={orderSearchTerm}
+                          onChange={(e) => setOrderSearchTerm(e.target.value)}
+                          autoFocus
+                          style={{
+                            width: '100%',
+                            padding: '0.5rem',
+                            border: '1px solid var(--border-current)',
+                            borderRadius: '6px',
+                            fontSize: '0.85rem',
+                            outline: 'none',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                      </div>
+                      <div style={{ overflowY: 'auto', flex: 1 }}>
+                        {orders
+                          .filter(ord => {
+                            const searchLower = orderSearchTerm.toLowerCase();
+                            return (
+                              ord.order_number.toLowerCase().includes(searchLower) ||
+                              ord.design_no?.toLowerCase().includes(searchLower) ||
+                              ord.design_name?.toLowerCase().includes(searchLower)
+                            );
+                          })
+                          .map(ord => {
+                            const specs = ord.technical_specs || {};
+                            const isSelected = selectedOrder?.id === ord.id;
+                            return (
+                              <div
+                                key={ord.id}
+                                onClick={() => {
+                                  setSelectedOrder(ord);
+                                  setIsOrderDropdownOpen(false);
+                                  setOrderSearchTerm('');
+                                }}
+                                style={{
+                                  padding: '0.75rem 1rem',
+                                  cursor: 'pointer',
+                                  backgroundColor: isSelected ? 'rgba(128,0,0,0.05)' : 'transparent',
+                                  borderBottom: '1px solid var(--border-current)',
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(128,0,0,0.03)'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = isSelected ? 'rgba(128,0,0,0.05)' : 'transparent'}
+                              >
+                                <div style={{ fontWeight: '800', color: isSelected ? '#800000' : 'var(--text-current)', marginBottom: '4px' }}>
+                                  {ord.order_number} | {ord.design_no} - {ord.design_name}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                  <span><strong style={{color: 'var(--text-current)'}}>Ord Qty:</strong> {Number(ord.total_quantity).toLocaleString()} Mtrs</span>
+                                  <span><strong style={{color: 'var(--text-current)'}}>Prod Qty:</strong> {specs.production_quantity ? Number(specs.production_quantity).toLocaleString() : '—'} Mtrs</span>
+                                  <span><strong style={{color: '#0ea5e9'}}>Warped Qty:</strong> {Number(ord.warped_qty || 0).toLocaleString()} Mtrs</span>
+                                  <span><strong style={{color: 'var(--text-current)'}}>Const:</strong> {specs.order_reed || '—'}/{specs.order_pick || '—'}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        {orders.length > 0 && orders.filter(ord => ord.order_number.toLowerCase().includes(orderSearchTerm.toLowerCase()) || ord.design_no?.toLowerCase().includes(orderSearchTerm.toLowerCase()) || ord.design_name?.toLowerCase().includes(orderSearchTerm.toLowerCase())).length === 0 && (
+                          <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted-current)', fontSize: '0.85rem' }}>
+                            No orders match your search.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {selectedOrder && (
                   <div style={{
@@ -575,7 +693,7 @@ export default function CreateWarpingOrderForm() {
                         <div style={{ fontWeight: '800', fontSize: '0.9rem', color: 'var(--text-current)', marginTop: '2px' }}>{selectedOrder.design_no} / {selectedOrder.design_name}</div>
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', fontSize: '0.825rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', fontSize: '0.825rem' }}>
                       <div>
                         <span style={{ display: 'block', color: 'var(--text-muted-current)', fontSize: '0.65rem', fontWeight: '750' }}>ORDER QTY</span>
                         <strong style={{ color: 'var(--text-current)', fontSize: '0.85rem' }}>{Number(selectedOrder.total_quantity).toLocaleString()} Mtrs</strong>
@@ -584,6 +702,12 @@ export default function CreateWarpingOrderForm() {
                         <span style={{ display: 'block', color: 'var(--text-muted-current)', fontSize: '0.65rem', fontWeight: '750' }}>PRODUCTION QTY</span>
                         <strong style={{ color: 'var(--text-current)', fontSize: '0.85rem' }}>
                           {selectedOrder.technical_specs?.production_quantity ? `${Number(selectedOrder.technical_specs.production_quantity).toLocaleString()} Mtrs` : '—'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span style={{ display: 'block', color: 'var(--text-muted-current)', fontSize: '0.65rem', fontWeight: '750' }}>WARPED QTY</span>
+                        <strong style={{ color: '#0ea5e9', fontSize: '0.85rem' }}>
+                          {Number(selectedOrder.warped_qty || 0).toLocaleString()} Mtrs
                         </strong>
                       </div>
                       <div>

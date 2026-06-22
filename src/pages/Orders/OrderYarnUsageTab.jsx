@@ -14,8 +14,6 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
   const [gydrs, setGydrs] = useState([]);
   const [dyrrs, setDyrrs] = useState([]);
   const [dydrs, setDydrs] = useState([]);
-  const [warpingForms, setWarpingForms] = useState([]);
-  const [weavingOrders, setWeavingOrders] = useState([]);
 
   // Expanded rows state
   const [expandedRowKeys, setExpandedRowKeys] = useState(new Set());
@@ -81,20 +79,6 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
         const uniqueDydrIds = Array.from(new Set(dydiData?.map(i => i.delivery?.id))).filter(Boolean);
         const uniqueDydr = uniqueDydrIds.map(id => dydiData.find(i => i.delivery?.id === id).delivery);
         setDydrs(uniqueDydr.sort((a, b) => new Date(b.created_at || b.delivered_date).getTime() - new Date(a.created_at || a.delivered_date).getTime()));
-
-        // 6. Fetch Warping Order Forms for this order (to get yarn_returns per WOF)
-        const { data: wofData } = await supabase
-          .from('warping_order_forms')
-          .select('id, yarn_returns, colour_allotments')
-          .eq('order_id', order.id);
-        setWarpingForms(wofData || []);
-
-        // 7. Fetch Weaving Orders for this order (to get yarn_returns per WVOF)
-        const { data: wvofData } = await supabase
-          .from('weaving_orders')
-          .select('id, yarn_returns, weft_allotments')
-          .eq('order_id', order.id);
-        setWeavingOrders(wvofData || []);
 
       } catch (err) {
         console.error('Error fetching yarn usage data:', err);
@@ -162,79 +146,40 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
       }
     });
 
-    const findCountId = (ret) => {
-      if (ret.yarn_count_id) return ret.yarn_count_id;
-      if (!ret.count_display) return '';
-      const cleanDisplay = ret.count_display.trim().toLowerCase();
-      const match = yarnCounts.find(yc => {
-        const ycDisplay = `${yc.count_value} ${yc.material} ${yc.product_type}`.trim().toLowerCase();
-        return ycDisplay === cleanDisplay;
-      });
-      if (match) return match.id;
-      const matchPartial = yarnCounts.find(yc => {
-        const val = (yc.count_value || '').trim().toLowerCase();
-        return val && cleanDisplay.includes(val);
-      });
-      return matchPartial ? matchPartial.id : '';
-    };
 
     // D. Accumulate Sent to Warp & Received from Warping
-    // For completed WOFs: use yarn_returns (quantity_received = delivered, quantity_returned = returned)
-    // For in-progress WOFs: use dyed_yarn_delivery_items linked via production_form_id
-    const completedWofIds = new Set();
-    warpingForms.forEach(wof => {
-      const returns = wof.yarn_returns || [];
-      if (returns.length > 0) {
-        completedWofIds.add(wof.id);
-        returns.forEach(ret => {
-          const countId = findCountId(ret);
-          const colour = ret.colour || '';
-          if (countId) {
-            const key = ensureKey(countId, colour, 'warp');
-            summary[key].sentToWarp += parseFloat(ret.quantity_received || 0);
-            summary[key].receivedFromWarping += parseFloat(ret.quantity_returned || 0);
-          }
-        });
-      }
-    });
-
-    // For in-progress WOFs (no yarn_returns yet), count delivery items linked to them
-    const wofIds = new Set(warpingForms.map(w => w.id));
+    // We sum up all dyed yarn deliveries (DYDI) to warping, and all production returns (DYRI) from warping
     dydi.forEach(item => {
-      if (item.process_type === 'warping' && item.production_form_id && wofIds.has(item.production_form_id) && !completedWofIds.has(item.production_form_id)) {
-        const type = item.yarn_type || 'warp';
+      if (item.process_type === 'warping' || item.yarn_type === 'warp') {
+        const type = 'warp';
         const key = ensureKey(item.yarn_count_id, item.colour, type);
         summary[key].sentToWarp += parseFloat(item.quantity_kg || 0);
       }
     });
 
-    // E. Accumulate Sent to Weaving & Received from Weaving
-    // For completed WVOFs: use yarn_returns
-    // For in-progress WVOFs: use dyed_yarn_delivery_items linked via production_form_id
-    const completedWvofIds = new Set();
-    weavingOrders.forEach(wvof => {
-      const returns = wvof.yarn_returns || [];
-      if (returns.length > 0) {
-        completedWvofIds.add(wvof.id);
-        returns.forEach(ret => {
-          const countId = findCountId(ret);
-          const colour = ret.colour || '';
-          if (countId) {
-            const key = ensureKey(countId, colour, 'weft');
-            summary[key].sentToWeaving += parseFloat(ret.quantity_received || 0);
-            summary[key].receivedFromWeaving += parseFloat(ret.quantity_returned || 0);
-          }
-        });
+    dyri.forEach(item => {
+      const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+      if (isExcess && (item.yarn_type === 'warp')) {
+        const key = ensureKey(item.yarn_count_id, item.colour, 'warp');
+        summary[key].receivedFromWarping += parseFloat(item.quantity_kg || 0);
       }
     });
 
-    // For in-progress WVOFs (no yarn_returns yet), count delivery items linked to them
-    const wvofIds = new Set(weavingOrders.map(w => w.id));
+    // E. Accumulate Sent to Weaving & Received from Weaving
+    // We sum up all dyed yarn deliveries (DYDI) to weaving, and all production returns (DYRI) from weaving
     dydi.forEach(item => {
-      if (item.process_type === 'weaving' && item.production_form_id && wvofIds.has(item.production_form_id) && !completedWvofIds.has(item.production_form_id)) {
-        const type = item.yarn_type || 'weft';
+      if (item.process_type === 'weaving' || item.yarn_type === 'weft') {
+        const type = 'weft';
         const key = ensureKey(item.yarn_count_id, item.colour, type);
         summary[key].sentToWeaving += parseFloat(item.quantity_kg || 0);
+      }
+    });
+
+    dyri.forEach(item => {
+      const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+      if (isExcess && (item.yarn_type === 'weft')) {
+        const key = ensureKey(item.yarn_count_id, item.colour, 'weft');
+        summary[key].receivedFromWeaving += parseFloat(item.quantity_kg || 0);
       }
     });
 
@@ -245,7 +190,7 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
       return 0;
     });
 
-  }, [order.yarn_requirements, gydi, greigeReturns, dyri, dydi, warpingForms, weavingOrders, yarnCounts]);
+  }, [order.yarn_requirements, gydi, greigeReturns, dyri, dydi]);
 
   const formatCount = (id) => {
     const y = yarnCounts.find(c => c.id === id);
@@ -568,14 +513,6 @@ const numericTdStyle = {
   fontWeight: '700'
 };
 
-const disabledTdStyle = {
-  ...tdStyle,
-  textAlign: 'right',
-  color: '#94a3b8',
-  fontWeight: '400',
-  fontStyle: 'italic',
-  backgroundColor: '#f8fafc'
-};
 
 const receiptColStyle = {
   display: 'flex',

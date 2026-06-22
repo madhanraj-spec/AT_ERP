@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Loader, ChevronDown, ChevronRight, Eye } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PrintableWOF from '../Production/PrintableWOF';
@@ -70,7 +70,6 @@ function OrderWarpingTab({ order }) {
   const [expandedWofId, setExpandedWofId] = useState(null);
   const [activeDetailTab, setActiveDetailTab] = useState('yarn');
   const [dydrsByWof, setDydrsByWof] = useState({});
-  const [loadingDydrs, setLoadingDydrs] = useState(false);
   const [printWof, setPrintWof] = useState(null);
   const [expandedWofdcId, setExpandedWofdcId] = useState(null);
   const [dyri, setDyri] = useState([]);
@@ -79,21 +78,30 @@ function OrderWarpingTab({ order }) {
   const overallWarpSummary = React.useMemo(() => {
     const summary = {};
 
+    const ensureKey = (countId, color) => {
+      const key = `${countId}-${color}`;
+      if (!summary[key]) {
+        summary[key] = {
+          countId,
+          countValue: '',
+          colour: color,
+          required: 0,
+          received: 0,
+          delivered: 0,
+          returned: 0
+        };
+      }
+      return key;
+    };
+
     // 1. Initialize with order's warp requirements
     const warpReqs = (order.yarn_requirements || []).filter(y => y.type === 'warp');
     warpReqs.forEach(yr => {
       const countId = yr.countId || yr.count_id || '';
       const color = yr.color || yr.colour || '';
-      const key = `${countId}-${color}`;
-      summary[key] = {
-        countId,
-        countValue: yr.countValue || '',
-        colour: color,
-        required: parseFloat(yr.kg || 0),
-        received: 0,
-        delivered: 0,
-        returned: 0
-      };
+      const key = ensureKey(countId, color);
+      summary[key].required = parseFloat(yr.kg || 0);
+      summary[key].countValue = yr.countValue || '';
     });
 
     // 2. Add dyed receipts matching warp colours/counts (exclude excess/production returns)
@@ -103,66 +111,36 @@ function OrderWarpingTab({ order }) {
 
       const countId = item.yarn_count_id || '';
       const color = item.colour || '';
-      const key = `${countId}-${color}`;
-      
-      if (summary[key]) {
-        summary[key].received += parseFloat(item.quantity_kg || 0);
-      }
+      const key = ensureKey(countId, color);
+      summary[key].received += parseFloat(item.quantity_kg || 0);
     });
 
-    const findCountId = (ret) => {
-      if (ret.yarn_count_id) return ret.yarn_count_id;
-      if (!ret.count_display) return '';
-      const cleanDisplay = ret.count_display.trim().toLowerCase();
-      const match = yarnCounts.find(yc => {
-        const ycDisplay = `${yc.count_value} ${yc.material} ${yc.product_type}`.trim().toLowerCase();
-        return ycDisplay === cleanDisplay;
-      });
-      if (match) return match.id;
-      const matchPartial = yarnCounts.find(yc => {
-        const val = (yc.count_value || '').trim().toLowerCase();
-        return val && cleanDisplay.includes(val);
-      });
-      return matchPartial ? matchPartial.id : '';
-    };
-
-    // 3. Add yarn deliveries and returns from WOF yarn_returns (completed WOFs)
-    //    For completed WOFs: quantity_received = delivered TO that WOF, quantity_returned = returned BACK
-    const completedWofIds = new Set();
-    wofs.forEach(wof => {
-      const returns = wof.yarn_returns || [];
-      if (returns.length > 0) {
-        completedWofIds.add(wof.id);
-        returns.forEach(ret => {
-          const countId = findCountId(ret);
-          const color = ret.colour || '';
-          const key = `${countId}-${color}`;
-          if (summary[key]) {
-            summary[key].delivered += parseFloat(ret.quantity_received || 0);
-            summary[key].returned += parseFloat(ret.quantity_returned || 0);
-          }
-        });
-      }
-    });
-
-    // 4. For in-progress WOFs (no yarn_returns yet), count delivery items linked to them
-    const wofIds = new Set(wofs.map(w => w.id));
+    // 3. Add dyed deliveries matching count/colour
     dydi.forEach(item => {
-      if (item.process_type === 'warping' && item.production_form_id && wofIds.has(item.production_form_id) && !completedWofIds.has(item.production_form_id)) {
+      if (item.process_type === 'warping' || item.yarn_type === 'warp') {
         const countId = item.yarn_count_id || '';
         const color = item.colour || '';
-        const key = `${countId}-${color}`;
-        if (summary[key]) {
-          summary[key].delivered += parseFloat(item.quantity_kg || 0);
-        }
+        const key = ensureKey(countId, color);
+        summary[key].delivered += parseFloat(item.quantity_kg || 0);
+      }
+    });
+
+    // 4. Add returns from dyed receipts matching count/colour (isExcess is true)
+    dyri.forEach(item => {
+      const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+      if (isExcess && item.yarn_type === 'warp') {
+        const countId = item.yarn_count_id || '';
+        const color = item.colour || '';
+        const key = ensureKey(countId, color);
+        summary[key].returned += parseFloat(item.quantity_kg || 0);
       }
     });
 
     return Object.values(summary);
-  }, [order.yarn_requirements, dyri, dydi, wofs, yarnCounts]);
+  }, [order.yarn_requirements, dyri, dydi]);
 
-  const fetchWofs = async () => {
-    setLoading(true);
+  const fetchWofs = useCallback(async () => {
+    Promise.resolve().then(() => setLoading(true));
     
     // 1. Fetch Receipts (dyed_yarn_receipt_items) with receipt relation for source_type filtering
     const { data: receiptData } = await supabase
@@ -225,17 +203,21 @@ function OrderWarpingTab({ order }) {
       setDydrsByWof(grouped);
     }
     setLoading(false);
-  };
+  }, [order.id]);
 
-  const fetchYarnCounts = async () => {
+  const fetchYarnCounts = useCallback(async () => {
     const { data } = await supabase.from('master_yarn_counts').select('*');
     setYarnCounts(data || []);
-  };
+  }, []);
 
   useEffect(() => {
-    fetchWofs();
-    fetchYarnCounts();
-  }, [order.id]);
+    if (order?.id) {
+      Promise.resolve().then(() => {
+        fetchWofs();
+        fetchYarnCounts();
+      });
+    }
+  }, [order?.id, fetchWofs, fetchYarnCounts]);
 
   const handleToggleExpand = (wofId) => {
     if (expandedWofId === wofId) {
@@ -524,11 +506,7 @@ function OrderWarpingTab({ order }) {
                                 <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                   Associated Dyed Yarn Delivery Receipts (DYDR)
                                 </h4>
-                                {loadingDydrs ? (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
-                                    <Loader size={14} className="spin" /> Loading associated deliveries…
-                                  </div>
-                                ) : associatedDydrs.length === 0 ? (
+                                {associatedDydrs.length === 0 ? (
                                   <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.8rem', fontStyle: 'italic' }}>
                                     No DYDR delivery receipts have been created for this warping order form yet.
                                   </p>
@@ -678,48 +656,50 @@ function OrderWarpingTab({ order }) {
                                         </table>
                                       </div>
                                     )}
-
-                                    {/* Collapsible WOFDC Delivery Receipt */}
-                                    {wof.status === 'completed' && (
-                                      <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-current)', paddingTop: '1.25rem' }}>
-                                        <div 
-                                          onClick={() => setExpandedWofdcId(expandedWofdcId === wof.id ? null : wof.id)}
-                                          style={{ 
-                                            display: 'flex', 
-                                            justifyContent: 'space-between', 
-                                            alignItems: 'center', 
-                                            backgroundColor: 'rgba(128,0,0,0.04)', 
-                                            padding: '0.75rem 1rem', 
-                                            borderRadius: '8px', 
-                                            border: '1px solid #800000', 
-                                            cursor: 'pointer',
-                                            userSelect: 'none'
-                                          }}
-                                        >
-                                          <span style={{ fontWeight: '800', color: '#800000', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            📄 Delivery Receipt (WOFDC): {wof.wofdc_number || '—'}
-                                          </span>
-                                          <span style={{ fontSize: '0.75rem', fontWeight: '750', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                            {expandedWofdcId === wof.id ? 'Collapse Details ▲' : 'Expand Details ▼'}
-                                          </span>
-                                        </div>
-                                        
-                                        {expandedWofdcId === wof.id && (
-                                          <div style={{ marginTop: '1rem' }}>
-                                            <PrintableWOFDC 
-                                              wof={wof} 
-                                              order={wof.order} 
-                                              splits={wof.warp_splits || []} 
-                                              yarnReturns={wof.yarn_returns || []} 
-                                            />
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
                                   </div>
                                 ) : (
-                                  <div style={{ padding: '1.5rem', border: '1px dashed var(--border-current)', borderRadius: '8px', backgroundColor: 'var(--surface-current)', textAlign: 'center', color: 'var(--text-muted-current)', fontSize: '0.85rem' }}>
-                                    No forwarding configurations set. WOF forwarding scheduling will appear here once configured.
+                                  !(wof.status === 'stopped' && !!wof.wofdc_number) && (
+                                    <div style={{ padding: '1.5rem', border: '1px dashed var(--border-current)', borderRadius: '8px', backgroundColor: 'var(--surface-current)', textAlign: 'center', color: 'var(--text-muted-current)', fontSize: '0.85rem' }}>
+                                      No forwarding configurations set. WOF forwarding scheduling will appear here once configured.
+                                    </div>
+                                  )
+                                )}
+
+                                {/* Collapsible WOFDC Delivery Receipt */}
+                                {(wof.status === 'completed' || (wof.status === 'stopped' && !!wof.wofdc_number)) && (
+                                  <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-current)', paddingTop: '1.25rem' }}>
+                                    <div 
+                                      onClick={() => setExpandedWofdcId(expandedWofdcId === wof.id ? null : wof.id)}
+                                      style={{ 
+                                        display: 'flex', 
+                                        justifyContent: 'space-between', 
+                                        alignItems: 'center', 
+                                        backgroundColor: 'rgba(128,0,0,0.04)', 
+                                        padding: '0.75rem 1rem', 
+                                        borderRadius: '8px', 
+                                        border: '1px solid #800000', 
+                                        cursor: 'pointer',
+                                        userSelect: 'none'
+                                      }}
+                                    >
+                                      <span style={{ fontWeight: '800', color: '#800000', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        📄 Delivery Receipt (WOFDC): {wof.wofdc_number || '—'}
+                                      </span>
+                                      <span style={{ fontSize: '0.75rem', fontWeight: '750', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                        {expandedWofdcId === wof.id ? 'Collapse Details ▲' : 'Expand Details ▼'}
+                                      </span>
+                                    </div>
+                                    
+                                    {expandedWofdcId === wof.id && (
+                                      <div style={{ marginTop: '1rem' }}>
+                                        <PrintableWOFDC 
+                                          wof={wof} 
+                                          order={wof.order} 
+                                          splits={wof.warp_splits || []} 
+                                          yarnReturns={wof.yarn_returns || []} 
+                                        />
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>

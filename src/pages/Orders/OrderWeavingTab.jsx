@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Loader, ChevronDown, ChevronRight, Eye, Printer, Calendar, Grid, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PrintableWVOF from '../Production/PrintableWVOF';
@@ -137,89 +137,65 @@ function OrderWeavingTab({ order }) {
     if (!order) return [];
     const summary = {};
 
+    const ensureKey = (countId, color) => {
+      const key = `${countId}-${color}`;
+      if (!summary[key]) {
+        summary[key] = {
+          countId,
+          countValue: '',
+          colour: color,
+          required: 0,
+          received: 0,
+          delivered: 0,
+          returned: 0
+        };
+      }
+      return key;
+    };
+
     // 1. Initialize with order's weft requirements
     const weftReqs = (order?.yarn_requirements || []).filter(y => y.type === 'weft');
     weftReqs.forEach(yr => {
       const countId = yr.countId || yr.count_id || '';
       const color = yr.color || yr.colour || '';
-      const key = `${countId}-${color}`;
-      summary[key] = {
-        countId,
-        countValue: yr.countValue || '',
-        colour: color,
-        required: parseFloat(yr.kg || 0),
-        received: 0,
-        delivered: 0,
-        returned: 0
-      };
+      const key = ensureKey(countId, color);
+      summary[key].required = parseFloat(yr.kg || 0);
+      summary[key].countValue = yr.countValue || '';
     });
 
-    // 2. Add dyed receipts matching weft colors/counts
+    // 2. Add dyed receipts matching weft colors/counts (exclude excess)
     (dyri || []).forEach(item => {
+      const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+      if (isExcess) return;
+
       const countId = item.yarn_count_id || '';
       const color = item.colour || '';
-      const key = `${countId}-${color}`;
-      const isExcess = item.is_excess || item.receipt?.source_type === 'production';
-
-      if (summary[key] && !isExcess) {
-        summary[key].received += parseFloat(item.quantity_kg || 0);
-      }
+      const key = ensureKey(countId, color);
+      summary[key].received += parseFloat(item.quantity_kg || 0);
     });
 
-    const findCountId = (ret) => {
-      if (ret.yarn_count_id) return ret.yarn_count_id;
-      if (!ret.count_display) return '';
-      const cleanDisplay = ret.count_display.trim().toLowerCase();
-      const match = yarnCounts.find(yc => {
-        const ycDisplay = `${yc.count_value} ${yc.material} ${yc.product_type}`.trim().toLowerCase();
-        return ycDisplay === cleanDisplay;
-      });
-      if (match) return match.id;
-      const matchPartial = yarnCounts.find(yc => {
-        const val = (yc.count_value || '').trim().toLowerCase();
-        return val && cleanDisplay.includes(val);
-      });
-      return matchPartial ? matchPartial.id : '';
-    };
-
-    // 3. Add dyed deliveries and returns from completed WVOFs (yarn_returns)
-    const completedWvofIds = new Set();
-    wvofs.forEach(wvof => {
-      const returns = wvof.yarn_returns || [];
-      if (returns.length > 0) {
-        completedWvofIds.add(wvof.id);
-        returns.forEach(ret => {
-          const countId = findCountId(ret);
-          const color = ret.colour || '';
-          const key = `${countId}-${color}`;
-          if (summary[key]) {
-            summary[key].delivered += parseFloat(ret.quantity_received || 0);
-            summary[key].returned += parseFloat(ret.quantity_returned || 0);
-          }
-        });
-      }
-    });
-
-    // 4. For in-progress WVOFs (no yarn_returns yet), count delivery items linked to them
-    const wvofIds = new Set(wvofs.map(w => w.id));
+    // 3. Add dyed deliveries matching count/colour
     (dydi || []).forEach(item => {
-      if (
-        item.process_type === 'weaving' &&
-        item.production_form_id &&
-        wvofIds.has(item.production_form_id) &&
-        !completedWvofIds.has(item.production_form_id)
-      ) {
+      if (item.process_type === 'weaving' || item.yarn_type === 'weft') {
         const countId = item.yarn_count_id || '';
         const color = item.colour || '';
-        const key = `${countId}-${color}`;
-        if (summary[key]) {
-          summary[key].delivered += parseFloat(item.quantity_kg || 0);
-        }
+        const key = ensureKey(countId, color);
+        summary[key].delivered += parseFloat(item.quantity_kg || 0);
       }
     });
 
-    return Object.values(summary);
-  }, [order?.yarn_requirements, dyri, dydi, wvofs, yarnCounts]) || [];
+    // 4. Add returns from dyed receipts matching count/colour (isExcess is true)
+    (dyri || []).forEach(item => {
+      const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+      if (isExcess && item.yarn_type === 'weft') {
+        const countId = item.yarn_count_id || '';
+        const color = item.colour || '';
+        const key = ensureKey(countId, color);
+        summary[key].returned += parseFloat(item.quantity_kg || 0);
+      }
+    });
+
+  }, [order, dyri, dydi]) || [];
 
   const totalWeavedQty = React.useMemo(() => {
     return wvofs.reduce((sum, wv) => {
@@ -338,8 +314,8 @@ function OrderWeavingTab({ order }) {
     return { planned, actual };
   }, [excelTotals]);
 
-  const fetchWeavingData = async () => {
-    setLoading(true);
+  const fetchWeavingData = useCallback(async () => {
+    Promise.resolve().then(() => setLoading(true));
     try {
       // 1. Fetch Receipts (dyed_yarn_receipt_items)
       const { data: receiptData } = await supabase
@@ -392,19 +368,21 @@ function OrderWeavingTab({ order }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [order?.id]);
 
-  const fetchYarnCounts = async () => {
+  const fetchYarnCounts = useCallback(async () => {
     const { data } = await supabase.from('master_yarn_counts').select('*');
     setYarnCounts(data || []);
-  };
+  }, []);
 
   useEffect(() => {
     if (order?.id) {
-      fetchWeavingData();
-      fetchYarnCounts();
+      Promise.resolve().then(() => {
+        fetchWeavingData();
+        fetchYarnCounts();
+      });
     }
-  }, [order?.id]);
+  }, [order?.id, fetchWeavingData, fetchYarnCounts]);
 
   const handleToggleExpand = (wvofId) => {
     if (expandedWvofId === wvofId) {

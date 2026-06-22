@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, ArrowLeft, Loader, Layers, Search, Eye, Settings, RefreshCw, ChevronDown, ChevronRight, Printer, ArrowRight, Send, SlidersHorizontal, ChevronUp, Play, CheckCircle, StopCircle
+  Plus, ArrowLeft, Loader, Layers, Search, Eye, Settings, RefreshCw, ChevronDown, ChevronRight, Printer, ArrowRight, Send, SlidersHorizontal, ChevronUp, Play, CheckCircle, StopCircle, AlertCircle, Clock, X
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PrintableWOF from './PrintableWOF';
@@ -101,6 +101,14 @@ export default function WarpingOrderForms() {
   const [yarnReturns, setYarnReturns] = useState([]);
   const [beams, setBeams] = useState([]);
   const [savingComplete, setSavingComplete] = useState(false);
+
+  // Stop process wizard states
+  const [stopWof, setStopWof] = useState(null);
+  const [stopStep, setStopStep] = useState(null); // null | 'confirm_type' | 'ask_splits' | 'splits_table' | 'yarn_returns'
+  const [stopIsPermanent, setStopIsPermanent] = useState(false);
+  const [stopHasSplits, setStopHasSplits] = useState(false);
+  const [stopSplits, setStopSplits] = useState([]);
+  const [loadingStopSplits, setLoadingStopSplits] = useState(false);
 
   const [forwardWof, setForwardWof] = useState(null);
   const [forwardTo, setForwardTo] = useState('sizing');
@@ -1165,6 +1173,244 @@ export default function WarpingOrderForms() {
     setUpdating(null);
   };
 
+  const openStopWizard = async (wof) => {
+    setStopWof(wof);
+    setStopStep('confirm_type');
+    setStopIsPermanent(false);
+    setStopHasSplits(false);
+    setStopSplits([]);
+    
+    try {
+      const { data: dydrItems } = await supabase
+        .from('dyed_yarn_delivery_items')
+        .select(`
+          id,
+          yarn_count_id,
+          quantity_kg,
+          colour,
+          lot_number,
+          yarn_count:master_yarn_counts(count_value, material, product_type)
+        `)
+        .eq('production_form_id', wof.id);
+
+      const groupedReturns = [];
+      const seen = new Set();
+      (dydrItems || []).forEach(item => {
+        const key = `${item.yarn_count_id}_${item.colour}_${item.lot_number || '—'}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const countVal = item.yarn_count ? `${item.yarn_count.count_value} ${item.yarn_count.material || ''} ${item.yarn_count.product_type || ''}`.trim() : item.yarn_count_id || '—';
+          
+          const totalReceived = (dydrItems || [])
+            .filter(d => d.yarn_count_id === item.yarn_count_id && d.colour === item.colour && (d.lot_number || '—') === (item.lot_number || '—'))
+            .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+
+          groupedReturns.push({
+            yarn_count_id: item.yarn_count_id,
+            count_display: countVal,
+            colour: item.colour,
+            lot_number: item.lot_number || '—',
+            quantity_received: totalReceived,
+            quantity_returned: 0
+          });
+        }
+      });
+      setYarnReturns(groupedReturns);
+    } catch (err) {
+      console.error('Error opening stop wizard:', err);
+    }
+  };
+
+  const loadStopSplits = async () => {
+    if (!stopWof) return;
+    setLoadingStopSplits(true);
+    try {
+      if (stopWof.forwarded_to === 'sizing') {
+        const { data, error } = await supabase
+          .from('sizing_order_forms')
+          .select('*')
+          .eq('wof_id', stopWof.id)
+          .order('sof_number', { ascending: true });
+        const parentSplits = stopWof.warp_splits || [];
+        setStopSplits((data || []).map((item, idx) => ({
+          ...item,
+          warp_no: item.warp_no || parentSplits[idx]?.warp_no || `${stopWof.wof_number}/${idx + 1}`,
+          completedQty: item.qty ? item.qty.toString() : '0'
+        })));
+      } else if (stopWof.forwarded_to === 'weaving') {
+        const { data, error } = await supabase
+          .from('weaving_orders')
+          .select('*')
+          .eq('wof_id', stopWof.id)
+          .order('weaving_number', { ascending: true });
+        if (error) throw error;
+        const parentSplits = stopWof.warp_splits || [];
+        setStopSplits((data || []).map((item, idx) => ({
+          ...item,
+          warp_no: item.warp_no || parentSplits[idx]?.warp_no || `${stopWof.wof_number}/${idx + 1}`,
+          completedQty: item.qty ? item.qty.toString() : '0'
+        })));
+      } else {
+        setStopSplits([]);
+      }
+    } catch (err) {
+      console.error('Error fetching sibling splits:', err);
+      alert('Error fetching splits: ' + err.message);
+    } finally {
+      setLoadingStopSplits(false);
+    }
+  };
+
+  const handleTemporaryStop = async () => {
+    if (!stopWof) return;
+    setUpdating(stopWof.id);
+    try {
+      const { error } = await supabase
+        .from('warping_order_forms')
+        .update({
+          status: 'stopped',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', stopWof.id);
+
+      if (error) throw error;
+      setStopStep(null);
+      setStopWof(null);
+      await fetchWofs();
+    } catch (err) {
+      console.error('Error stopping process temporarily:', err);
+      alert('Failed to stop process temporarily: ' + err.message);
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const handlePermanentStop = async () => {
+    if (!stopWof) return;
+    for (let i = 0; i < yarnReturns.length; i++) {
+      const ret = yarnReturns[i];
+      const retQty = parseFloat(ret.quantity_returned || 0);
+      if (isNaN(retQty) || retQty < 0) {
+        alert(`Please enter a valid return quantity for Colour ${ret.colour}, Lot ${ret.lot_number}`);
+        return;
+      }
+      if (retQty > ret.quantity_received) {
+        alert(`Return quantity (${retQty} kg) cannot exceed received quantity (${ret.quantity_received} kg) for Colour ${ret.colour}, Lot ${ret.lot_number}`);
+        return;
+      }
+    }
+
+    setUpdating(stopWof.id);
+    try {
+      const wofdcNumber = stopWof.wof_number.replace('/WOF/', '/WOFDC/') + '/1';
+      let finalWarpSplits = [];
+
+      if (stopHasSplits) {
+        for (const split of stopSplits) {
+          const completedQty = parseFloat(split.completedQty || 0);
+          if (completedQty <= 0) {
+            if (stopWof.forwarded_to === 'sizing') {
+              const { error: delErr } = await supabase
+                .from('sizing_order_forms')
+                .delete()
+                .eq('id', split.id);
+              if (delErr) throw delErr;
+            } else if (stopWof.forwarded_to === 'weaving') {
+              const { error: delErr } = await supabase
+                .from('weaving_orders')
+                .delete()
+                .eq('id', split.id);
+              if (delErr) throw delErr;
+            }
+          } else {
+            if (stopWof.forwarded_to === 'sizing') {
+              const { error: updErr } = await supabase
+                .from('sizing_order_forms')
+                .update({
+                  qty: completedQty,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', split.id);
+              if (updErr) throw updErr;
+            } else if (stopWof.forwarded_to === 'weaving') {
+              const { error: updErr } = await supabase
+                .from('weaving_orders')
+                .update({
+                  qty: completedQty,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', split.id);
+              if (updErr) throw updErr;
+            }
+
+            finalWarpSplits.push({
+              warp_no: split.sof_number || split.weaving_number || split.warp_no,
+              qty: completedQty,
+              beam_id: split.beam_id || null,
+              beam_name: split.beam_name || split.beam_number || '',
+              start_date: split.start_date || '',
+              end_date: split.end_date || '',
+              sizing_type: split.sizing_type || null,
+              weaving_type: split.weaving_type || null,
+              partner_id: split.partner_id || null,
+              partner_name: split.partner_name || null,
+              machine_id: split.machine_id || null,
+              machine_name: split.machine_name || null
+            });
+          }
+        }
+      } else {
+        if (stopWof.forwarded_to === 'sizing') {
+          const { error: delAllErr } = await supabase
+            .from('sizing_order_forms')
+            .delete()
+            .eq('wof_id', stopWof.id);
+          if (delAllErr) throw delAllErr;
+        } else if (stopWof.forwarded_to === 'weaving') {
+          const { error: delAllErr } = await supabase
+            .from('weaving_orders')
+            .delete()
+            .eq('wof_id', stopWof.id);
+          if (delAllErr) throw delAllErr;
+        }
+        finalWarpSplits = [];
+      }
+
+      const isForwardedCleared = finalWarpSplits.length === 0;
+      const finalWofQty = stopHasSplits
+        ? finalWarpSplits.reduce((sum, s) => sum + parseFloat(s.qty || 0), 0)
+        : 0;
+
+      const { error: wofUpdateErr } = await supabase
+        .from('warping_order_forms')
+        .update({
+          status: 'stopped',
+          qty: finalWofQty,
+          process_completed_at: new Date().toISOString(),
+          wofdc_number: wofdcNumber,
+          warp_splits: finalWarpSplits,
+          warp_splits_count: finalWarpSplits.length,
+          forwarded_to: isForwardedCleared ? null : stopWof.forwarded_to,
+          sizing_type: isForwardedCleared ? null : (stopWof.sizing_type || null),
+          yarn_returns: yarnReturns,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', stopWof.id);
+
+      if (wofUpdateErr) throw wofUpdateErr;
+
+      setExpandedWofdcId(stopWof.id);
+      setStopStep(null);
+      setStopWof(null);
+      await fetchWofs();
+    } catch (err) {
+      console.error('Error stopping process permanently:', err);
+      alert('Failed to stop process permanently: ' + err.message);
+    } finally {
+      setUpdating(null);
+    }
+  };
+
   // Open completion form for job work WOF
   const openCompleteForm = async (wof) => {
     setSavingComplete(true);
@@ -1294,6 +1540,7 @@ export default function WarpingOrderForms() {
         }
       }
 
+      setExpandedWofdcId(wof.id);
       setShowCompleteForm(null);
       await fetchWofs();
     } catch (err) {
@@ -1918,7 +2165,7 @@ export default function WarpingOrderForms() {
                                 {updating === wof.id ? <Loader size={13} className="spin" /> : <CheckCircle size={13} />} Complete
                               </button>
                               <button
-                                onClick={() => updateStatus(wof.id, 'stopped')}
+                                onClick={() => openStopWizard(wof)}
                                 disabled={updating === wof.id}
                                 style={{
                                   display: 'inline-flex',
@@ -1940,7 +2187,7 @@ export default function WarpingOrderForms() {
                               </button>
                             </>
                           )}
-                          {wof.wof_type === 'job_work' && wof.status === 'stopped' && (
+                          {wof.wof_type === 'job_work' && wof.status === 'stopped' && !wof.wofdc_number && (
                             <button
                               onClick={() => updateStatus(wof.id, 'on_process')}
                               disabled={updating === wof.id}
@@ -1948,61 +2195,62 @@ export default function WarpingOrderForms() {
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: '0.4rem',
-                                padding: '0.35rem 0.75rem',
-                                backgroundColor: '#1d4ed8',
-                                border: '1px solid #1d4ed8',
-                                borderRadius: '6px',
-                                color: 'white',
-                                fontWeight: '600',
-                                fontSize: '0.75rem',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s',
-                                opacity: updating === wof.id ? 0.7 : 1
-                              }}
-                            >
-                              {updating === wof.id ? <Loader size={13} className="spin" /> : <Play size={13} />} Resume
-                            </button>
-                          )}
-                          {wof.forwarded_to ? (
-                            <span style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              padding: '0.35rem 0.6rem',
-                              backgroundColor: wof.forwarded_to === 'sizing' ? 'rgba(14,165,233,0.1)' : 'rgba(16,185,129,0.1)',
-                              color: wof.forwarded_to === 'sizing' ? '#0284c7' : '#059669',
-                              border: wof.forwarded_to === 'sizing' ? '1px solid rgba(14,165,233,0.2)' : '1px solid rgba(16,185,129,0.2)',
-                              borderRadius: '6px',
-                              fontWeight: '700',
-                              fontSize: '0.7rem',
-                              textTransform: 'capitalize'
-                            }}>
-                              → {wof.forwarded_to}
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => {
-                                setForwardTo('sizing');
-                                setSplitCount(1);
-                                setForwardWof(wof);
-                              }}
-                              style={{
+                                  padding: '0.35rem 0.75rem',
+                                  backgroundColor: '#1d4ed8',
+                                  border: '1px solid #1d4ed8',
+                                  borderRadius: '6px',
+                                  color: 'white',
+                                  fontWeight: '600',
+                                  fontSize: '0.75rem',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s',
+                                  opacity: updating === wof.id ? 0.7 : 1
+                                }}
+                              >
+                                {updating === wof.id ? <Loader size={13} className="spin" /> : <Play size={13} />} Resume
+                              </button>
+                            )}
+                            {wof.forwarded_to ? (
+                              <span style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '0.4rem',
-                                padding: '0.35rem 0.75rem',
-                                backgroundColor: '#800000',
-                                border: '1px solid #800000',
+                                padding: '0.35rem 0.6rem',
+                                backgroundColor: wof.forwarded_to === 'sizing' ? 'rgba(14,165,233,0.1)' : 'rgba(16,185,129,0.1)',
+                                color: wof.forwarded_to === 'sizing' ? '#0284c7' : '#059669',
+                                border: wof.forwarded_to === 'sizing' ? '1px solid rgba(14,165,233,0.2)' : '1px solid rgba(16,185,129,0.2)',
                                 borderRadius: '6px',
-                                color: 'white',
-                                fontWeight: '600',
-                                fontSize: '0.75rem',
-                                cursor: 'pointer',
-                                transition: 'all 0.15s'
-                              }}
-                            >
-                              <ArrowRight size={13} /> Forward
-                            </button>
-                          )}
+                                fontWeight: '700',
+                                fontSize: '0.7rem',
+                                textTransform: 'capitalize'
+                              }}>
+                                → {wof.forwarded_to}
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setForwardTo('sizing');
+                                  setSplitCount(1);
+                                  setForwardWof(wof);
+                                }}
+                                disabled={wof.status === 'stopped' && !!wof.wofdc_number}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.4rem',
+                                  padding: '0.35rem 0.75rem',
+                                  backgroundColor: (wof.status === 'stopped' && !!wof.wofdc_number) ? '#d1d5db' : '#800000',
+                                  border: (wof.status === 'stopped' && !!wof.wofdc_number) ? '1px solid #d1d5db' : '1px solid #800000',
+                                  borderRadius: '6px',
+                                  color: (wof.status === 'stopped' && !!wof.wofdc_number) ? '#9ca3af' : 'white',
+                                  fontWeight: '600',
+                                  fontSize: '0.75rem',
+                                  cursor: (wof.status === 'stopped' && !!wof.wofdc_number) ? 'not-allowed' : 'pointer',
+                                  transition: 'all 0.15s'
+                                }}
+                              >
+                                <ArrowRight size={13} /> Forward
+                              </button>
+                            )}
                         </div>
                       </td>
                     </tr>
@@ -2285,47 +2533,50 @@ export default function WarpingOrderForms() {
                                       </div>
                                     )}
 
-                                    {/* Collapsible WOFDC Delivery Receipt */}
-                                    {wof.status === 'completed' && (
-                                      <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-current)', paddingTop: '1.25rem' }}>
-                                        <div 
-                                          onClick={() => setExpandedWofdcId(expandedWofdcId === wof.id ? null : wof.id)}
-                                          style={{ 
-                                            display: 'flex', 
-                                            justifyContent: 'space-between', 
-                                            alignItems: 'center', 
-                                            backgroundColor: 'rgba(128,0,0,0.04)', 
-                                            padding: '0.75rem 1rem', 
-                                            borderRadius: '8px', 
-                                            border: '1px solid #800000', 
-                                            cursor: 'pointer',
-                                            userSelect: 'none'
-                                          }}
-                                        >
-                                          <span style={{ fontWeight: '800', color: '#800000', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            📄 Delivery Receipt (WOFDC): {wof.wofdc_number || '—'}
-                                          </span>
-                                          <span style={{ fontSize: '0.75rem', fontWeight: '750', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                            {expandedWofdcId === wof.id ? 'Collapse Details ▲' : 'Expand Details ▼'}
-                                          </span>
-                                        </div>
-                                        
-                                        {expandedWofdcId === wof.id && (
-                                          <div style={{ marginTop: '1rem' }}>
-                                            <PrintableWOFDC 
-                                              wof={wof} 
-                                              order={wof.order} 
-                                              splits={wof.warp_splits || []} 
-                                              yarnReturns={wof.yarn_returns || []} 
-                                            />
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
                                   </div>
                                 ) : (
-                                  <div style={{ padding: '1.5rem', border: '1px dashed var(--border-current)', borderRadius: '8px', backgroundColor: 'var(--surface-current)', textAlign: 'center', color: 'var(--text-muted-current)', fontSize: '0.85rem' }}>
-                                    No forwarding configurations set. Use the "Forward" button to route this order form to Weaving or Sizing.
+                                  !(wof.status === 'stopped' && !!wof.wofdc_number) && (
+                                    <div style={{ padding: '1.5rem', border: '1px dashed var(--border-current)', borderRadius: '8px', backgroundColor: 'var(--surface-current)', textAlign: 'center', color: 'var(--text-muted-current)', fontSize: '0.85rem' }}>
+                                      No forwarding configurations set. Use the "Forward" button to route this order form to Weaving or Sizing.
+                                    </div>
+                                  )
+                                )}
+
+                                {/* Collapsible WOFDC Delivery Receipt */}
+                                {(wof.status === 'completed' || (wof.status === 'stopped' && !!wof.wofdc_number)) && (
+                                  <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-current)', paddingTop: '1.25rem' }}>
+                                    <div 
+                                      onClick={() => setExpandedWofdcId(expandedWofdcId === wof.id ? null : wof.id)}
+                                      style={{ 
+                                        display: 'flex', 
+                                        justifyContent: 'space-between', 
+                                        alignItems: 'center', 
+                                        backgroundColor: 'rgba(128,0,0,0.04)', 
+                                        padding: '0.75rem 1rem', 
+                                        borderRadius: '8px', 
+                                        border: '1px solid #800000', 
+                                        cursor: 'pointer',
+                                        userSelect: 'none'
+                                      }}
+                                    >
+                                      <span style={{ fontWeight: '800', color: '#800000', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        📄 Delivery Receipt (WOFDC): {wof.wofdc_number || '—'}
+                                      </span>
+                                      <span style={{ fontSize: '0.75rem', fontWeight: '750', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                        {expandedWofdcId === wof.id ? 'Collapse Details ▲' : 'Expand Details ▼'}
+                                      </span>
+                                    </div>
+                                    
+                                    {expandedWofdcId === wof.id && (
+                                      <div style={{ marginTop: '1rem' }}>
+                                        <PrintableWOFDC 
+                                          wof={wof} 
+                                          order={wof.order} 
+                                          splits={wof.warp_splits || []} 
+                                          yarnReturns={wof.yarn_returns || []} 
+                                        />
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -3360,6 +3611,649 @@ export default function WarpingOrderForms() {
                 {editWofSubmitting ? <Loader size={14} className="spin" /> : null}
                 Save Changes
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stop Process Modal */}
+      {stopStep && stopWof && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.45)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1.5rem',
+          animation: 'fadeIn 0.25s ease-out'
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '24px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04)',
+            width: '100%',
+            maxWidth: stopStep === 'splits_table' ? '1150px' : stopStep === 'yarn_returns' ? '800px' : '680px',
+            display: 'flex',
+            flexDirection: 'column',
+            maxHeight: '85vh',
+            border: '1px solid rgba(128, 0, 0, 0.08)',
+            overflow: 'hidden',
+            transition: 'max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '1.75rem 2.25rem',
+              borderBottom: '1px solid #f3f4f6',
+              background: 'linear-gradient(135deg, #800000, #4d0000)',
+              color: '#fff',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', letterSpacing: '-0.02em' }}>Stop Warping Process</h3>
+                <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.825rem', opacity: 0.85, fontWeight: '500' }}>
+                  WOF: <strong style={{ fontFamily: 'monospace', letterSpacing: '0.05em' }}>{stopWof.wof_number}</strong>
+                </p>
+              </div>
+              <button 
+                onClick={() => setStopStep(null)} 
+                style={{ 
+                  background: 'rgba(255,255,255,0.12)', 
+                  border: 'none', 
+                  borderRadius: '50%', 
+                  width: '36px', 
+                  height: '36px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  cursor: 'pointer', 
+                  color: '#fff', 
+                  fontSize: '1.25rem', 
+                  transition: 'all 0.2s' 
+                }} 
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.22)'} 
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.12)'}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '2.5rem 2.25rem', backgroundColor: '#fcfcfc', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+              
+              {stopStep === 'confirm_type' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                  <div style={{ textAlign: 'center', maxWidth: '480px', margin: '0 auto' }}>
+                    <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#800000', marginBottom: '0.6rem', letterSpacing: '-0.02em' }}>
+                      Choose Stop Mode
+                    </div>
+                    <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: 0, lineHeight: '1.5' }}>
+                      Would you like to temporarily pause the warping run or permanently stop the process?
+                    </p>
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginTop: '0.5rem' }}>
+                    {/* Option 1: Temporary Pause */}
+                    <div style={{
+                      border: '1.5px solid #e5e7eb',
+                      borderRadius: '18px',
+                      padding: '2.25rem 1.75rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      gap: '1.25rem',
+                      backgroundColor: '#fff',
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.02)'
+                    }}
+                    onMouseEnter={e => { 
+                      e.currentTarget.style.transform = 'translateY(-5px)'; 
+                      e.currentTarget.style.borderColor = '#800000'; 
+                      e.currentTarget.style.boxShadow = '0 16px 28px -10px rgba(128, 0, 0, 0.12)'; 
+                    }}
+                    onMouseLeave={e => { 
+                      e.currentTarget.style.transform = 'translateY(0)'; 
+                      e.currentTarget.style.borderColor = '#e5e7eb'; 
+                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.02)'; 
+                    }}
+                    onClick={handleTemporaryStop}
+                    >
+                      <div style={{ width: '56px', height: '56px', borderRadius: '14px', backgroundColor: '#fff5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#800000', boxShadow: '0 4px 10px rgba(128, 0, 0, 0.06)' }}>
+                        <Clock size={24} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ margin: '0 0 0.5rem 0', fontWeight: '800', fontSize: '1.05rem', color: '#111827' }}>Pause Process</h4>
+                        <p style={{ margin: 0, fontSize: '0.825rem', color: '#6b7280', lineHeight: '1.5' }}>
+                          Temporarily pause the run. You can resume this same process later without losing any configuration.
+                        </p>
+                      </div>
+                      <button style={{
+                        width: '100%',
+                        padding: '0.65rem 1rem',
+                        border: '1.5px solid #800000',
+                        borderRadius: '10px',
+                        backgroundColor: '#fff',
+                        color: '#800000',
+                        fontWeight: '700',
+                        fontSize: '0.85rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.backgroundColor = '#800000';
+                        e.currentTarget.style.color = '#fff';
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.backgroundColor = '#fff';
+                        e.currentTarget.style.color = '#800000';
+                      }}
+                      >
+                        Pause Process
+                      </button>
+                    </div>
+
+                    {/* Option 2: Permanent Stop */}
+                    <div style={{
+                      border: '1.5px solid #e5e7eb',
+                      borderRadius: '18px',
+                      padding: '2.25rem 1.75rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      gap: '1.25rem',
+                      backgroundColor: '#fff',
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.02)'
+                    }}
+                    onMouseEnter={e => { 
+                      e.currentTarget.style.transform = 'translateY(-5px)'; 
+                      e.currentTarget.style.borderColor = '#800000'; 
+                      e.currentTarget.style.boxShadow = '0 16px 28px -10px rgba(128, 0, 0, 0.12)'; 
+                    }}
+                    onMouseLeave={e => { 
+                      e.currentTarget.style.transform = 'translateY(0)'; 
+                      e.currentTarget.style.borderColor = '#e5e7eb'; 
+                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.02)'; 
+                    }}
+                    onClick={() => {
+                      setStopIsPermanent(true);
+                      if (!stopWof.forwarded_to) {
+                        setStopHasSplits(false);
+                        const updatedReturns = yarnReturns.map(r => ({
+                          ...r,
+                          quantity_returned: r.quantity_received.toString()
+                        }));
+                        setYarnReturns(updatedReturns);
+                        setStopStep('yarn_returns');
+                      } else {
+                        setStopStep('ask_splits');
+                      }
+                    }}
+                    >
+                      <div style={{ width: '56px', height: '56px', borderRadius: '14px', backgroundColor: '#fff1f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e11d48', boxShadow: '0 4px 10px rgba(225, 29, 72, 0.06)' }}>
+                        <StopCircle size={24} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ margin: '0 0 0.5rem 0', fontWeight: '800', fontSize: '1.05rem', color: '#e11d48' }}>Stop Permanently</h4>
+                        <p style={{ margin: 0, fontSize: '0.825rem', color: '#6b7280', lineHeight: '1.5' }}>
+                          Stop the process completely. Generates WOFDC delivery receipt and returns dyed yarn. Cannot be resumed.
+                        </p>
+                      </div>
+                      <button style={{
+                        width: '100%',
+                        padding: '0.65rem 1rem',
+                        border: 'none',
+                        borderRadius: '10px',
+                        backgroundColor: '#800000',
+                        color: '#fff',
+                        fontWeight: '700',
+                        fontSize: '0.85rem',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 12px rgba(128, 0, 0, 0.15)',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = '#600000'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = '#800000'}
+                      >
+                        Stop Permanently
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {stopStep === 'ask_splits' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                  <div style={{ textAlign: 'center', maxWidth: '480px', margin: '0 auto' }}>
+                    <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#800000', marginBottom: '0.6rem', letterSpacing: '-0.02em' }}>
+                      Are there any splits?
+                    </div>
+                    <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: 0, lineHeight: '1.5' }}>
+                      Choose whether you want to record completed quantities for the forwarded warp split configurations.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginTop: '0.5rem' }}>
+                    {/* Option 1: No Splits */}
+                    <div style={{
+                      border: '1.5px solid #e5e7eb',
+                      borderRadius: '18px',
+                      padding: '2.25rem 1.75rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      gap: '1.25rem',
+                      backgroundColor: '#fff',
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.02)'
+                    }}
+                    onMouseEnter={e => { 
+                      e.currentTarget.style.transform = 'translateY(-5px)'; 
+                      e.currentTarget.style.borderColor = '#800000'; 
+                      e.currentTarget.style.boxShadow = '0 16px 28px -10px rgba(128, 0, 0, 0.12)'; 
+                    }}
+                    onMouseLeave={e => { 
+                      e.currentTarget.style.transform = 'translateY(0)'; 
+                      e.currentTarget.style.borderColor = '#e5e7eb'; 
+                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.02)'; 
+                    }}
+                    onClick={() => {
+                      setStopHasSplits(false);
+                      const updatedReturns = yarnReturns.map(r => ({
+                        ...r,
+                        quantity_returned: r.quantity_received.toString()
+                      }));
+                      setYarnReturns(updatedReturns);
+                      setStopStep('yarn_returns');
+                    }}
+                    >
+                      <div style={{ width: '56px', height: '56px', borderRadius: '14px', backgroundColor: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4b5563', boxShadow: '0 4px 10px rgba(75, 85, 99, 0.06)' }}>
+                        <X size={24} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ margin: '0 0 0.5rem 0', fontWeight: '800', fontSize: '1.05rem', color: '#111827' }}>No splits</h4>
+                        <p style={{ margin: 0, fontSize: '0.825rem', color: '#6b7280', lineHeight: '1.5' }}>
+                          Clear all split configurations from the database and return the total received warp dyed yarn.
+                        </p>
+                      </div>
+                      <button style={{
+                        width: '100%',
+                        padding: '0.65rem 1rem',
+                        border: '1.5px solid #800000',
+                        borderRadius: '10px',
+                        backgroundColor: '#fff',
+                        color: '#800000',
+                        fontWeight: '700',
+                        fontSize: '0.85rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.backgroundColor = '#800000';
+                        e.currentTarget.style.color = '#fff';
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.backgroundColor = '#fff';
+                        e.currentTarget.style.color = '#800000';
+                      }}
+                      >
+                        No splits, delete configs
+                      </button>
+                    </div>
+
+                    {/* Option 2: Yes splits */}
+                    <div style={{
+                      border: '1.5px solid #e5e7eb',
+                      borderRadius: '18px',
+                      padding: '2.25rem 1.75rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      gap: '1.25rem',
+                      backgroundColor: '#fff',
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.02)'
+                    }}
+                    onMouseEnter={e => { 
+                      e.currentTarget.style.transform = 'translateY(-5px)'; 
+                      e.currentTarget.style.borderColor = '#800000'; 
+                      e.currentTarget.style.boxShadow = '0 16px 28px -10px rgba(128, 0, 0, 0.12)'; 
+                    }}
+                    onMouseLeave={e => { 
+                      e.currentTarget.style.transform = 'translateY(0)'; 
+                      e.currentTarget.style.borderColor = '#e5e7eb'; 
+                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.02)'; 
+                    }}
+                    onClick={async () => {
+                      setStopHasSplits(true);
+                      await loadStopSplits();
+                      setStopStep('splits_table');
+                    }}
+                    >
+                      <div style={{ width: '56px', height: '56px', borderRadius: '14px', backgroundColor: '#fff5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#800000', boxShadow: '0 4px 10px rgba(128, 0, 0, 0.06)' }}>
+                        <Layers size={24} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ margin: '0 0 0.5rem 0', fontWeight: '800', fontSize: '1.05rem', color: '#800000' }}>Yes, splits exist</h4>
+                        <p style={{ margin: 0, fontSize: '0.825rem', color: '#6b7280', lineHeight: '1.5' }}>
+                          Record completed quantities for each configuration. Entering 0 will delete that split midway.
+                        </p>
+                      </div>
+                      <button style={{
+                        width: '100%',
+                        padding: '0.65rem 1rem',
+                        border: 'none',
+                        borderRadius: '10px',
+                        backgroundColor: '#800000',
+                        color: '#fff',
+                        fontWeight: '700',
+                        fontSize: '0.85rem',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 12px rgba(128, 0, 0, 0.15)',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = '#600000'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = '#800000'}
+                      >
+                        Yes, record splits
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {stopStep === 'splits_table' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#800000', letterSpacing: '-0.01em' }}>
+                      Warp Split Configurations Completed Quantities
+                    </h4>
+                    <span style={{ fontSize: '0.75rem', color: '#9ca3af', fontWeight: '600' }}>* Required</span>
+                  </div>
+                  
+                  {loadingStopSplits ? (
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '4rem', color: '#6b7280', gap: '0.75rem', fontSize: '0.9rem', fontWeight: '500' }}>
+                      <Loader size={20} className="spin" color="#800000" /> Loading splits configurations...
+                    </div>
+                  ) : stopSplits.length === 0 ? (
+                    <div style={{ padding: '3rem 2rem', textAlign: 'center', fontSize: '0.9rem', color: '#9ca3af', border: '2px dashed #e5e7eb', borderRadius: '16px', backgroundColor: '#fff' }}>
+                      No splits found in the database.
+                    </div>
+                  ) : (
+                    <div style={{ border: '1px solid #e5e7eb', borderRadius: '16px', overflow: 'hidden', backgroundColor: '#fff', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02)' }}>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: '#fff5f5', borderBottom: '2px solid #fee2e2', textAlign: 'left' }}>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000' }}>Config Number</th>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000' }}>SOF/WVOF Number</th>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000' }}>Scope</th>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000' }}>Partner Name</th>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000' }}>Machine</th>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000' }}>Beam Number</th>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000', width: '150px' }}>Completed Qty (m)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stopSplits.map((split, index) => {
+                            const isSizing = (stopWof?.forwarded_to) === 'sizing';
+                            const configNo = split.warp_no || '';
+                            const targetNo = split.sof_number || split.weaving_number || '';
+                            const typeLabel = isSizing ? 'SOF' : 'WVOF';
+                            const scopeLabel = isSizing ? split.sizing_type : split.weaving_type;
+                            const partner = split.partner_name || '—';
+                            const machine = split.machine_name || '—';
+                            const beam = split.beam_name || split.beam_number || '—';
+                            return (
+                              <tr key={index} style={{ borderBottom: index < stopSplits.length - 1 ? '1px solid #f3f4f6' : 'none', transition: 'background-color 0.15s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fff9f9'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                                <td style={{ padding: '1rem 1.25rem', fontWeight: '700', fontFamily: 'monospace', color: '#111827' }}>{configNo}</td>
+                                <td style={{ padding: '1rem 1.25rem' }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ backgroundColor: isSizing ? '#e0f2fe' : '#dcfce7', color: isSizing ? '#0369a1' : '#15803d', padding: '4px 10px', borderRadius: '8px', fontSize: '0.725rem', fontWeight: '800' }}>
+                                      {typeLabel}
+                                    </span>
+                                    {targetNo && (
+                                      <span style={{ fontWeight: '600', fontFamily: 'monospace', color: '#4b5563' }}>
+                                        {targetNo}
+                                      </span>
+                                    )}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '1rem 1.25rem', textTransform: 'capitalize', fontWeight: '600', color: '#374151' }}>{scopeLabel ? scopeLabel.replace('_', ' ') : '—'}</td>
+                                <td style={{ padding: '1rem 1.25rem', color: '#4b5563', fontWeight: '500' }}>{partner}</td>
+                                <td style={{ padding: '1rem 1.25rem', color: '#4b5563', fontWeight: '500' }}>{machine}</td>
+                                <td style={{ padding: '1rem 1.25rem', color: '#4b5563', fontWeight: '500' }}>{beam}</td>
+                                <td style={{ padding: '0.75rem 1.25rem' }}>
+                                  <input
+                                    type="number"
+                                    value={split.completedQty}
+                                    onChange={e => {
+                                      const updated = [...stopSplits];
+                                      updated[index].completedQty = e.target.value;
+                                      setStopSplits(updated);
+                                    }}
+                                    style={{ 
+                                      padding: '0.55rem 0.8rem', 
+                                      borderRadius: '10px', 
+                                      border: '1.5px solid #e5e7eb', 
+                                      fontSize: '0.85rem', 
+                                      width: '100%', 
+                                      boxSizing: 'border-box', 
+                                      outline: 'none', 
+                                      transition: 'all 0.2s', 
+                                      fontWeight: '600',
+                                      color: '#111827'
+                                    }}
+                                    onFocus={e => {
+                                      e.target.style.borderColor = '#800000';
+                                      e.target.style.boxShadow = '0 0 0 4px rgba(128, 0, 0, 0.12)';
+                                    }}
+                                    onBlur={e => {
+                                      e.target.style.borderColor = '#e5e7eb';
+                                      e.target.style.boxShadow = 'none';
+                                    }}
+                                    placeholder="0"
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  )}
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', fontSize: '0.8rem', color: '#991b1b', backgroundColor: '#fff5f5', padding: '1rem 1.25rem', borderRadius: '12px', border: '1px solid #fee2e2', lineHeight: '1.4' }}>
+                    <AlertCircle size={16} color="#b91c1c" style={{ flexShrink: 0 }} />
+                    <span><strong>Note:</strong> Entering 0 for any splits quantity is allowed. That configuration will be deleted (i.e. stopped midway).</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.75rem', paddingTop: '1.5rem', borderTop: '1px solid #f3f4f6' }}>
+                    <button
+                      onClick={() => setStopStep('ask_splits')}
+                      style={{
+                        padding: '0.7rem 1.5rem',
+                        border: '1.5px solid #d1d5db',
+                        borderRadius: '10px',
+                        backgroundColor: '#fff',
+                        color: '#4b5563',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f9fafb'; e.currentTarget.style.borderColor = '#9ca3af'; }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#fff'; e.currentTarget.style.borderColor = '#d1d5db'; }}
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={() => {
+                        for (const s of stopSplits) {
+                          const q = parseFloat(s.completedQty || 0);
+                          if (isNaN(q) || q < 0) {
+                            alert('Please enter valid completed quantities (0 or more).');
+                            return;
+                          }
+                        }
+                        setStopStep('yarn_returns');
+                      }}
+                      style={{
+                        padding: '0.7rem 1.75rem',
+                        border: 'none',
+                        borderRadius: '10px',
+                        backgroundColor: '#800000',
+                        color: '#fff',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 4px 12px rgba(128, 0, 0, 0.15)'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = '#600000'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = '#800000'}
+                    >
+                      Next: Yarn Returns
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {stopStep === 'yarn_returns' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  <div style={{ paddingBottom: '0.5rem', borderBottom: '1px solid #f3f4f6' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#800000', letterSpacing: '-0.01em' }}>
+                      Warp Dyed Yarn Return Details
+                    </h4>
+                  </div>
+                  
+                  {yarnReturns.length === 0 ? (
+                    <div style={{ padding: '3rem 2rem', textAlign: 'center', color: '#9ca3af', fontSize: '0.9rem', border: '2px dashed #e5e7eb', borderRadius: '16px', backgroundColor: '#fff' }}>
+                      No dyed yarn received for this process yet.
+                    </div>
+                  ) : (
+                    <div style={{ border: '1px solid #e5e7eb', borderRadius: '16px', overflow: 'hidden', backgroundColor: '#fff', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02)' }}>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: '#fff5f5', borderBottom: '2px solid #fee2e2', textAlign: 'left' }}>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000' }}>Colour</th>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000' }}>Count</th>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000' }}>Lot Number</th>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000', textAlign: 'right' }}>Received (kg)</th>
+                            <th style={{ padding: '1rem 1.25rem', fontWeight: '800', color: '#800000', width: '160px' }}>Return Qty (kg)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {yarnReturns.map((item, idx) => (
+                            <tr key={idx} style={{ borderBottom: idx < yarnReturns.length - 1 ? '1px solid #f3f4f6' : 'none', transition: 'background-color 0.15s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fff9f9'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                              <td style={{ padding: '1rem 1.25rem', fontWeight: '750', color: '#111827' }}>{item.colour}</td>
+                              <td style={{ padding: '1rem 1.25rem', color: '#4b5563', fontWeight: '600' }}>{item.count_display}</td>
+                              <td style={{ padding: '1rem 1.25rem', fontFamily: 'monospace', color: '#6b7280', fontWeight: '500' }}>{item.lot_number}</td>
+                              <td style={{ padding: '1rem 1.25rem', textAlign: 'right', fontWeight: '750', color: '#111827' }}>{Number(item.quantity_received).toFixed(2)}</td>
+                              <td style={{ padding: '0.75rem 1.25rem' }}>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={item.quantity_returned}
+                                  onChange={e => {
+                                    const updated = [...yarnReturns];
+                                    updated[idx].quantity_returned = e.target.value;
+                                    setYarnReturns(updated);
+                                  }}
+                                  style={{ 
+                                    padding: '0.55rem 0.8rem', 
+                                    borderRadius: '10px', 
+                                    border: '1.5px solid #e5e7eb', 
+                                    fontSize: '0.85rem', 
+                                    width: '100%', 
+                                    boxSizing: 'border-box', 
+                                    outline: 'none', 
+                                    transition: 'all 0.2s', 
+                                    fontWeight: '600',
+                                    color: '#111827'
+                                  }}
+                                  onFocus={e => {
+                                    e.target.style.borderColor = '#800000';
+                                    e.target.style.boxShadow = '0 0 0 4px rgba(128, 0, 0, 0.12)';
+                                  }}
+                                  onBlur={e => {
+                                    e.target.style.borderColor = '#e5e7eb';
+                                    e.target.style.boxShadow = 'none';
+                                  }}
+                                  placeholder="0.00"
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  )}
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.75rem', paddingTop: '1.5rem', borderTop: '1px solid #f3f4f6' }}>
+                    <button
+                      onClick={() => {
+                        if (!stopWof.forwarded_to) {
+                          setStopStep('confirm_type');
+                        } else {
+                          setStopStep(stopHasSplits ? 'splits_table' : 'ask_splits');
+                        }
+                      }}
+                      style={{
+                        padding: '0.7rem 1.5rem',
+                        border: '1.5px solid #d1d5db',
+                        borderRadius: '10px',
+                        backgroundColor: '#fff',
+                        color: '#4b5563',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f9fafb'; e.currentTarget.style.borderColor = '#9ca3af'; }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#fff'; e.currentTarget.style.borderColor = '#d1d5db'; }}
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={handlePermanentStop}
+                      disabled={updating === stopWof.id}
+                      style={{
+                        padding: '0.7rem 1.75rem',
+                        border: 'none',
+                        borderRadius: '10px',
+                        backgroundColor: '#800000',
+                        color: '#fff',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 4px 12px rgba(128, 0, 0, 0.15)',
+                        opacity: updating === stopWof.id ? 0.75 : 1
+                      }}
+                      onMouseEnter={e => { if (updating !== stopWof.id) e.currentTarget.style.backgroundColor = '#600000'; }}
+                      onMouseLeave={e => { if (updating !== stopWof.id) e.currentTarget.style.backgroundColor = '#800000'; }}
+                    >
+                      {updating === stopWof.id ? <Loader size={14} className="spin" /> : <StopCircle size={14} />}
+                      Confirm & Stop Permanently
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

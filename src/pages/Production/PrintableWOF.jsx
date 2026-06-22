@@ -63,7 +63,7 @@ function PrintableWOF({ wof, order, machineName, partnerName, yarnCounts }) {
           <title>WOF - ${wof.wof_number}</title>
           <style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { font-family: 'Arial', sans-serif; color: #111; background: white; padding: 24px; }
+            body { font-family: 'Arial', sans-serif; color: #111; background: white; padding: 24px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #4d0000; padding-bottom: 16px; margin-bottom: 20px; }
             .logo-block { display: flex; align-items: center; gap: 12px; }
             .logo-box { width: 48px; height: 48px; background: #4d0000; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; font-weight: 900; }
