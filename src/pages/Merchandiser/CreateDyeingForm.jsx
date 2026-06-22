@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, Loader, CheckSquare, Square, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Loader, CheckSquare, Square, AlertTriangle, ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -24,6 +24,21 @@ export default function CreateDyeingForm() {
   // Form state
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [dyeingUnitId, setDyeingUnitId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = React.useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [selectedColours, setSelectedColours] = useState([]);
   const [allocations, setAllocations] = useState([]);
@@ -130,6 +145,35 @@ export default function CreateDyeingForm() {
       setFetching(false);
     }
   };
+
+  // Filter out orders that have already been fully allocated to dyeing.
+  const availableOrders = React.useMemo(() => {
+    return myOrders.filter(order => {
+      const reqs = order.yarn_requirements || [];
+      if (reqs.length === 0) return false; // Exclude orders with no yarn requirements
+      
+      const isFully = reqs.every(req => {
+        const key = `${order.id}|${req.type}|${req.countId}|${req.color}`;
+        const conflict = allocatedColours[key];
+        const original_base = parseFloat(req.kg || 0);
+        const already_allotted = conflict ? conflict.already_allotted_base : 0;
+        return (original_base - already_allotted) <= 0;
+      });
+      return !isFully;
+    });
+  }, [myOrders, allocatedColours]);
+
+  // Filter orders based on user's search query matching order number, design name, and design number.
+  const filteredOrders = React.useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return availableOrders;
+    return availableOrders.filter(order => {
+      const orderNo = (order.order_number || '').toLowerCase();
+      const designName = (order.design_name || '').toLowerCase();
+      const designNo = (order.design_no || '').toLowerCase();
+      return orderNo.includes(query) || designName.includes(query) || designNo.includes(query);
+    });
+  }, [availableOrders, searchQuery]);
 
   const formatYarn = (yarn) => {
     if (!yarn) return '';
@@ -421,51 +465,278 @@ export default function CreateDyeingForm() {
         {/* ── STEP 0: Select Orders ── */}
         {currentStep === 0 && (
           <div className="fade-in">
-            <p style={{ color: 'var(--text-muted-current)', marginBottom: '1rem' }}>
+            <p style={{ color: 'var(--text-muted-current)', marginBottom: '1.5rem' }}>
               Select one or more of your active orders to include in this Dyeing Order Form.
             </p>
-            {myOrders.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)' }}>
-                No active orders found. Please create an order first.
+
+            {/* Searchable Multi-Select Dropdown Container */}
+            <div style={{ marginBottom: '1.5rem', position: 'relative' }} ref={dropdownRef}>
+              <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                Search & Select Orders
+              </label>
+
+              {/* Pills / Badges of selected items */}
+              {selectedOrders.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  {selectedOrders.map(order => (
+                    <div
+                      key={order.id}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        backgroundColor: 'rgba(var(--color-primary-rgb, 128,0,0), 0.06)',
+                        border: '1px solid var(--color-primary)',
+                        color: 'var(--color-primary)',
+                        borderRadius: 'var(--radius-sm, 4px)',
+                        padding: '0.25rem 0.5rem',
+                        fontSize: '0.75rem',
+                        fontWeight: '600'
+                      }}
+                    >
+                      <span>{order.order_number} ({order.design_name})</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleOrder(order.id);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--color-primary)',
+                          padding: 0,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Dropdown trigger and search input */}
+              <div
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  border: '1px solid var(--border-current, #ccc)',
+                  borderRadius: 'var(--radius-md, 6px)',
+                  backgroundColor: 'var(--background-field, #fff)',
+                  padding: '0 0.75rem',
+                  cursor: 'text',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}
+                onClick={() => setDropdownOpen(true)}
+              >
+                <Search size={16} color="var(--text-muted-current)" style={{ marginRight: '0.5rem' }} />
+                <input
+                  type="text"
+                  placeholder="Type Order No, Design Name, or Design No to search..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setDropdownOpen(true);
+                  }}
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    outline: 'none',
+                    padding: '0.625rem 0',
+                    fontSize: '0.875rem',
+                    backgroundColor: 'transparent',
+                    color: 'inherit'
+                  }}
+                  onFocus={() => setDropdownOpen(true)}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSearchQuery('');
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: '0.25rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      color: 'var(--text-muted-current)',
+                      marginRight: '0.25rem'
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDropdownOpen(!dropdownOpen);
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: '0.25rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    color: 'var(--text-muted-current)'
+                  }}
+                >
+                  {dropdownOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+              </div>
+
+              {/* Dropdown overlay */}
+              {dropdownOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    marginTop: '0.25rem',
+                    backgroundColor: 'var(--surface-current, #fff)',
+                    border: '1px solid var(--border-current, #ccc)',
+                    borderRadius: 'var(--radius-md, 6px)',
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                    zIndex: 50,
+                    maxHeight: '260px',
+                    overflowY: 'auto'
+                  }}
+                >
+                  {filteredOrders.length === 0 ? (
+                    <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted-current)', fontSize: '0.875rem' }}>
+                      {availableOrders.length === 0 
+                        ? 'No active orders available for dyeing (all fully allocated)' 
+                        : 'No matching orders found'}
+                    </div>
+                  ) : (
+                    filteredOrders.map(order => {
+                      const isSelected = selectedOrderIds.includes(order.id);
+                      return (
+                        <div
+                          key={order.id}
+                          onClick={() => toggleOrder(order.id)}
+                          style={{
+                            padding: '0.6rem 0.75rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem',
+                            cursor: 'pointer',
+                            backgroundColor: isSelected ? 'rgba(var(--color-primary-rgb, 128,0,0), 0.04)' : 'transparent',
+                            borderBottom: '1px solid var(--border-current, #f0f0f0)',
+                            transition: 'background-color 0.15s'
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = isSelected ? 'rgba(var(--color-primary-rgb, 128,0,0), 0.08)' : 'rgba(0,0,0,0.02)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isSelected ? 'rgba(var(--color-primary-rgb, 128,0,0), 0.04)' : 'transparent'; }}
+                        >
+                          {isSelected ? (
+                            <CheckSquare size={16} color="var(--color-primary)" style={{ flexShrink: 0 }} />
+                          ) : (
+                            <Square size={16} color="var(--text-muted-current)" style={{ flexShrink: 0 }} />
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
+                              <span style={{ fontWeight: '700', color: 'var(--color-primary)', fontSize: '0.85rem' }}>
+                                {order.order_number}
+                              </span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>
+                                {order.master_brands?.brand_name}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>
+                              <span>Design: <strong>{order.design_name} ({order.design_no})</strong></span>
+                              <span>•</span>
+                              <span>Count: <strong>{getShortCounts(order.technical_specs)}</strong></span>
+                              <span>•</span>
+                              <span>Qty: <strong>{order.total_quantity} Mtrs</strong></span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Selected Orders Details Table */}
+            {selectedOrders.length === 0 ? (
+              <div style={{
+                padding: '2.5rem',
+                border: '2px dashed var(--border-current, #ccc)',
+                borderRadius: 'var(--radius-md, 6px)',
+                textAlign: 'center',
+                color: 'var(--text-muted-current)',
+                marginTop: '1.5rem',
+                fontSize: '0.875rem'
+              }}>
+                Please search and select orders from the dropdown to start building the Dyeing Order Form.
               </div>
             ) : (
-              <div className="table-container">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Select</th>
-                      <th>Order No.</th>
-                      <th>Design No.</th>
-                      <th>Design Name</th>
-                      <th>Buyer</th>
-                      <th>Count</th>
-                      <th>Qty (Mtrs)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {myOrders.map(order => (
-                      <tr
-                        key={order.id}
-                        onClick={() => toggleOrder(order.id)}
-                        style={{ cursor: 'pointer', backgroundColor: selectedOrderIds.includes(order.id) ? 'rgba(128,0,0,0.05)' : '' }}
-                      >
-                        <td>
-                          {selectedOrderIds.includes(order.id)
-                            ? <CheckSquare size={18} color="var(--color-primary)" />
-                            : <Square size={18} color="var(--text-muted-current)" />}
-                        </td>
-                        <td style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{order.order_number}</td>
-                        <td>{order.design_no}</td>
-                        <td>{order.design_name}</td>
-                        <td>{order.master_brands?.brand_name}</td>
-                        <td style={{ fontWeight: 'bold' }}>{getShortCounts(order.technical_specs)}</td>
-                        <td>{order.total_quantity}</td>
+              <div style={{ marginTop: '1.5rem' }} className="fade-in">
+                <h4 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                  Selected Orders Detail
+                </h4>
+                <div className="table-container">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Remove</th>
+                        <th>Order No.</th>
+                        <th>Design No.</th>
+                        <th>Design Name</th>
+                        <th>Buyer</th>
+                        <th>Count</th>
+                        <th>Qty (Mtrs)</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {selectedOrders.map(order => (
+                        <tr key={order.id}>
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() => toggleOrder(order.id)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#dc2626',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.75rem',
+                                fontWeight: '600'
+                              }}
+                            >
+                              <X size={14} /> Remove
+                            </button>
+                          </td>
+                          <td style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{order.order_number}</td>
+                          <td>{order.design_no}</td>
+                          <td>{order.design_name}</td>
+                          <td>{order.master_brands?.brand_name}</td>
+                          <td style={{ fontWeight: 'bold' }}>{getShortCounts(order.technical_specs)}</td>
+                          <td>{order.total_quantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.5rem', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-muted-current)', fontSize: '0.875rem' }}>
                 {selectedOrderIds.length} order(s) selected
@@ -503,7 +774,7 @@ export default function CreateDyeingForm() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                 {selectedOrders.map(o => (
                   <span key={o.id} style={{ backgroundColor: 'var(--surface-current)', border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', padding: '0.4rem 0.8rem', fontSize: '0.875rem', fontWeight: '600' }}>
-                    {o.order_number} — {o.design_name}
+                    {o.order_number} — {o.design_name} — {o.design_no}
                   </span>
                 ))}
               </div>

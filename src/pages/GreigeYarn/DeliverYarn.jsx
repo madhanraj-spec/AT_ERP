@@ -37,7 +37,7 @@ export default function DeliverYarn() {
   const [locStock, setLocStock] = useState({}); // { countId: { locationId: quantity } }
 
   // Modals
-  const [allocateModal, setAllocateModal] = useState(null); // { countId, colour, required_kg, sent_kg }
+  const allocateModal = null; // { countId, colour, required_kg, sent_kg }
   const [logisticsModal, setLogisticsModal] = useState(null); // { items: [{...}] }
   const [viewReceiptModal, setViewReceiptModal] = useState(null);
   const [view, setView] = useState('summary'); // 'summary' | 'allocation'
@@ -45,6 +45,7 @@ export default function DeliverYarn() {
   // Allocate form state (consolidated for all counts)
   const [allAllocItems, setAllAllocItems] = useState([]); // [{ countId, colour, orderNo, type, required, qty, location, ... }]
   const [allocError, setAllocError] = useState('');
+  const [overAllocatedGroups, setOverAllocatedGroups] = useState([]);
 
   // Logistics form state
   const [deliveredBy, setDeliveredBy] = useState('');
@@ -292,6 +293,7 @@ export default function DeliverYarn() {
         const unassignedMatch = Math.max(0, unassignedMatchDeliveries - unassignedMatchReturns);
 
         fullAllocList.push({
+          id: `${order.id || 'gen'}_${a.countId}_${a.colour}_${a.type}_${Math.random().toString(36).substr(2, 9)}`,
           orderId: order.id,
           orderNumber: order.order_number,
           countId: a.countId,
@@ -303,6 +305,7 @@ export default function DeliverYarn() {
           delivered_qty: '',
           spinning_mill_id: defaultMill,
           location_id: defaultLoc,
+          isSplit: false,
         });
       });
     });
@@ -364,6 +367,7 @@ export default function DeliverYarn() {
         const alreadyAllocated = Math.max(0, alreadyAllocatedDeliveries - alreadyAllocatedReturns);
 
         fullAllocList.push({
+          id: `null_${s.countId}_${s.colour}_general_${Math.random().toString(36).substr(2, 9)}`,
           orderId: null,
           orderNumber: 'Miscellaneous / General',
           countId: s.countId,
@@ -375,6 +379,7 @@ export default function DeliverYarn() {
           delivered_qty: '',
           spinning_mill_id: defaultMill,
           location_id: defaultLoc,
+          isSplit: false,
         });
       }
     });
@@ -392,9 +397,65 @@ export default function DeliverYarn() {
     setView('allocation');
   };
 
-  const updateAllocItem = (idx, field, value) => {
-    setAllAllocItems(prev => prev.map((item, i) => {
-      if (i !== idx) return item;
+  const addSplitLocation = (parentItem, parentIdx) => {
+    const sMap = locStock[parentItem.countId] || {};
+    
+    // Find available spinning mills for this count
+    const availableMills = [];
+    const seenMills = new Set();
+    Object.keys(sMap).forEach(combKey => {
+      const [millId] = combKey.split('_');
+      const qty = sMap[combKey] || 0;
+      if (qty > 0.01) {
+        if (!seenMills.has(millId)) {
+          seenMills.add(millId);
+          availableMills.push({
+            id: millId === 'null' ? '' : millId,
+            name: millId === 'null' ? 'Production Returns' : (millNames[millId] || 'Unknown Mill')
+          });
+        }
+      }
+    });
+
+    const defaultMill = availableMills[0]?.id || '';
+    const availableLocs = locations.filter(l => {
+      const key = `${defaultMill || 'null'}_${l.id}`;
+      return (sMap[key] || 0) > 0.01;
+    });
+    const defaultLoc = availableLocs[0]?.id || '';
+
+    const newSplit = {
+      id: `${parentItem.orderId || 'null'}_${parentItem.countId}_${parentItem.colour}_${parentItem.type}_split_${Math.random().toString(36).substr(2, 9)}`,
+      orderId: parentItem.orderId,
+      orderNumber: parentItem.orderNumber,
+      countId: parentItem.countId,
+      colour: parentItem.colour,
+      countLabel: parentItem.countLabel,
+      type: parentItem.type,
+      required_kg: parentItem.required_kg,
+      already_allocated_kg: parentItem.already_allocated_kg,
+      delivered_qty: '',
+      spinning_mill_id: defaultMill,
+      location_id: defaultLoc,
+      isSplit: true
+    };
+
+    setAllAllocItems(prev => {
+      const copy = [...prev];
+      copy.splice(parentIdx + 1, 0, newSplit);
+      return copy;
+    });
+    setAllocError('');
+  };
+
+  const removeSplitLocation = (id) => {
+    setAllAllocItems(prev => prev.filter(item => item.id !== id));
+    setAllocError('');
+  };
+
+  const updateAllocItem = (id, field, value) => {
+    setAllAllocItems(prev => prev.map(item => {
+      if (item.id !== id) return item;
       const updated = { ...item, [field]: value };
       if (field === 'spinning_mill_id') {
         const sMap = locStock[item.countId] || {};
@@ -409,11 +470,145 @@ export default function DeliverYarn() {
     setAllocError('');
   };
 
+  const runRealTimeValidation = useCallback((items) => {
+    // Clear previous error and over-allocated state
+    setAllocError('');
+    const overAllocGroups = [];
+
+    // 1. Group limits
+    const allocGroups = {};
+    for (const item of items) {
+      const qty = parseFloat(item.delivered_qty || 0);
+      if (qty <= 0) continue;
+      const groupKey = `${item.orderId || 'null'}_${item.countId}_${item.colour}_${item.type}`;
+      if (!allocGroups[groupKey]) {
+        allocGroups[groupKey] = {
+          label: `${item.countLabel} (${item.colour}) - ${item.type}${item.orderId ? ` [Order: ${item.orderNumber}]` : ''}`,
+          required: item.required_kg,
+          already_allocated: item.already_allocated_kg,
+          entering: 0,
+          key: groupKey
+        };
+      }
+      allocGroups[groupKey].entering += qty;
+    }
+
+    let errorFound = false;
+    for (const group of Object.values(allocGroups)) {
+      const balance = Math.max(0, group.required - group.already_allocated);
+      if (group.entering > balance + 0.001) {
+        setAllocError(`${group.label}: Total quantity to deliver (${group.entering.toFixed(2)} kg) exceeds required balance (${balance.toFixed(2)} kg).`);
+        overAllocGroups.push(group.key);
+        errorFound = true;
+      }
+    }
+
+    setOverAllocatedGroups(overAllocGroups);
+    if (errorFound) return;
+
+    // 2. Count Summary limits
+    for (const summaryRow of countSummary) {
+      const enteringForThis = items
+        .filter(i => i.countId === summaryRow.countId && i.colour === summaryRow.colour)
+        .reduce((s, i) => s + parseFloat(i.delivered_qty || 0), 0);
+      
+      if (enteringForThis > summaryRow.balance_kg + 0.001) {
+        setAllocError(`${summaryRow.countLabel} (${summaryRow.colour}): Total entering (${enteringForThis.toFixed(2)}kg) exceeds DOF balance (${summaryRow.balance_kg.toFixed(2)}kg).`);
+        items.forEach(i => {
+          if (i.countId === summaryRow.countId && i.colour === summaryRow.colour) {
+            const groupKey = `${i.orderId || 'null'}_${i.countId}_${i.colour}_${i.type}`;
+            if (!overAllocGroups.includes(groupKey)) overAllocGroups.push(groupKey);
+          }
+        });
+        setOverAllocatedGroups(overAllocGroups);
+        return;
+      }
+
+      if (enteringForThis > summaryRow.stock_available + 0.001) {
+        setAllocError(`${summaryRow.countLabel} (${summaryRow.colour}): Total entering (${enteringForThis.toFixed(2)}kg) exceeds available warehouse stock (${summaryRow.stock_available.toFixed(2)}kg).`);
+        items.forEach(i => {
+          if (i.countId === summaryRow.countId && i.colour === summaryRow.colour) {
+            const groupKey = `${i.orderId || 'null'}_${i.countId}_${i.colour}_${i.type}`;
+            if (!overAllocGroups.includes(groupKey)) overAllocGroups.push(groupKey);
+          }
+        });
+        setOverAllocatedGroups(overAllocGroups);
+        return;
+      }
+    }
+
+    // 3. Location stock limits
+    const allocatedByCombo = {};
+    for (const item of items) {
+      const qty = parseFloat(item.delivered_qty || 0);
+      if (qty <= 0) continue;
+      if (!item.location_id) continue;
+      const key = `${item.spinning_mill_id || 'null'}_${item.location_id}`;
+      const comboKey = `${item.countId}_key_${key}`;
+      allocatedByCombo[comboKey] = (allocatedByCombo[comboKey] || 0) + qty;
+    }
+
+    for (const [comboKey, qty] of Object.entries(allocatedByCombo)) {
+      const [countId, keySuffix] = comboKey.split('_key_');
+      const [millId, locationId] = keySuffix.split('_');
+      const availableInLoc = (locStock[countId] || {})[`${millId}_${locationId}`] || 0;
+      if (qty > availableInLoc + 0.001) {
+        const item = items.find(i => i.countId === countId);
+        const loc = locations.find(l => l.id === locationId);
+        const millName = millId === 'null' ? 'Production Returns' : (millNames[millId] || 'Selected Mill');
+        setAllocError(`${item?.countLabel || 'Yarn'} (${item?.colour || ''}): Total allocated qty (${qty.toFixed(2)}kg) from ${millName} at ${loc?.location_name || 'selected location'} exceeds available stock (${availableInLoc.toFixed(2)}kg).`);
+        
+        items.forEach(i => {
+          if (i.countId === countId && (i.spinning_mill_id || '') === (millId === 'null' ? '' : millId) && i.location_id === locationId) {
+            const groupKey = `${i.orderId || 'null'}_${i.countId}_${i.colour}_${i.type}`;
+            if (!overAllocGroups.includes(groupKey)) overAllocGroups.push(groupKey);
+          }
+        });
+        setOverAllocatedGroups(overAllocGroups);
+        return;
+      }
+    }
+  }, [countSummary, locStock, locations, millNames]);
+
+  useEffect(() => {
+    if (allAllocItems.length > 0) {
+      runRealTimeValidation(allAllocItems);
+    } else {
+      setOverAllocatedGroups([]);
+      setAllocError('');
+    }
+  }, [allAllocItems, runRealTimeValidation]);
+
   const validateAll = () => {
     const totalEntering = allAllocItems.reduce((s, i) => s + parseFloat(i.delivered_qty || 0), 0);
     if (totalEntering <= 0) {
       setAllocError('Please enter at least some quantity to deliver.');
       return false;
+    }
+
+    // Validate per-allocation group limits (so we don't over-deliver for a specific order and yarn count)
+    const allocGroups = {};
+    for (const item of allAllocItems) {
+      const qty = parseFloat(item.delivered_qty || 0);
+      if (qty <= 0) continue;
+      const groupKey = `${item.orderId || 'null'}_${item.countId}_${item.colour}_${item.type}`;
+      if (!allocGroups[groupKey]) {
+        allocGroups[groupKey] = {
+          label: `${item.countLabel} (${item.colour}) - ${item.type} [Order: ${item.orderNumber}]`,
+          required: item.required_kg,
+          already_allocated: item.already_allocated_kg,
+          entering: 0
+        };
+      }
+      allocGroups[groupKey].entering += qty;
+    }
+
+    for (const group of Object.values(allocGroups)) {
+      const balance = Math.max(0, group.required - group.already_allocated);
+      if (group.entering > balance + 0.001) {
+        setAllocError(`${group.label}: Total quantity to deliver (${group.entering.toFixed(2)} kg) exceeds required balance (${balance.toFixed(2)} kg).`);
+        return false;
+      }
     }
 
     // Validate per-count balances
@@ -793,8 +988,6 @@ export default function DeliverYarn() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             {/* Get unique order numbers from allAllocItems to maintain grouping */}
             {[...new Set(allAllocItems.map(i => i.orderNumber))].map((ordNum, oIdx) => {
-              const itemsForOrder = allAllocItems.filter(i => i.orderNumber === ordNum);
-              
               return (
                 <div key={oIdx} className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
                   <div style={{ padding: '1.25rem 1.5rem', backgroundColor: '#fcfaf9', borderBottom: '1px solid var(--border-current)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -813,6 +1006,7 @@ export default function DeliverYarn() {
                           <th style={{ width: '180px' }}>Qty to Deliver (kg)</th>
                           <th style={{ width: '200px' }}>Spinning Mill</th>
                           <th style={{ width: '220px' }}>From Location (Available Stock)</th>
+                          <th style={{ width: '120px', textAlign: 'center' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -845,16 +1039,32 @@ export default function DeliverYarn() {
                             return (sMap[key] || 0) > 0.01;
                           });
 
+                          const groupKey = `${item.orderId || 'null'}_${item.countId}_${item.colour}_${item.type}`;
+                          const isOverAlloc = overAllocatedGroups.includes(groupKey);
+
                           return (
-                            <tr key={aIdx}>
+                            <tr key={item.id} style={{ backgroundColor: item.isSplit ? '#fafaf9' : 'transparent' }}>
                               <td>
-                                <div style={{ fontWeight: '700' }}>{item.countLabel}</div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--color-primary)', fontWeight: '600' }}>{item.colour}</div>
+                                {item.isSplit ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '1rem', color: 'var(--text-muted-current)' }}>
+                                    <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>↳</span>
+                                    <span style={{ fontSize: '0.8rem', fontStyle: 'italic' }}>Split Location</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div style={{ fontWeight: '700' }}>{item.countLabel}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-primary)', fontWeight: '600' }}>{item.colour}</div>
+                                  </>
+                                )}
                               </td>
-                              <td style={{ textTransform: 'capitalize', fontWeight: 'bold' }}>{item.type}</td>
-                              <td style={{ textAlign: 'right', fontWeight: '600' }}>{item.required_kg.toFixed(2)}</td>
+                              <td style={{ textTransform: 'capitalize', fontWeight: 'bold', color: item.isSplit ? '#94a3b8' : 'inherit' }}>
+                                {item.type}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: '600' }}>
+                                {!item.isSplit ? item.required_kg.toFixed(2) : '-'}
+                              </td>
                               <td style={{ textAlign: 'right', fontWeight: '700', color: '#64748b' }}>
-                                {item.already_allocated_kg.toFixed(2)} kg
+                                {!item.isSplit ? `${item.already_allocated_kg.toFixed(2)} kg` : '-'}
                               </td>
                               <td>
                                 <input
@@ -862,15 +1072,22 @@ export default function DeliverYarn() {
                                   className="input-field"
                                   placeholder="0.00"
                                   value={item.delivered_qty}
-                                  onChange={(e) => updateAllocItem(aIdx, 'delivered_qty', e.target.value)}
-                                  style={{ width: '100%', padding: '6px 12px' }}
+                                  onChange={(e) => updateAllocItem(item.id, 'delivered_qty', e.target.value)}
+                                  style={{
+                                    width: '100%',
+                                    padding: '6px 12px',
+                                    borderColor: isOverAlloc ? '#dc2626' : 'var(--border-current)',
+                                    backgroundColor: isOverAlloc ? '#fef2f2' : 'inherit',
+                                    color: isOverAlloc ? '#b91c1c' : 'inherit',
+                                    fontWeight: isOverAlloc ? 'bold' : 'normal'
+                                  }}
                                 />
                               </td>
                               <td>
                                 <select
                                   className="input-field"
                                   value={item.spinning_mill_id}
-                                  onChange={(e) => updateAllocItem(aIdx, 'spinning_mill_id', e.target.value)}
+                                  onChange={(e) => updateAllocItem(item.id, 'spinning_mill_id', e.target.value)}
                                   style={{ width: '100%', padding: '6px 12px', borderColor: availableMills.length === 0 ? '#fca5a5' : 'var(--border-current)' }}
                                 >
                                   <option value="">Select Mill</option>
@@ -890,7 +1107,7 @@ export default function DeliverYarn() {
                                 <select
                                   className="input-field"
                                   value={item.location_id}
-                                  onChange={(e) => updateAllocItem(aIdx, 'location_id', e.target.value)}
+                                  onChange={(e) => updateAllocItem(item.id, 'location_id', e.target.value)}
                                   style={{ width: '100%', padding: '6px 12px', borderColor: (!item.location_id && parseFloat(item.delivered_qty || 0) > 0) ? '#fca5a5' : 'var(--border-current)' }}
                                 >
                                   <option value="">Select Location</option>
@@ -908,6 +1125,43 @@ export default function DeliverYarn() {
                                   <div style={{ fontSize: '0.7rem', color: '#b91c1c', marginTop: '4px', fontWeight: '700' }}>
                                     ⚠ No location with stock for this mill
                                   </div>
+                                )}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                {item.isSplit ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeSplitLocation(item.id)}
+                                    style={{
+                                      background: 'none',
+                                      border: '1px solid #dc2626',
+                                      color: '#dc2626',
+                                      padding: '4px 10px',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: '700',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    Remove
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => addSplitLocation(item, aIdx)}
+                                    style={{
+                                      background: 'none',
+                                      border: '1px solid #7f1d1d',
+                                      color: '#7f1d1d',
+                                      padding: '4px 10px',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: '700',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    + Add Location
+                                  </button>
                                 )}
                               </td>
                             </tr>
@@ -938,7 +1192,19 @@ export default function DeliverYarn() {
               </button>
               <button
                 onClick={handleCreateDelivery}
-                style={{ backgroundColor: '#7f1d1d', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '8px', fontSize: '0.9rem', fontWeight: '800', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(127, 29, 29, 0.2)' }}
+                disabled={!!allocError}
+                style={{
+                  backgroundColor: allocError ? '#94a3b8' : '#7f1d1d',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '10px 32px',
+                  borderRadius: '8px',
+                  fontSize: '0.9rem',
+                  fontWeight: '800',
+                  cursor: allocError ? 'not-allowed' : 'pointer',
+                  boxShadow: allocError ? 'none' : '0 4px 6px -1px rgba(127, 29, 29, 0.2)',
+                  opacity: allocError ? 0.7 : 1
+                }}
               >
                 Create Receipt →
               </button>

@@ -652,6 +652,16 @@ export default function DeliverDyedYarn() {
     e.preventDefault();
     if (items.length === 0) return alert('No items to deliver.');
 
+    // Validate that total delivery for each requirement does not exceed remaining allotted quantity
+    for (const req of items) {
+      const totalAllocated = (req.allocations || []).reduce((sum, a) => sum + (parseFloat(a.quantity_kg) || 0), 0);
+      const remainingAllotted = req.allotted_qty - req.delivered_qty;
+      if (totalAllocated > remainingAllotted + 0.001) {
+        alert(`Entered quantity for ${req.colour} (${totalAllocated.toFixed(2)} kg) exceeds the remaining allotted quantity of ${remainingAllotted.toFixed(2)} kg for this WOF!`);
+        return;
+      }
+    }
+
     // Extract allocations with positive quantity
     const validItems = [];
     for (const req of items) {
@@ -820,6 +830,12 @@ export default function DeliverDyedYarn() {
   const selectedDydrs = selectedTarget ? (dydrsByDoc[selectedTarget.id] || []) : [];
   const selectedYarnBadge = getYarnStatusBadge(selectedAllotments, selectedDydrs);
   const isSelectedTargetDelivered = selectedYarnBadge.label === 'Delivered';
+
+  const hasOverAllocation = items.some(req => {
+    const totalAllocated = (req.allocations || []).reduce((sum, a) => sum + (parseFloat(a.quantity_kg) || 0), 0);
+    const remainingAllotted = req.allotted_qty - req.delivered_qty;
+    return totalAllocated > remainingAllotted + 0.001;
+  });
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1.5rem' }}>
@@ -1280,6 +1296,8 @@ export default function DeliverDyedYarn() {
                 <tbody>
                   {items.map((req, reqIdx) => {
                     const totalAllocated = (req.allocations || []).reduce((sum, a) => sum + (parseFloat(a.quantity_kg) || 0), 0);
+                    const remainingAllotted = req.allotted_qty - req.delivered_qty;
+                    const isOverAllotted = totalAllocated > remainingAllotted + 0.001;
                     return (
                       <React.Fragment key={reqIdx}>
                         {/* Requirement Row */}
@@ -1288,7 +1306,10 @@ export default function DeliverDyedYarn() {
                           <td style={{ padding: '0.75rem 1rem', fontWeight: '600' }}>{getFormatCount(req.yarn_count_id)}</td>
                           <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{req.allotted_qty.toFixed(2)}</td>
                           <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#047857' }}>{req.delivered_qty.toFixed(2)}</td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#800000' }}>{totalAllocated.toFixed(2)}</td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: isOverAllotted ? '#ef4444' : '#800000' }}>
+                            {totalAllocated.toFixed(2)}
+                            {isOverAllotted && <span style={{ fontSize: '0.7rem', color: '#ef4444', display: 'block', fontWeight: 'bold' }}>Exceeds WOF!</span>}
+                          </td>
                         </tr>
                         {/* Sub-row for Allocations */}
                         <tr>
@@ -1375,11 +1396,25 @@ export default function DeliverDyedYarn() {
                                           max={alloc.stock_kg}
                                           disabled={!alloc.lot_number || alloc.disabled}
                                           className="form-input"
-                                          style={{ fontWeight: '800', textAlign: 'right', padding: '0.35rem 0.5rem', fontSize: '0.8rem', width: '100%' }}
+                                          style={{
+                                            fontWeight: '800',
+                                            textAlign: 'right',
+                                            padding: '0.35rem 0.5rem',
+                                            fontSize: '0.8rem',
+                                            width: '100%',
+                                            borderColor: isOverAllotted ? '#ef4444' : 'var(--border-current)',
+                                            backgroundColor: isOverAllotted ? '#fef2f2' : '#fff',
+                                            color: isOverAllotted ? '#b91c1c' : 'inherit'
+                                          }}
                                           value={alloc.quantity_kg}
                                           onChange={e => updateAllocation(reqIdx, allocIdx, 'quantity_kg', e.target.value)}
                                           placeholder={!alloc.lot_number ? 'Select lot' : '0.00'}
                                         />
+                                        {isOverAllotted && (
+                                          <div style={{ fontSize: '0.65rem', color: '#ef4444', marginTop: '2px', textAlign: 'right', fontWeight: 'bold' }}>
+                                            Exceeds WOF limit!
+                                          </div>
+                                        )}
                                       </div>
 
                                       {/* Delete Row Button */}
@@ -1691,9 +1726,20 @@ export default function DeliverDyedYarn() {
             </button>
             <button 
               type="submit" 
-              disabled={loading || items.length === 0} 
+              disabled={loading || items.length === 0 || hasOverAllocation} 
               className="btn btn-primary" 
-              style={{ padding: '0.75rem 2rem', minWidth: '180px', backgroundColor: '#800000', border: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}
+              style={{
+                padding: '0.75rem 2rem',
+                minWidth: '180px',
+                backgroundColor: (loading || items.length === 0 || hasOverAllocation) ? '#cbd5e1' : '#800000',
+                color: (loading || items.length === 0 || hasOverAllocation) ? '#64748b' : '#fff',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                justifyContent: 'center',
+                cursor: (loading || items.length === 0 || hasOverAllocation) ? 'not-allowed' : 'pointer'
+              }}
             >
               {loading ? <Loader size={18} className="spin" /> : <><Save size={18} /> Record Delivery</>}
             </button>

@@ -45,7 +45,7 @@ function getWofStatusBadge(wof) {
 }
 
 // ─── WOF Number Generator ────────────────────────────────────────────────────
-async function generateWofNumber(wofType, partnerId, partnerName, orderNumber) {
+async function generateWofNumber(wofType, partnerId, partnerName) {
   const year = new Date().getFullYear();
 
   if (wofType === 'in_house') {
@@ -74,7 +74,7 @@ async function generateWofNumber(wofType, partnerId, partnerName, orderNumber) {
 }
 
 // ─── Step Indicator ──────────────────────────────────────────────────────────
-function StepBar({ current, total }) {
+function StepBar({ current }) {
   const steps = ['Type', 'Order', 'Machine & Dates', 'Colour Allotment', 'Review & Create'];
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: '2.5rem', overflowX: 'auto', paddingBottom: '4px' }}>
@@ -444,7 +444,7 @@ export default function CreateWarpingOrderForm() {
     const selectedMachine = machines.find(m => m.id === createdWof.machine_id);
     const selectedPartner = partners.find(p => p.id === createdWof.partner_id);
     return (
-      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '1rem' }}>
+      <div style={{ maxWidth: '100%', padding: '1rem' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
             <CheckCircle2 size={36} color="#16a34a" />
@@ -482,7 +482,7 @@ export default function CreateWarpingOrderForm() {
   }
 
   return (
-    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '1rem' }}>
+    <div style={{ maxWidth: '100%', padding: '1rem' }}>
       {/* Back */}
       <button
         onClick={() => navigate('/production/warping-forms')}

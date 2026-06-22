@@ -73,6 +73,7 @@ export default function CreateOrder() {
   const { profile } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [submittedOrderNumber, setSubmittedOrderNumber] = useState(null);
 
   // Design Image State
   const [imageFile, setImageFile] = useState(null);
@@ -377,8 +378,8 @@ export default function CreateOrder() {
 
       if (result.error) throw result.error;
 
+      setSubmittedOrderNumber(finalOrderNumber);
       alert(isEdit ? 'Order Updated Successfully!' : `Order Created Successfully! Order No: ${finalOrderNumber}`);
-      navigate(profile.role === 'admin' ? '/admin/orders' : '/merchandiser/orders');
     } catch (err) {
       console.error(err);
       alert('Error creating order: ' + err.message);
@@ -411,7 +412,7 @@ export default function CreateOrder() {
   };
 
   const handleExitWithDraftCheck = async () => {
-    if (currentStep === 0) {
+    if (submittedOrderNumber || currentStep === 0) {
       navigate(profile?.role === 'admin' ? '/admin/orders' : '/merchandiser/orders');
       return;
     }
@@ -427,6 +428,45 @@ export default function CreateOrder() {
     }
   };
 
+  const handleCreateAnotherOrder = () => {
+    setFormData({
+      order_type: '',
+      merchandiser_name: profile?.full_name || '',
+      buyer_id: '',
+      design_no: '',
+      design_name: '',
+      vendor_id: '',
+      season: '',
+      fob_date: '',
+      dispatch_date: '',
+      total_quantity: '',
+      technical_specs: {
+        num_warps: 1,
+        warp_selections: [[]],
+        weft_selections: [[]],
+        order_reed: '',
+        order_pick: '',
+        on_loom_reed: '',
+        on_loom_pick: '',
+        finished_width: '',
+        order_width: '',
+        weave_type: '',
+        gsm: '',
+        production_quantity: '',
+        order_category: ''
+      },
+      yarn_mappings: [],
+      design_image_url: '',
+      status: 'draft'
+    });
+    setImageFile(null);
+    setImagePreview('');
+    setOriginalSize(0);
+    setCompressedSize(0);
+    setSubmittedOrderNumber(null);
+    setCurrentStep(0);
+  };
+
   return (
     <div className="create-order-container" style={{ maxWidth: '1000px', margin: '0 auto', padding: '2rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }} className="no-print">
@@ -437,7 +477,7 @@ export default function CreateOrder() {
         >
           <ArrowLeft size={16} /> Exit to Orders
         </button>
-        {currentStep > 0 && (
+        {currentStep > 0 && !submittedOrderNumber && (
           <button 
             onClick={handleBack}
             className="btn btn-secondary"
@@ -446,21 +486,27 @@ export default function CreateOrder() {
             Previous Step
           </button>
         )}
-        <h1 style={{ margin: 0, fontSize: '1.75rem' }}>{isEdit ? `Edit Order: ${formData.order_number}` : 'Create New Order'}</h1>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
-          {[0, 1, 2, 3, 4, 5].map(step => (
-            <div 
-              key={step} 
-              style={{ 
-                width: '10px', 
-                height: '10px', 
-                borderRadius: '50%', 
-                backgroundColor: currentStep >= step ? 'var(--color-primary)' : 'var(--border-current)',
-                transition: 'all 0.3s'
-              }} 
-            />
-          ))}
-        </div>
+        <h1 style={{ margin: 0, fontSize: '1.75rem' }}>
+          {submittedOrderNumber 
+            ? `Order Confirmed: ${submittedOrderNumber}` 
+            : (isEdit ? `Edit Order: ${formData.order_number}` : 'Create New Order')}
+        </h1>
+        {!submittedOrderNumber && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+            {[0, 1, 2, 3, 4, 5].map(step => (
+              <div 
+                key={step} 
+                style={{ 
+                  width: '10px', 
+                  height: '10px', 
+                  borderRadius: '50%', 
+                  backgroundColor: currentStep >= step ? 'var(--color-primary)' : 'var(--border-current)',
+                  transition: 'all 0.3s'
+                }} 
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="glass-panel" style={{ padding: '2rem' }}>
@@ -1040,6 +1086,34 @@ export default function CreateOrder() {
         {/* Step 5: Summary & Submit */}
         {currentStep === 5 && (
           <div className="fade-in print-area">
+            {submittedOrderNumber && (
+              <div 
+                className="no-print" 
+                style={{ 
+                  backgroundColor: '#ecfdf5', 
+                  border: '1px solid #a7f3d0', 
+                  borderRadius: 'var(--radius-lg)', 
+                  padding: '1.5rem', 
+                  marginBottom: '2rem', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '1rem',
+                  boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.05)'
+                }}
+              >
+                <div style={{ backgroundColor: '#10b981', color: 'white', borderRadius: '50%', padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Check size={28} strokeWidth={3} />
+                </div>
+                <div>
+                  <h3 style={{ color: '#065f46', fontSize: '1.1rem', fontWeight: 'bold', margin: '0 0 0.25rem 0' }}>
+                    Order Finalized & Submitted Successfully!
+                  </h3>
+                  <p style={{ color: '#047857', margin: 0, fontSize: '0.9rem' }}>
+                    Order Number <strong style={{ textDecoration: 'underline' }}>{submittedOrderNumber}</strong> has been saved. You can print the order confirmation sheet below or navigate back.
+                  </p>
+                </div>
+              </div>
+            )}
             {/* Header / Invoice style info */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid var(--color-primary)', paddingBottom: '1rem', marginBottom: '2rem' }}>
               <div>
@@ -1048,7 +1122,7 @@ export default function CreateOrder() {
               </div>
               <div style={{ textAlign: 'right' }}>
                 <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
-                  {isEdit ? `Order No: ${formData.order_number}` : 'Order No: DRAFT'}
+                  {submittedOrderNumber ? `Order No: ${submittedOrderNumber}` : (isEdit ? `Order No: ${formData.order_number}` : 'Order No: DRAFT')}
                 </h2>
                 <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-muted-current)', fontSize: '0.875rem' }}>
                   Date: {new Date().toLocaleDateString()}
@@ -1384,31 +1458,64 @@ export default function CreateOrder() {
               }
             `}</style>
             <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }} className="no-print">
-              <button 
-                type="button"
-                onClick={() => window.print()}
-                className="btn btn-secondary"
-                style={{ minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#e2e8f0', color: '#1e293b', border: '1px solid #cbd5e1', cursor: 'pointer' }}
-              >
-                <Printer size={18} /> Print Summary
-              </button>
-              <button 
-                type="button"
-                onClick={handleSaveDraft}
-                className="btn btn-secondary"
-                disabled={loading}
-                style={{ minWidth: '150px' }}
-              >
-                Save as Draft
-              </button>
-              <button 
-                onClick={handleSubmit} 
-                className="btn btn-primary" 
-                disabled={loading}
-                style={{ minWidth: '200px' }}
-              >
-                {loading ? 'Processing...' : <><Check size={18} /> {isEdit ? 'Update Order Details' : 'Complete Order & Submit'}</>}
-              </button>
+              {submittedOrderNumber ? (
+                <>
+                  <button 
+                    type="button"
+                    onClick={() => window.print()}
+                    className="btn btn-primary"
+                    style={{ minWidth: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer' }}
+                  >
+                    <Printer size={18} /> Print Confirmation
+                  </button>
+                  {!isEdit && (
+                    <button 
+                      type="button"
+                      onClick={handleCreateAnotherOrder}
+                      className="btn btn-secondary"
+                      style={{ minWidth: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                    >
+                      <Plus size={18} /> Create Another Order
+                    </button>
+                  )}
+                  <button 
+                    type="button"
+                    onClick={() => navigate(profile?.role === 'admin' ? '/admin/orders' : '/merchandiser/orders')}
+                    className="btn btn-secondary"
+                    style={{ minWidth: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                  >
+                    Go to Orders List <ArrowRight size={18} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button 
+                    type="button"
+                    onClick={() => window.print()}
+                    className="btn btn-secondary"
+                    style={{ minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#e2e8f0', color: '#1e293b', border: '1px solid #cbd5e1', cursor: 'pointer' }}
+                  >
+                    <Printer size={18} /> Print Summary
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={handleSaveDraft}
+                    className="btn btn-secondary"
+                    disabled={loading}
+                    style={{ minWidth: '150px' }}
+                  >
+                    Save as Draft
+                  </button>
+                  <button 
+                    onClick={handleSubmit} 
+                    className="btn btn-primary" 
+                    disabled={loading}
+                    style={{ minWidth: '200px' }}
+                  >
+                    {loading ? 'Processing...' : <><Check size={18} /> {isEdit ? 'Update Order Details' : 'Complete Order & Submit'}</>}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
