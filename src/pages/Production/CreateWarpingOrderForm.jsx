@@ -128,6 +128,8 @@ export default function CreateWarpingOrderForm() {
   const [machines, setMachines] = useState([]);
   const [partners, setPartners] = useState([]);
   const [yarnCounts, setYarnCounts] = useState([]);
+  const [dydi, setDydi] = useState([]);
+  const [dyri, setDyri] = useState([]);
 
   // Form fields
   const [selectedPartnerId, setSelectedPartnerId] = useState('');
@@ -135,7 +137,7 @@ export default function CreateWarpingOrderForm() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [wofQty, setWofQty] = useState('');
-  const [allotments, setAllotments] = useState([]); // [{countId, countValue, colour, required_qty, already_allotted, allotted_qty}]
+  const [allotments, setAllotments] = useState([]); // [{countId, countValue, colour, required_qty, received_qty, used_qty, allotted_qty}]
 
   // UI
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -165,18 +167,38 @@ export default function CreateWarpingOrderForm() {
     fetchYarnCounts();
   }, []);
 
-  // ── When order selected: load existing WOFs ──────────────────────────────
+  // ── When order selected: load existing WOFs, deliveries and receipts ────────
   useEffect(() => {
-    if (!selectedOrder) { setExistingWofs([]); return; }
-    const fetch = async () => {
-      const { data } = await supabase
+    if (!selectedOrder) {
+      setExistingWofs([]);
+      setDydi([]);
+      setDyri([]);
+      return;
+    }
+    const fetchData = async () => {
+      // 1. Fetch existing WOFs
+      const { data: wofsData } = await supabase
         .from('warping_order_forms')
         .select('*, machine:master_machines(machine_name), partner:master_partners(partner_name)')
         .eq('order_id', selectedOrder.id)
         .order('created_at', { ascending: true });
-      setExistingWofs(data || []);
+      setExistingWofs(wofsData || []);
+
+      // 2. Fetch dyed yarn delivery items
+      const { data: deliveryData } = await supabase
+        .from('dyed_yarn_delivery_items')
+        .select('id, production_form_id, yarn_count_id, quantity_kg, colour, lot_number, process_type')
+        .eq('order_id', selectedOrder.id);
+      setDydi(deliveryData || []);
+
+      // 3. Fetch dyed yarn receipt items (with receipt source_type for excess filter)
+      const { data: receiptData } = await supabase
+        .from('dyed_yarn_receipt_items')
+        .select('id, yarn_count_id, quantity_kg, colour, is_excess, receipt:dyed_yarn_receipts(source_type)')
+        .eq('order_id', selectedOrder.id);
+      setDyri(receiptData || []);
     };
-    fetch();
+    fetchData();
   }, [selectedOrder]);
 
   // ── Build allotment rows from order yarn_requirements (warp only) ──────────
@@ -186,23 +208,74 @@ export default function CreateWarpingOrderForm() {
     const builtAllotments = warpYarns.map(y => {
       const countId = y.countId || y.count_id || '';
       const colour = y.color || y.colour || '';
-      const alreadyAllotted = existingWofs.reduce((sum, w) => {
-        const match = (w.colour_allotments || []).find(
-          a => (a.countId === countId || a.countValue === y.countValue) && a.colour === colour
-        );
-        return sum + parseFloat(match?.allotted_qty || 0);
+
+      // Calculate received from dyeing (excluding excess/production return receipts)
+      const receivedQty = dyri.reduce((sum, item) => {
+        const itemCountId = item.yarn_count_id || '';
+        if (itemCountId !== countId || item.colour !== colour) return sum;
+        const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+        if (isExcess) return sum;
+        return sum + parseFloat(item.quantity_kg || 0);
       }, 0);
+
+      // Calculate total used (delivered - returned qty of each WOF)
+      const completedWofIds = new Set();
+      let totalUsed = 0;
+
+      // Completed WOFs (using yarn_returns)
+      existingWofs.forEach(w => {
+        const returns = w.yarn_returns || [];
+        if (returns.length > 0) {
+          completedWofIds.add(w.id);
+          const matchingReturns = returns.filter(r => {
+            if (r.yarn_count_id && countId && r.yarn_count_id === countId) {
+              return r.colour === colour;
+            }
+            const yc = yarnCounts.find(ycItem => ycItem.id === countId);
+            const ycDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}`.trim().toLowerCase() : '';
+            const retDisplay = (r.count_display || '').trim().toLowerCase();
+            if (ycDisplay && retDisplay && ycDisplay === retDisplay) {
+              return r.colour === colour;
+            }
+            const reqCountVal = (y.countValue || '').trim().toLowerCase();
+            if (reqCountVal && retDisplay.includes(reqCountVal)) {
+              return r.colour === colour;
+            }
+            return false;
+          });
+          const delivered = matchingReturns.reduce((s, r) => s + parseFloat(r.quantity_received || 0), 0);
+          const returned = matchingReturns.reduce((s, r) => s + parseFloat(r.quantity_returned || 0), 0);
+          totalUsed += Math.max(0, delivered - returned);
+        }
+      });
+
+      // In-progress WOFs (using delivery items)
+      const wofIds = new Set(existingWofs.map(w => w.id));
+      dydi.forEach(item => {
+        if (
+          item.process_type === 'warping' &&
+          item.production_form_id &&
+          wofIds.has(item.production_form_id) &&
+          !completedWofIds.has(item.production_form_id)
+        ) {
+          if (item.yarn_count_id === countId && item.colour === colour) {
+            totalUsed += parseFloat(item.quantity_kg || 0);
+          }
+        }
+      });
+
       return {
         countId,
         countValue: y.countValue || '',
         colour,
         required_qty: parseFloat(y.kg || 0),
-        already_allotted: alreadyAllotted,
+        received_qty: receivedQty,
+        used_qty: totalUsed,
         allotted_qty: '',
       };
     });
     setAllotments(builtAllotments);
-  }, [selectedOrder, existingWofs]);
+  }, [selectedOrder, existingWofs, yarnCounts, dydi, dyri]);
 
   // ── Load machines based on type / partner ─────────────────────────────────
   useEffect(() => {
@@ -264,7 +337,7 @@ export default function CreateWarpingOrderForm() {
     if (step === 4) {
       return allotments.every(a => {
         const v = parseFloat(a.allotted_qty || 0);
-        const remaining = a.required_qty - a.already_allotted;
+        const remaining = Math.max(0, (a.received_qty || 0) - (a.used_qty || 0));
         return v >= 0 && v <= remaining + 0.001;
       });
     }
@@ -667,7 +740,7 @@ export default function CreateWarpingOrderForm() {
           <div>
             <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem', fontWeight: '800' }}>Warp Colour & Count Allotment</h2>
             <p style={{ margin: '0 0 1.5rem', color: 'var(--text-muted-current)', fontSize: '0.85rem' }}>
-              Allot quantities for each warp colour and count for this warping order form. Allotted quantities cannot exceed remaining (required minus already allotted).
+              Allot quantities for each warp colour and count for this warping order form. Allotted quantities cannot exceed remaining stock (received from dyeing minus used).
             </p>
 
             {allotments.length === 0 ? (
@@ -680,7 +753,7 @@ export default function CreateWarpingOrderForm() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '2px solid var(--border-current)' }}>
-                      {['#', 'Colour', 'Yarn Count', 'Required Qty (kg)', 'Already Allotted (kg)', 'Remaining (kg)', 'Allot for This WOF (kg)'].map(h => (
+                      {['#', 'Colour', 'Yarn Count', 'Required Qty (kg)', 'Received (kg)', 'Used (kg)', 'Remaining (kg)', 'Allot for This WOF (kg)'].map(h => (
                         <th key={h} style={{ padding: '0.75rem 0.85rem', textAlign: 'left', fontWeight: '800', fontSize: '0.68rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -689,7 +762,7 @@ export default function CreateWarpingOrderForm() {
                     {allotments.map((row, idx) => {
                       const yc = yarnCounts.find(y => y.id === row.countId);
                       const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (row.countValue || row.countId || '—');
-                      const remaining = Math.max(0, row.required_qty - row.already_allotted);
+                      const remaining = Math.max(0, (row.received_qty || 0) - (row.used_qty || 0));
                       const val = parseFloat(row.allotted_qty || 0);
                       const isOver = val > remaining + 0.001;
                       return (
@@ -700,8 +773,9 @@ export default function CreateWarpingOrderForm() {
                           </td>
                           <td style={{ padding: '0.75rem 0.85rem', fontSize: '0.8rem', fontWeight: '600' }}>{countDisplay}</td>
                           <td style={{ padding: '0.75rem 0.85rem', fontWeight: '700', textAlign: 'right' }}>{Number(row.required_qty).toFixed(2)}</td>
-                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'right', color: row.already_allotted > 0 ? '#d97706' : 'var(--text-muted-current)' }}>
-                            {Number(row.already_allotted).toFixed(2)}
+                          <td style={{ padding: '0.75rem 0.85rem', fontWeight: '700', textAlign: 'right', color: '#0ea5e9' }}>{Number(row.received_qty || 0).toFixed(2)}</td>
+                          <td style={{ padding: '0.75rem 0.85rem', textAlign: 'right', color: row.used_qty > 0 ? '#d97706' : 'var(--text-muted-current)' }}>
+                            {Number(row.used_qty || 0).toFixed(2)}
                           </td>
                           <td style={{ padding: '0.75rem 0.85rem', fontWeight: '700', textAlign: 'right', color: remaining === 0 ? '#16a34a' : '#0369a1' }}>
                             {remaining.toFixed(2)}
@@ -734,11 +808,14 @@ export default function CreateWarpingOrderForm() {
                       <td style={{ padding: '0.75rem 0.85rem', fontWeight: '800', textAlign: 'right' }}>
                         {allotments.reduce((s, a) => s + Number(a.required_qty || 0), 0).toFixed(2)}
                       </td>
+                      <td style={{ padding: '0.75rem 0.85rem', fontWeight: '800', textAlign: 'right', color: '#0ea5e9' }}>
+                        {allotments.reduce((s, a) => s + Number(a.received_qty || 0), 0).toFixed(2)}
+                      </td>
                       <td style={{ padding: '0.75rem 0.85rem', fontWeight: '800', textAlign: 'right', color: '#d97706' }}>
-                        {allotments.reduce((s, a) => s + Number(a.already_allotted || 0), 0).toFixed(2)}
+                        {allotments.reduce((s, a) => s + Number(a.used_qty || 0), 0).toFixed(2)}
                       </td>
                       <td style={{ padding: '0.75rem 0.85rem', fontWeight: '800', textAlign: 'right', color: '#0369a1' }}>
-                        {allotments.reduce((s, a) => s + Math.max(0, a.required_qty - a.already_allotted), 0).toFixed(2)}
+                        {allotments.reduce((s, a) => s + Math.max(0, (a.received_qty || 0) - (a.used_qty || 0)), 0).toFixed(2)}
                       </td>
                       <td style={{ padding: '0.75rem 0.85rem', fontWeight: '800', color: '#800000' }}>
                         {allotments.reduce((s, a) => s + Number(a.allotted_qty || 0), 0).toFixed(2)} kg

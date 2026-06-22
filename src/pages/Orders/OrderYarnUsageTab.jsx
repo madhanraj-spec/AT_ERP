@@ -14,6 +14,8 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
   const [gydrs, setGydrs] = useState([]);
   const [dyrrs, setDyrrs] = useState([]);
   const [dydrs, setDydrs] = useState([]);
+  const [warpingForms, setWarpingForms] = useState([]);
+  const [weavingOrders, setWeavingOrders] = useState([]);
 
   // Expanded rows state
   const [expandedRowKeys, setExpandedRowKeys] = useState(new Set());
@@ -80,6 +82,20 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
         const uniqueDydr = uniqueDydrIds.map(id => dydiData.find(i => i.delivery?.id === id).delivery);
         setDydrs(uniqueDydr.sort((a, b) => new Date(b.created_at || b.delivered_date).getTime() - new Date(a.created_at || a.delivered_date).getTime()));
 
+        // 6. Fetch Warping Order Forms for this order (to get yarn_returns per WOF)
+        const { data: wofData } = await supabase
+          .from('warping_order_forms')
+          .select('id, yarn_returns, colour_allotments')
+          .eq('order_id', order.id);
+        setWarpingForms(wofData || []);
+
+        // 7. Fetch Weaving Orders for this order (to get yarn_returns per WVOF)
+        const { data: wvofData } = await supabase
+          .from('weaving_orders')
+          .select('id, yarn_returns, weft_allotments')
+          .eq('order_id', order.id);
+        setWeavingOrders(wvofData || []);
+
       } catch (err) {
         console.error('Error fetching yarn usage data:', err);
       } finally {
@@ -93,33 +109,14 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
   const summaryData = useMemo(() => {
     const summary = {};
 
-    // A. Initialize summary with order requirements
-    (order.yarn_requirements || []).forEach(yr => {
-      const type = yr.type || 'warp';
-      const key = `${yr.countId}-${yr.color}-${type}`;
-      summary[key] = {
-        countId: yr.countId,
-        colour: yr.color,
-        type: type,
-        required: parseFloat(yr.kg || 0),
-        sentToDyeing: 0,
-        receivedFromDyeing: 0,
-        sentToWarp: 0,
-        receivedFromWarping: 0,
-        sentToWeaving: 0,
-        receivedFromWeaving: 0
-      };
-    });
-
-    // B. Accumulate Sent to Dyeing (Greige Deliveries)
-    gydi.forEach(item => {
-      const type = item.yarn_type || 'warp';
-      const key = `${item.yarn_count_id}-${item.colour}-${type}`;
+    // Helper to ensure summary key exists
+    const ensureKey = (countId, colour, type) => {
+      const key = `${countId}-${colour}-${type}`;
       if (!summary[key]) {
         summary[key] = {
-          countId: item.yarn_count_id,
-          colour: item.colour,
-          type: type,
+          countId,
+          colour,
+          type,
           required: 0,
           sentToDyeing: 0,
           receivedFromDyeing: 0,
@@ -129,6 +126,20 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
           receivedFromWeaving: 0
         };
       }
+      return key;
+    };
+
+    // A. Initialize summary with order requirements
+    (order.yarn_requirements || []).forEach(yr => {
+      const type = yr.type || 'warp';
+      const key = ensureKey(yr.countId, yr.color, type);
+      summary[key].required = parseFloat(yr.kg || 0);
+    });
+
+    // B. Accumulate Sent to Dyeing (Greige Deliveries)
+    gydi.forEach(item => {
+      const type = item.yarn_type || 'warp';
+      const key = ensureKey(item.yarn_count_id, item.colour, type);
       summary[key].sentToDyeing += parseFloat(item.quantity_kg || 0);
     });
 
@@ -141,62 +152,88 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
       }
     });
 
-    // C. Accumulate Received from Dyeing, Warping Returns, and Weaving Returns
+    // C. Accumulate Received from Dyeing (only non-excess, non-production-return receipts)
     dyri.forEach(item => {
       const type = item.yarn_type || 'warp';
-      const key = `${item.yarn_count_id}-${item.colour}-${type}`;
       const isExcess = item.is_excess || item.receipt?.source_type === 'production';
-
-      if (!summary[key]) {
-        summary[key] = {
-          countId: item.yarn_count_id,
-          colour: item.colour,
-          type: type,
-          required: 0,
-          sentToDyeing: 0,
-          receivedFromDyeing: 0,
-          sentToWarp: 0,
-          receivedFromWarping: 0,
-          sentToWeaving: 0,
-          receivedFromWeaving: 0
-        };
-      }
-
-      if (isExcess) {
-        if (type === 'warp') {
-          summary[key].receivedFromWarping += parseFloat(item.quantity_kg || 0);
-        } else {
-          summary[key].receivedFromWeaving += parseFloat(item.quantity_kg || 0);
-        }
-      } else {
+      if (!isExcess) {
+        const key = ensureKey(item.yarn_count_id, item.colour, type);
         summary[key].receivedFromDyeing += parseFloat(item.quantity_kg || 0);
       }
     });
 
-    // D. Accumulate Sent to Warp & Sent to Weaving (Dyed Deliveries)
-    dydi.forEach(item => {
-      // Resolve process/yarn type
-      const type = item.yarn_type || (item.process_type === 'warping' ? 'warp' : 'weft');
-      const key = `${item.yarn_count_id}-${item.colour}-${type}`;
+    const findCountId = (ret) => {
+      if (ret.yarn_count_id) return ret.yarn_count_id;
+      if (!ret.count_display) return '';
+      const cleanDisplay = ret.count_display.trim().toLowerCase();
+      const match = yarnCounts.find(yc => {
+        const ycDisplay = `${yc.count_value} ${yc.material} ${yc.product_type}`.trim().toLowerCase();
+        return ycDisplay === cleanDisplay;
+      });
+      if (match) return match.id;
+      const matchPartial = yarnCounts.find(yc => {
+        const val = (yc.count_value || '').trim().toLowerCase();
+        return val && cleanDisplay.includes(val);
+      });
+      return matchPartial ? matchPartial.id : '';
+    };
 
-      if (!summary[key]) {
-        summary[key] = {
-          countId: item.yarn_count_id,
-          colour: item.colour,
-          type: type,
-          required: 0,
-          sentToDyeing: 0,
-          receivedFromDyeing: 0,
-          sentToWarp: 0,
-          receivedFromWarping: 0,
-          sentToWeaving: 0,
-          receivedFromWeaving: 0
-        };
+    // D. Accumulate Sent to Warp & Received from Warping
+    // For completed WOFs: use yarn_returns (quantity_received = delivered, quantity_returned = returned)
+    // For in-progress WOFs: use dyed_yarn_delivery_items linked via production_form_id
+    const completedWofIds = new Set();
+    warpingForms.forEach(wof => {
+      const returns = wof.yarn_returns || [];
+      if (returns.length > 0) {
+        completedWofIds.add(wof.id);
+        returns.forEach(ret => {
+          const countId = findCountId(ret);
+          const colour = ret.colour || '';
+          if (countId) {
+            const key = ensureKey(countId, colour, 'warp');
+            summary[key].sentToWarp += parseFloat(ret.quantity_received || 0);
+            summary[key].receivedFromWarping += parseFloat(ret.quantity_returned || 0);
+          }
+        });
       }
+    });
 
-      if (item.process_type === 'warping') {
+    // For in-progress WOFs (no yarn_returns yet), count delivery items linked to them
+    const wofIds = new Set(warpingForms.map(w => w.id));
+    dydi.forEach(item => {
+      if (item.process_type === 'warping' && item.production_form_id && wofIds.has(item.production_form_id) && !completedWofIds.has(item.production_form_id)) {
+        const type = item.yarn_type || 'warp';
+        const key = ensureKey(item.yarn_count_id, item.colour, type);
         summary[key].sentToWarp += parseFloat(item.quantity_kg || 0);
-      } else {
+      }
+    });
+
+    // E. Accumulate Sent to Weaving & Received from Weaving
+    // For completed WVOFs: use yarn_returns
+    // For in-progress WVOFs: use dyed_yarn_delivery_items linked via production_form_id
+    const completedWvofIds = new Set();
+    weavingOrders.forEach(wvof => {
+      const returns = wvof.yarn_returns || [];
+      if (returns.length > 0) {
+        completedWvofIds.add(wvof.id);
+        returns.forEach(ret => {
+          const countId = findCountId(ret);
+          const colour = ret.colour || '';
+          if (countId) {
+            const key = ensureKey(countId, colour, 'weft');
+            summary[key].sentToWeaving += parseFloat(ret.quantity_received || 0);
+            summary[key].receivedFromWeaving += parseFloat(ret.quantity_returned || 0);
+          }
+        });
+      }
+    });
+
+    // For in-progress WVOFs (no yarn_returns yet), count delivery items linked to them
+    const wvofIds = new Set(weavingOrders.map(w => w.id));
+    dydi.forEach(item => {
+      if (item.process_type === 'weaving' && item.production_form_id && wvofIds.has(item.production_form_id) && !completedWvofIds.has(item.production_form_id)) {
+        const type = item.yarn_type || 'weft';
+        const key = ensureKey(item.yarn_count_id, item.colour, type);
         summary[key].sentToWeaving += parseFloat(item.quantity_kg || 0);
       }
     });
@@ -208,7 +245,7 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
       return 0;
     });
 
-  }, [order.yarn_requirements, gydi, greigeReturns, dyri, dydi]);
+  }, [order.yarn_requirements, gydi, greigeReturns, dyri, dydi, warpingForms, weavingOrders, yarnCounts]);
 
   const formatCount = (id) => {
     const y = yarnCounts.find(c => c.id === id);
@@ -286,17 +323,14 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
                 <th style={numericThStyle}>Required (kg)</th>
                 <th style={numericThStyle}>Sent to Dyeing (kg)</th>
                 <th style={numericThStyle}>Rec. from Dyeing (kg)</th>
-                <th style={numericThStyle}>Sent to Warp (kg)</th>
-                <th style={numericThStyle}>Rec. from Warping (kg)</th>
-                <th style={numericThStyle}>Sent to Weaving (kg)</th>
-                <th style={numericThStyle}>Rec. from Weaving (kg)</th>
+                <th style={numericThStyle}>Used (kg)</th>
                 <th style={numericThStyle}>Available (kg)</th>
               </tr>
             </thead>
             <tbody>
               {summaryData.length === 0 ? (
                 <tr>
-                  <td colSpan="11" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>
+                  <td colSpan="8" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>
                     No yarn allocations or specifications found for this order.
                   </td>
                 </tr>
@@ -307,13 +341,18 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
                   const isWarp = row.type === 'warp';
                   const rowKey = `${row.countId}-${row.colour}-${row.type}`;
                   const isExpanded = expandedRowKeys.has(rowKey);
-                  const availableVal = row.receivedFromDyeing - row.sentToWarp - row.sentToWeaving + row.receivedFromWarping + row.receivedFromWeaving;
+                  
+                  const usedVal = isWarp 
+                    ? (row.sentToWarp - row.receivedFromWarping)
+                    : (row.sentToWeaving - row.receivedFromWeaving);
+                  
+                  const availableVal = row.receivedFromDyeing - usedVal;
 
                   return (
                     <React.Fragment key={idx}>
                       {(showWarpHeader || showWeftHeader) && (
                         <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #cbd5e1' }}>
-                          <td colSpan="11" style={{ padding: '0.4rem 0.75rem', fontWeight: '800', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#475569' }}>
+                          <td colSpan="8" style={{ padding: '0.4rem 0.75rem', fontWeight: '800', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#475569' }}>
                             {row.type === 'warp' ? 'Warp Yarn Details' : 'Weft Yarn Details'}
                           </td>
                         </tr>
@@ -331,20 +370,9 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
                         <td style={{ ...numericTdStyle, color: '#4f46e5' }}>{row.sentToDyeing.toFixed(2)}</td>
                         <td style={{ ...numericTdStyle, color: '#16a34a' }}>{row.receivedFromDyeing.toFixed(2)}</td>
                         
-                        {/* Warping Columns */}
-                        <td style={isWarp ? { ...numericTdStyle, color: '#2563eb' } : disabledTdStyle}>
-                          {isWarp ? row.sentToWarp.toFixed(2) : '—'}
-                        </td>
-                        <td style={isWarp ? { ...numericTdStyle, color: '#059669' } : disabledTdStyle}>
-                          {isWarp ? row.receivedFromWarping.toFixed(2) : '—'}
-                        </td>
-                        
-                        {/* Weaving Columns */}
-                        <td style={!isWarp ? { ...numericTdStyle, color: '#d97706' } : disabledTdStyle}>
-                          {!isWarp ? row.sentToWeaving.toFixed(2) : '—'}
-                        </td>
-                        <td style={!isWarp ? { ...numericTdStyle, color: '#b45309' } : disabledTdStyle}>
-                          {!isWarp ? row.receivedFromWeaving.toFixed(2) : '—'}
+                        {/* Used Column (delivered - returned) */}
+                        <td style={{ ...numericTdStyle, color: '#d97706' }}>
+                          {usedVal.toFixed(2)}
                         </td>
 
                         {/* Available Column */}
@@ -354,7 +382,7 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
                       </tr>
                       {isExpanded && (
                         <tr style={{ backgroundColor: '#fafafa' }}>
-                          <td colSpan="11" style={{ padding: '1.25rem 1.5rem', borderLeft: '3px solid var(--color-primary)', borderBottom: '1px solid var(--border-current)' }}>
+                          <td colSpan="8" style={{ padding: '1.25rem 1.5rem', borderLeft: '3px solid var(--color-primary)', borderBottom: '1px solid var(--border-current)' }}>
                             <div style={{ maxWidth: '650px' }}>
                               <h6 style={{ margin: '0 0 0.6rem 0', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#475569', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                 <Calculator size={14} />
