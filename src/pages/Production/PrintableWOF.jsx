@@ -1,11 +1,25 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Printer } from 'lucide-react';
+import QRCode from 'qrcode';
+
+function getLocalDateString(dateInput) {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 function getWofStatusBadge(wof) {
-  const today = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString(new Date());
 
   if (wof.status === 'completed') {
-    if (wof.end_date && wof.end_date < today) {
+    const actualEndStr = wof.process_completed_at
+      ? getLocalDateString(wof.process_completed_at)
+      : (getLocalDateString(wof.updated_at) || todayStr);
+    if (wof.end_date && actualEndStr > wof.end_date) {
       return { label: 'Completed Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
     return { label: 'Completed', bg: '#dcfce7', color: '#166534', border: '#86efac' };
@@ -14,13 +28,13 @@ function getWofStatusBadge(wof) {
     return { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
   }
   if (wof.status === 'on_process') {
-    if (wof.end_date && wof.end_date < today) {
+    if (wof.end_date && todayStr > wof.end_date) {
       return { label: 'Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
     return { label: 'On Process', bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' };
   }
   if (wof.status === 'created') {
-    if (wof.end_date && wof.end_date < today) {
+    if (wof.end_date && todayStr > wof.end_date) {
       return { label: 'Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
     return { label: 'Created', bg: '#fef9c3', color: '#854d0e', border: '#fde047' };
@@ -30,6 +44,15 @@ function getWofStatusBadge(wof) {
 
 function PrintableWOF({ wof, order, machineName, partnerName, yarnCounts }) {
   const printRef = useRef();
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
+
+  useEffect(() => {
+    if (wof?.wof_number) {
+      QRCode.toDataURL(wof.wof_number, { margin: 1, width: 100 }, (err, url) => {
+        if (!err) setQrCodeUrl(url);
+      });
+    }
+  }, [wof?.wof_number]);
 
   const handlePrint = () => {
     const printContent = printRef.current.innerHTML;
@@ -93,21 +116,40 @@ function PrintableWOF({ wof, order, machineName, partnerName, yarnCounts }) {
         {/* Header */}
         <div style={{ display: 'flex', justifyStyle: 'space-between', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #4d0000', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{ width: '48px', height: '48px', background: '#4d0000', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyStyle: 'center', justifyContent: 'center', color: 'white', fontSize: '1.1rem', fontWeight: '900' }}>AT</div>
-            <div>
-              <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#1e1b4b' }}>AT Fabric ERP</div>
-              <div style={{ fontSize: '0.7rem', color: '#800000', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Warping Order Form</div>
+            <img
+              src="/logo.png"
+              alt="Company Logo"
+              style={{ maxHeight: '60px', maxWidth: '180px', objectFit: 'contain' }}
+              onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
+            />
+            <div style={{ display: 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: '48px', height: '48px', background: '#4d0000', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyStyle: 'center', justifyContent: 'center', color: 'white', fontSize: '1.1rem', fontWeight: '900' }}>AT</div>
+                <div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#1e1b4b' }}>AT Fabric ERP</div>
+                  <div style={{ fontSize: '0.7rem', color: '#800000', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Warping Order Form</div>
+                </div>
+              </div>
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#888', fontWeight: '700' }}>WOF Number</div>
-            <div style={{ fontSize: '1rem', fontWeight: '900', color: '#4d0000', fontFamily: 'monospace' }}>{wof.wof_number}</div>
-            <div style={{ fontSize: '0.75rem', color: '#555', marginTop: '4px' }}>Created: {today}</div>
-            <div style={{ marginTop: '6px' }}>
-              <span style={{ backgroundColor: badge.bg, color: badge.color, border: `1px solid ${badge.border}`, padding: '2px 10px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: '800' }}>
-                {badge.label}
-              </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#888', fontWeight: '700' }}>WOF Number</div>
+              <div style={{ fontSize: '1rem', fontWeight: '900', color: '#4d0000', fontFamily: 'monospace' }}>{wof.wof_number}</div>
+              <div style={{ fontSize: '0.75rem', color: '#555', marginTop: '4px' }}>Created: {today}</div>
+              <div style={{ marginTop: '6px' }}>
+                <span style={{ backgroundColor: badge.bg, color: badge.color, border: `1px solid ${badge.border}`, padding: '2px 10px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: '800' }}>
+                  {badge.label}
+                </span>
+              </div>
             </div>
+            {qrCodeUrl && (
+              <img 
+                src={qrCodeUrl}
+                alt="QR Code"
+                style={{ width: '70px', height: '70px', border: '1px solid #e5e7eb', padding: '2px', borderRadius: '4px', backgroundColor: '#fff' }}
+              />
+            )}
           </div>
         </div>
 
@@ -171,7 +213,7 @@ function PrintableWOF({ wof, order, machineName, partnerName, yarnCounts }) {
             </thead>
             <tbody>
               {(wof.colour_allotments || []).map((row, i) => {
-                const yc = yarnCounts?.find(y => y.id === row.countId);
+                const yc = yarnCounts?.find(y => y.id === (row.countId || row.yarn_count_id || row.count_id));
                 const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (row.countValue || '—');
                 return (
                   <tr key={i} style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: i % 2 === 0 ? '#fdf8f8' : 'white' }}>

@@ -2,13 +2,28 @@ import React, { useState, useEffect } from 'react';
 import { Loader, ChevronDown, ChevronRight, Eye } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PrintableWOF from '../Production/PrintableWOF';
+import PrintableWOFDC from '../Production/PrintableWOFDC';
 import DYDRDetail from '../../components/DYDRDetail';
 import { printDydr } from '../../utils/printDydr';
 
+function getLocalDateString(dateInput) {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function getWofStatusBadge(wof) {
-  const today = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString(new Date());
+
   if (wof.status === 'completed') {
-    if (wof.end_date && wof.end_date < today) {
+    const actualEndStr = wof.process_completed_at
+      ? getLocalDateString(wof.process_completed_at)
+      : (getLocalDateString(wof.updated_at) || todayStr);
+    if (wof.end_date && actualEndStr > wof.end_date) {
       return { label: 'Completed Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
     return { label: 'Completed', bg: '#dcfce7', color: '#166534', border: '#86efac' };
@@ -17,19 +32,20 @@ function getWofStatusBadge(wof) {
     return { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
   }
   if (wof.status === 'on_process') {
-    if (wof.end_date && wof.end_date < today) {
+    if (wof.end_date && todayStr > wof.end_date) {
       return { label: 'Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
     return { label: 'On Process', bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' };
   }
   if (wof.status === 'created') {
-    if (wof.end_date && wof.end_date < today) {
+    if (wof.end_date && todayStr > wof.end_date) {
       return { label: 'Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
     return { label: 'Created', bg: '#fef9c3', color: '#854d0e', border: '#fde047' };
   }
   return { label: wof.status, bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' };
 }
+
 
 function getYarnStatusBadge(allotments, associatedDydrs) {
   const totalAllotted = (allotments || []).reduce((sum, a) => sum + parseFloat(a.allotted_qty || a.kg || a.allottedQty || 0), 0);
@@ -56,6 +72,7 @@ function OrderWarpingTab({ order }) {
   const [dydrsByWof, setDydrsByWof] = useState({});
   const [loadingDydrs, setLoadingDydrs] = useState(false);
   const [printWof, setPrintWof] = useState(null);
+  const [expandedWofdcId, setExpandedWofdcId] = useState(null);
   const [dyri, setDyri] = useState([]);
   const [dydi, setDydi] = useState([]);
 
@@ -74,7 +91,8 @@ function OrderWarpingTab({ order }) {
         colour: color,
         required: parseFloat(yr.kg || 0),
         received: 0,
-        delivered: 0
+        delivered: 0,
+        returned: 0
       };
     });
 
@@ -101,8 +119,21 @@ function OrderWarpingTab({ order }) {
       }
     });
 
+    // 4. Add yarn returns from completed warping order forms
+    wofs.forEach(wof => {
+      const returns = wof.yarn_returns || [];
+      returns.forEach(ret => {
+        const countId = ret.yarn_count_id || '';
+        const color = ret.colour || '';
+        const key = `${countId}-${color}`;
+        if (summary[key]) {
+          summary[key].returned += parseFloat(ret.quantity_returned || 0);
+        }
+      });
+    });
+
     return Object.values(summary);
-  }, [order.yarn_requirements, dyri, dydi]);
+  }, [order.yarn_requirements, dyri, dydi, wofs]);
 
   const fetchWofs = async () => {
     setLoading(true);
@@ -252,7 +283,7 @@ function OrderWarpingTab({ order }) {
             const orderQty = order.total_quantity || 0;
             const productionQty = order.technical_specs?.production_quantity || '—';
             return (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+              <div className="stats-grid-3" style={{ marginBottom: '2rem' }}>
                 <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Order Qty</span>
                   <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
@@ -289,13 +320,14 @@ function OrderWarpingTab({ order }) {
                     <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty Required (kg)</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty Received from Dyeing (kg)</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty Delivered for Warping (kg)</th>
+                    <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Dyed Yarn Returned (kg)</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Balance Qty (kg)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {overallWarpSummary.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
                         No warp yarn requirements specified for this order.
                       </td>
                     </tr>
@@ -311,6 +343,7 @@ function OrderWarpingTab({ order }) {
                           <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600' }}>{row.required.toFixed(2)}</td>
                           <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600', color: '#1d4ed8' }}>{row.received.toFixed(2)}</td>
                           <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{row.delivered.toFixed(2)}</td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600', color: '#b91c1c' }}>{row.returned.toFixed(2)}</td>
                           <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '700', color: balance > 0.01 ? '#b45309' : '#047857' }}>{balance.toFixed(2)}</td>
                         </tr>
                       );
@@ -354,8 +387,8 @@ function OrderWarpingTab({ order }) {
                           </td>
                           <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: '#800000', fontFamily: 'monospace' }}>{wof.wof_number}</td>
                           <td style={{ padding: '0.75rem 1rem', fontWeight: '700' }}>{wof.qty ? `${wof.qty} m` : '—'}</td>
-                          <td style={{ padding: '0.75rem 1rem' }}>
-                            {wof.wof_type === 'in_house' ? (wof.machine?.machine_name || wof.machine_name || '—') : '—'}
+                          <td style={{ padding: '0.75rem 1rem', fontWeight: '600' }}>
+                            {wof.machine?.machine_name || wof.machine_name || '—'}
                           </td>
                           <td style={{ padding: '0.75rem 1rem' }}>
                             {wof.wof_type === 'job_work' ? (
@@ -514,8 +547,155 @@ function OrderWarpingTab({ order }) {
                           )}
 
                           {activeDetailTab === 'warping' && (
-                            <div style={{ padding: '1.5rem', border: '1.5px dashed var(--border-current)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted-current)' }}>
-                              <p style={{ margin: 0, fontSize: '0.85rem' }}>Warping production tracking will be available soon.</p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '0.5rem 0' }}>
+                              {/* Production details card */}
+                              <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                                gap: '1.5rem',
+                                backgroundColor: 'var(--surface-current)',
+                                padding: '1.25rem',
+                                borderRadius: '10px',
+                                border: '1px solid var(--border-current)'
+                              }}>
+                                <div>
+                                  <span style={{ display: 'block', fontSize: '0.725rem', color: 'var(--text-muted-current)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Warper Name</span>
+                                  <span style={{ fontSize: '0.9rem', fontWeight: '700', color: wof.warper_name ? 'var(--text-current)' : 'var(--text-muted-current)' }}>
+                                    {wof.warper_name || 'Not Assigned'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span style={{ display: 'block', fontSize: '0.725rem', color: 'var(--text-muted-current)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Actual Start Date</span>
+                                  <span style={{ fontSize: '0.9rem', fontWeight: '700', color: wof.process_started_at ? 'var(--text-current)' : 'var(--text-muted-current)' }}>
+                                    {wof.process_started_at
+                                      ? new Date(wof.process_started_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                      : '—'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span style={{ display: 'block', fontSize: '0.725rem', color: 'var(--text-muted-current)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>Actual End Date</span>
+                                  <span style={{ fontSize: '0.9rem', fontWeight: '700', color: wof.process_completed_at ? 'var(--text-current)' : 'var(--text-muted-current)' }}>
+                                    {wof.process_completed_at
+                                      ? new Date(wof.process_completed_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                      : '—'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Forwarding & Warp Split configuration section */}
+                              <div>
+                                <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                  Forwarding & Warp Split Configuration
+                                </h4>
+                                {wof.forwarded_to ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem', alignItems: 'center', backgroundColor: 'var(--surface-current)', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid var(--border-current)', fontSize: '0.825rem' }}>
+                                      <div>
+                                        <span style={{ color: 'var(--text-muted-current)', marginRight: '0.5rem', fontWeight: '500' }}>Forwarded To:</span>
+                                        <span style={{
+                                          fontWeight: '800',
+                                          textTransform: 'uppercase',
+                                          color: wof.forwarded_to === 'sizing' ? '#0284c7' : '#059669',
+                                          backgroundColor: wof.forwarded_to === 'sizing' ? 'rgba(14,165,233,0.1)' : 'rgba(16,185,129,0.1)',
+                                          padding: '0.2rem 0.5rem',
+                                          borderRadius: '4px',
+                                          fontSize: '0.75rem'
+                                        }}>
+                                          {wof.forwarded_to}
+                                        </span>
+                                      </div>
+                                      {wof.forwarded_to === 'sizing' && (
+                                        <div>
+                                          <span style={{ color: 'var(--text-muted-current)', marginRight: '0.5rem', fontWeight: '500' }}>Sizing Type:</span>
+                                          <span style={{ fontWeight: '700', textTransform: 'capitalize', color: 'var(--text-current)' }}>
+                                            {wof.sizing_type === 'in_house' ? 'In-House' : 'Job Work'}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {wof.warp_splits_count > 0 && (
+                                        <div>
+                                          <span style={{ color: 'var(--text-muted-current)', marginRight: '0.5rem', fontWeight: '500' }}>Number of Splits:</span>
+                                          <span style={{ fontWeight: '800', backgroundColor: 'rgba(128,0,0,0.05)', color: '#800000', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>
+                                            {wof.warp_splits_count}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {wof.warp_splits && wof.warp_splits.length > 0 && (
+                                      <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                                          <thead>
+                                            <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                                              {['Warp / SOF Number', 'Quantity (Mtrs)', 'Scheduled Start Date', 'Scheduled End Date'].map(h => (
+                                                <th key={h} style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>{h}</th>
+                                              ))}
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {wof.warp_splits.map((split, sIdx) => (
+                                              <tr key={sIdx} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                                                <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', fontFamily: 'monospace', color: '#0ea5e9' }}>
+                                                  {split.warp_no} {split.beam_name ? `(Beam: ${split.beam_name})` : ''}
+                                                </td>
+                                                <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700' }}>{parseFloat(split.qty || 0).toLocaleString('en-IN')} m</td>
+                                                <td style={{ padding: '0.6rem 0.75rem' }}>
+                                                  {split.start_date ? new Date(split.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                </td>
+                                                <td style={{ padding: '0.6rem 0.75rem' }}>
+                                                  {split.end_date ? new Date(split.end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+
+                                    {/* Collapsible WOFDC Delivery Receipt */}
+                                    {wof.status === 'completed' && (
+                                      <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-current)', paddingTop: '1.25rem' }}>
+                                        <div 
+                                          onClick={() => setExpandedWofdcId(expandedWofdcId === wof.id ? null : wof.id)}
+                                          style={{ 
+                                            display: 'flex', 
+                                            justifyContent: 'space-between', 
+                                            alignItems: 'center', 
+                                            backgroundColor: 'rgba(128,0,0,0.04)', 
+                                            padding: '0.75rem 1rem', 
+                                            borderRadius: '8px', 
+                                            border: '1px solid #800000', 
+                                            cursor: 'pointer',
+                                            userSelect: 'none'
+                                          }}
+                                        >
+                                          <span style={{ fontWeight: '800', color: '#800000', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            📄 Delivery Receipt (WOFDC): {wof.wofdc_number || '—'}
+                                          </span>
+                                          <span style={{ fontSize: '0.75rem', fontWeight: '750', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                            {expandedWofdcId === wof.id ? 'Collapse Details ▲' : 'Expand Details ▼'}
+                                          </span>
+                                        </div>
+                                        
+                                        {expandedWofdcId === wof.id && (
+                                          <div style={{ marginTop: '1rem' }}>
+                                            <PrintableWOFDC 
+                                              wof={wof} 
+                                              order={wof.order} 
+                                              splits={wof.warp_splits || []} 
+                                              yarnReturns={wof.yarn_returns || []} 
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div style={{ padding: '1.5rem', border: '1px dashed var(--border-current)', borderRadius: '8px', backgroundColor: 'var(--surface-current)', textAlign: 'center', color: 'var(--text-muted-current)', fontSize: '0.85rem' }}>
+                                    No forwarding configurations set. WOF forwarding scheduling will appear here once configured.
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           )}
                         </td>

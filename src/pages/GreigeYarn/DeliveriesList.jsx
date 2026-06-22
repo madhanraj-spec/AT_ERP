@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader, Eye, Truck, CheckCircle, Clock, AlertCircle, Send, ChevronRight, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Loader, Eye, Truck, CheckCircle, Clock, AlertCircle, Send, ChevronRight, ChevronDown, XCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const hasGreigeBalanceToSend = (form, deliveryItemsMap, returnsMap) => {
@@ -259,20 +259,44 @@ export default function DeliveriesList() {
     return parts.join(' - ');
   };
 
-  const getDeliveryStatusBadge = (status) => {
+  const getApprovalStatus = (status) => {
+    if (status === 'pending') return 'pending';
+    if (status === 'rejected') return 'rejected';
+    return 'approved';
+  };
+
+  const getApprovalStatusBadge = (status) => {
+    const approval = getApprovalStatus(status);
+    switch (approval) {
+      case 'pending':  return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'PENDING' };
+      case 'approved': return { bg: '#dcfce7', text: '#166534', icon: <CheckCircle size={12} />, label: 'APPROVED' };
+      case 'rejected': return { bg: '#fee2e2', text: '#991b1b', icon: <XCircle size={12} />, label: 'REJECTED' };
+      default:         return { bg: '#f1f5f9', text: '#475569', icon: null, label: approval.toUpperCase() };
+    }
+  };
+
+  const getYarnStatus = (status) => {
     switch (status) {
-      case 'approved':
-        return { bg: '#dcfce7', text: '#166534', icon: <CheckCircle size={12} />, label: 'APPROVED — READY TO SEND' };
-      case 'partially_sent':
-        return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'PARTIALLY SENT' };
-      case 'fully_sent':
-        return { bg: '#dbeafe', text: '#1e40af', icon: <Send size={12} />, label: 'FULLY SENT' };
-      case 'partially_received':
-        return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'PARTIALLY RECEIVED' };
-      case 'received':
-        return { bg: '#f1f5f9', text: '#475569', icon: <CheckCircle size={12} />, label: 'FULLY RECEIVED' };
-      default:
-        return { bg: '#f1f5f9', text: '#475569', icon: null, label: status?.toUpperCase() };
+      case 'pending':
+      case 'rejected':
+      case 'approved':           return 'greige_not_sent';
+      case 'partially_sent':      return 'greige_partially_sent';
+      case 'fully_sent':         return 'greige_sent';
+      case 'partially_received': return 'partially_received';
+      case 'received':           return 'fully_received';
+      default:                   return status || 'greige_not_sent';
+    }
+  };
+
+  const getYarnStatusBadge = (status) => {
+    const yarn = getYarnStatus(status);
+    switch (yarn) {
+      case 'greige_not_sent':       return { bg: '#f1f5f9', text: '#475569', icon: null, label: 'GREIGE NOT SENT' };
+      case 'greige_partially_sent': return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'GREIGE PARTIALLY SENT' };
+      case 'greige_sent':           return { bg: '#dbeafe', text: '#1e40af', icon: <Send size={12} />, label: 'GREIGE SENT' };
+      case 'partially_received':    return { bg: '#e0f2fe', text: '#0369a1', icon: <Clock size={12} />, label: 'PARTIALLY RECEIVED' };
+      case 'fully_received':        return { bg: '#dcfce7', text: '#166534', icon: <CheckCircle size={12} />, label: 'FULLY RECEIVED' };
+      default:                      return { bg: '#f1f5f9', text: '#475569', icon: null, label: yarn.toUpperCase().replace(/_/g, ' ') };
     }
   };
 
@@ -361,13 +385,15 @@ export default function DeliveriesList() {
                     <th>Linked Orders</th>
                     <th>Counts</th>
                     <th style={{ textAlign: 'right' }}>Total Qty (kg)</th>
-                    <th>Delivery Status</th>
+                    <th>Approval Status</th>
+                    <th>Yarn Status</th>
                     <th style={{ textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dyeingForms.map(form => {
-                    const badge = getDeliveryStatusBadge(form.status);
+                    const approvalBadge = getApprovalStatusBadge(form.status);
+                    const yarnBadge = getYarnStatusBadge(form.status);
                     const canDeliver = hasGreigeBalanceToSend(form, deliveryItemsMap, returnsMap) &&
                       form.status !== 'fully_sent' &&
                       form.status !== 'received';
@@ -424,16 +450,30 @@ export default function DeliveriesList() {
                         <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>
                           {getTotalQty(form.yarn_allocations)}
                         </td>
-                        <td>
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: '4px',
-                            backgroundColor: badge.bg, color: badge.text,
-                            padding: '4px 10px', borderRadius: '4px',
-                            fontSize: '0.72rem', fontWeight: '700', whiteSpace: 'nowrap'
-                          }}>
-                            {badge.icon} {badge.label}
-                          </span>
-                        </td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                backgroundColor: approvalBadge.bg, color: approvalBadge.text,
+                                padding: '3px 8px', borderRadius: '4px',
+                                fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap'
+                              }}>
+                                {approvalBadge.icon} {approvalBadge.label}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                backgroundColor: yarnBadge.bg, color: yarnBadge.text,
+                                padding: '3px 8px', borderRadius: '4px',
+                                fontSize: '0.75rem', fontWeight: '700', whiteSpace: 'nowrap'
+                              }}>
+                                {yarnBadge.icon} {yarnBadge.label}
+                              </span>
+                            </div>
+                          </td>
                         <td>
                           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                             <button
@@ -459,7 +499,7 @@ export default function DeliveriesList() {
                       </tr>
                       {expandedDofs[form.id] && (
                         <tr>
-                          <td colSpan={9} style={{ backgroundColor: 'var(--bg-light-current, #f8fafc)', padding: '1.5rem' }}>
+                          <td colSpan={10} style={{ backgroundColor: 'var(--bg-light-current, #f8fafc)', padding: '1.5rem' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                               
                               {/* Section 1: Greige Yarn Delivery Receipts (GYDRs) */}

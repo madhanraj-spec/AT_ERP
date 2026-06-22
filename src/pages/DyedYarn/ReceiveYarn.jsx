@@ -6,7 +6,8 @@ import {
   X, CheckCircle, Loader, User, 
   FileText, Hash, Info, ChevronRight,
   TrendingUp, Layers, Factory, Users,
-  Dna, MoveHorizontal, ClipboardList, ChevronDown
+  Dna, MoveHorizontal, ClipboardList, ChevronDown,
+  Clock, XCircle
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -84,6 +85,47 @@ const getDofAlertInfo = (dof, dyrrs) => {
   return null;
 };
 
+const getApprovalStatus = (status) => {
+  if (status === 'pending') return 'pending';
+  if (status === 'rejected') return 'rejected';
+  return 'approved';
+};
+
+const getApprovalStatusBadge = (status) => {
+  const approval = getApprovalStatus(status);
+  switch (approval) {
+    case 'pending':  return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'PENDING' };
+    case 'approved': return { bg: '#dcfce7', text: '#166534', icon: <CheckCircle size={12} />, label: 'APPROVED' };
+    case 'rejected': return { bg: '#fee2e2', text: '#991b1b', icon: <XCircle size={12} />, label: 'REJECTED' };
+    default:         return { bg: '#f1f5f9', text: '#475569', icon: null, label: approval.toUpperCase() };
+  }
+};
+
+const getYarnStatus = (status) => {
+  switch (status) {
+    case 'pending':
+    case 'rejected':
+    case 'approved':           return 'greige_not_sent';
+    case 'partially_sent':      return 'greige_partially_sent';
+    case 'fully_sent':         return 'greige_sent';
+    case 'partially_received': return 'partially_received';
+    case 'received':           return 'fully_received';
+    default:                   return status || 'greige_not_sent';
+  }
+};
+
+const getYarnStatusBadge = (status) => {
+  const yarn = getYarnStatus(status);
+  switch (yarn) {
+    case 'greige_not_sent':       return { bg: '#f1f5f9', text: '#475569', icon: null, label: 'GREIGE NOT SENT' };
+    case 'greige_partially_sent': return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'GREIGE PARTIALLY SENT' };
+    case 'greige_sent':           return { bg: '#dbeafe', text: '#1e40af', icon: <CheckCircle size={12} />, label: 'GREIGE SENT' };
+    case 'partially_received':    return { bg: '#e0f2fe', text: '#0369a1', icon: <Clock size={12} />, label: 'PARTIALLY RECEIVED' };
+    case 'fully_received':        return { bg: '#dcfce7', text: '#166534', icon: <CheckCircle size={12} />, label: 'FULLY RECEIVED' };
+    default:                      return { bg: '#f1f5f9', text: '#475569', icon: null, label: yarn.toUpperCase().replace(/_/g, ' ') };
+  }
+};
+
 export default function ReceiveYarn() {
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -109,6 +151,11 @@ export default function ReceiveYarn() {
   const [receiptItems, setReceiptItems] = useState([]);
   const [associatedGydrs, setAssociatedGydrs] = useState([]);
 
+  // Production Return States
+  const [productionFormNumber, setProductionFormNumber] = useState('');
+  const [selectedProductionForm, setSelectedProductionForm] = useState(null);
+  const [productionFormType, setProductionFormType] = useState(''); // 'warping' or 'weaving'
+
   // DOF List States
   const [allDofs, setAllDofs] = useState([]);
   const [allOrders, setAllOrders] = useState([]);
@@ -127,6 +174,7 @@ export default function ReceiveYarn() {
   });
 
   const [printData, setPrintData] = useState(null);
+  const [yarnWorkers, setYarnWorkers] = useState([]);
 
   const activeDofAlert = selectedDof ? getDofAlertInfo(selectedDof, allDyrrs) : null;
 
@@ -142,6 +190,27 @@ export default function ReceiveYarn() {
     ]);
     setLocations(locRes.data || []);
     setYarnCounts(yarnRes.data || []);
+
+    // Fetch Yarn workers
+    try {
+      const { data: deptData } = await supabase
+        .from('master_departments')
+        .select('id')
+        .ilike('department_name', '%yarn%');
+        
+      const yarnDeptIds = (deptData || []).map(d => d.id);
+      
+      if (yarnDeptIds.length > 0) {
+        const { data: workersData } = await supabase
+          .from('master_workers')
+          .select('*')
+          .in('department_id', yarnDeptIds)
+          .order('worker_name', { ascending: true });
+        setYarnWorkers(workersData || []);
+      }
+    } catch (err) {
+      console.error('Error fetching yarn workers:', err);
+    }
   };
 
   const fetchAllDofsData = async () => {
@@ -162,8 +231,10 @@ export default function ReceiveYarn() {
       setAllDofs(dofsRes.data || []);
       setAllOrders(ordersRes.data || []);
       setAllGydrItems(gydiRes.data || []);
-      setAllDyrrItems(dyriRes.data || []);
-      setAllDyrrs(dyrrsRes.data || []);
+      const dyriData = dyriRes.data || [];
+      const dyrrsData = dyrrsRes.data || [];
+      setAllDyrrItems(dyriData);
+      setAllDyrrs(dyrrsData.filter(r => dyriData.some(item => item.receipt_id === r.id)));
       setAllReturns(returnsRes.data || []);
     } catch (err) {
       console.error('Error fetching all DOFs:', err);
@@ -173,6 +244,10 @@ export default function ReceiveYarn() {
   };
 
   const handleDirectReceive = async (dof) => {
+    if (dof.status === 'received') {
+      alert('This Dyeing Order Form has already been fully received.');
+      return;
+    }
     setDofNumber(dof.dof_number);
     setFetching(true);
     setSelectedDof(null);
@@ -307,6 +382,11 @@ export default function ReceiveYarn() {
         return;
       }
 
+      if (dof.status === 'received') {
+        alert('This Dyeing Order Form has already been fully received.');
+        return;
+      }
+
       const { data: orders } = await supabase
         .from('orders')
         .select('id, order_number, design_no, design_name')
@@ -420,6 +500,121 @@ export default function ReceiveYarn() {
     }
   };
 
+  const handleSearchProductionForm = async (e) => {
+    e?.preventDefault();
+    if (!productionFormNumber.trim()) return;
+
+    setFetching(true);
+    setSelectedProductionForm(null);
+    setReceiptItems([]);
+
+    try {
+      // 1. Search in warping order forms
+      let form = null;
+      let formType = 'warping';
+
+      const { data: wofData, error: wofErr } = await supabase
+        .from('warping_order_forms')
+        .select(`
+          *,
+          order:orders(id, order_number, design_no, design_name)
+        `)
+        .ilike('wof_number', productionFormNumber.trim())
+        .maybeSingle();
+
+      if (wofData) {
+        form = wofData;
+      } else {
+        // 2. Search in weaving orders
+        const { data: weavingData, error: weavingErr } = await supabase
+          .from('weaving_orders')
+          .select(`
+            *,
+            order:orders(id, order_number, design_no, design_name)
+          `)
+          .ilike('weaving_number', productionFormNumber.trim())
+          .maybeSingle();
+
+        if (weavingData) {
+          form = weavingData;
+          formType = 'weaving';
+        }
+      }
+
+      if (!form) {
+        alert('Warping Order Form or Weaving Order not found.');
+        return;
+      }
+
+      // 3. Fetch dyed yarn delivery items and their source receipts to get dof_id
+      const { data: deliveryItems, error: dydiError } = await supabase
+        .from('dyed_yarn_delivery_items')
+        .select(`
+          id,
+          order_id,
+          yarn_count_id,
+          colour,
+          quantity_kg,
+          lot_number,
+          location_id,
+          source_receipt:dyed_yarn_receipts(dof_id)
+        `)
+        .eq('production_form_id', form.id);
+
+      if (dydiError) throw dydiError;
+
+      if (!deliveryItems || deliveryItems.length === 0) {
+        alert('No dyed yarn deliveries found for this order form.');
+        return;
+      }
+
+      // Group deliveries by count, colour, and lot number
+      const grouped = {};
+      deliveryItems.forEach(item => {
+        const key = `${item.yarn_count_id}-${item.colour}-${item.lot_number || ''}`;
+        if (!grouped[key]) {
+          grouped[key] = {
+            order_id: item.order_id || form.order_id,
+            yarn_count_id: item.yarn_count_id,
+            colour: item.colour,
+            lot_number: item.lot_number || '',
+            location_id: item.location_id || locations[0]?.id || '',
+            delivered_qty: 0,
+            dof_id: item.source_receipt?.dof_id || null
+          };
+        }
+        grouped[key].delivered_qty += parseFloat(item.quantity_kg || 0);
+      });
+
+      // Map to receiptItems
+      const initialItems = Object.values(grouped).map(group => ({
+        order_id: group.order_id,
+        yarn_count_id: group.yarn_count_id,
+        colour: group.colour,
+        type: formType === 'warping' ? 'warp' : 'weft',
+        required_qty: 0,
+        sent_qty: group.delivered_qty, // displayed in table as Delivered Qty
+        historical_qty: 0,
+        received_weight: '', // user enters return qty here
+        lot_number: group.lot_number,
+        location_id: group.location_id,
+        dof_id: group.dof_id,
+        order_number: form.order?.order_number || '',
+        design_info: form.order ? `${form.order.design_no || ''} / ${form.order.design_name || ''}` : '',
+        isSplit: false
+      }));
+
+      setSelectedProductionForm(form);
+      setProductionFormType(formType);
+      setReceiptItems(initialItems);
+    } catch (err) {
+      console.error(err);
+      alert('Error fetching production form details.');
+    } finally {
+      setFetching(false);
+    }
+  };
+
   const addManualItem = () => {
     setReceiptItems([...receiptItems, {
       order_id: null, order_number: 'MISC', design_info: '',
@@ -490,6 +685,26 @@ export default function ReceiveYarn() {
       const totalNow = totalHist + totalReceivedNow;
       const perc = totalRequired > 0 ? (totalNow / totalRequired) * 100 : 0;
       setDofProgress(perc);
+    } else {
+      // Group inputs by count, colour, and lot number to validate split lots
+      const groupedInputs = {};
+      receiptItems.forEach(item => {
+        const key = `${item.yarn_count_id}-${item.colour}-${item.lot_number || ''}`;
+        groupedInputs[key] = (groupedInputs[key] || 0) + (parseFloat(item.received_weight) || 0);
+      });
+
+      // Validate that total returned weight doesn't exceed the delivered qty
+      for (const item of receiptItems) {
+        if (item.isSplit) continue; // check grouping
+        const key = `${item.yarn_count_id}-${item.colour}-${item.lot_number || ''}`;
+        const totalInput = groupedInputs[key] || 0;
+        const delivered = item.sent_qty; // sent_qty holds group.delivered_qty
+        if (totalInput > delivered + 0.001) {
+          const countLabel = yarnCounts.find(yc => yc.id === item.yarn_count_id)?.count_value || 'Unknown';
+          alert(`Returned quantity for ${item.colour} (${countLabel}) lot "${item.lot_number}" of ${totalInput.toFixed(2)} kg exceeds the delivered quantity of ${delivered.toFixed(2)} kg!`);
+          return;
+        }
+      }
     }
     
     setStep(2);
@@ -501,12 +716,20 @@ export default function ReceiveYarn() {
       const year = new Date().getFullYear();
       const { data: dyrrNumber } = await supabase.rpc('get_next_dyrr_number', { p_year: year });
 
+      // Resolve dof_id and dof_number for production returns
+      const firstDofId = receiptItems.find(i => i.dof_id)?.dof_id || null;
+      const docNo = sourceType === 'partner' 
+        ? selectedDof?.dof_number 
+        : (productionFormType === 'warping' 
+            ? selectedProductionForm?.wof_number 
+            : selectedProductionForm?.weaving_number);
+
       const { data: receipt, error: headError } = await supabase
         .from('dyed_yarn_receipts')
         .insert([{
           dyrr_number: dyrrNumber,
-          dof_id: sourceType === 'partner' ? selectedDof?.id : null,
-          dof_number: sourceType === 'partner' ? selectedDof?.dof_number : 'PRODUCTION_RETURN',
+          dof_id: sourceType === 'partner' ? selectedDof?.id : firstDofId,
+          dof_number: docNo || 'PRODUCTION_RETURN',
           dyeing_unit_id: sourceType === 'partner' ? selectedDof?.dyeing_unit_id : null,
           received_date: new Date().toISOString().split('T')[0],
           vehicle_no: logistics.vehicle_no,
@@ -551,7 +774,7 @@ export default function ReceiveYarn() {
 
       const printObj = {
         receiptNumber: dyrrNumber,
-        dof_number: selectedDof?.dof_number || 'PRODUCTION_RETURN',
+        dof_number: docNo || 'PRODUCTION_RETURN',
         date: new Date().toLocaleString(),
         source: sourceType === 'partner' ? 'Partner Receipt' : 'Production Return',
         partner_name: sourceType === 'partner' ? selectedDof?.dyeing_unit?.partner_name : 'N/A',
@@ -629,7 +852,7 @@ export default function ReceiveYarn() {
           <button onClick={() => { setSourceType('partner'); setReceiptItems([]); }} style={{ flex: 1, padding: '1rem', borderRadius: '12px', border: '2px solid', borderColor: sourceType === 'partner' ? 'var(--color-primary)' : '#eee', backgroundColor: sourceType === 'partner' ? 'var(--color-primary-light)' : '#fff', cursor: 'pointer' }}>
             <div style={{ fontWeight: '800', color: sourceType === 'partner' ? 'var(--color-primary)' : '#666' }}>Receive from Partner</div>
           </button>
-          <button onClick={() => { setSourceType('production'); setReceiptItems([]); addManualItem(); }} style={{ flex: 1, padding: '1rem', borderRadius: '12px', border: '2px solid', borderColor: sourceType === 'production' ? 'var(--color-primary)' : '#eee', backgroundColor: sourceType === 'production' ? 'var(--color-primary-light)' : '#fff', cursor: 'pointer' }}>
+          <button onClick={() => { setSourceType('production'); setReceiptItems([]); setSelectedProductionForm(null); setProductionFormNumber(''); }} style={{ flex: 1, padding: '1rem', borderRadius: '12px', border: '2px solid', borderColor: sourceType === 'production' ? 'var(--color-primary)' : '#eee', backgroundColor: sourceType === 'production' ? 'var(--color-primary-light)' : '#fff', cursor: 'pointer' }}>
             <div style={{ fontWeight: '800', color: sourceType === 'production' ? 'var(--color-primary)' : '#666' }}>Receive from Production</div>
           </button>
         </div>
@@ -705,6 +928,9 @@ export default function ReceiveYarn() {
                         };
                       });
 
+                      const uniqueOrders = Array.from(new Set(allocationsStatus.map(a => a.orderNumber).filter(o => o && o !== 'MISC')));
+                      const uniqueDesigns = Array.from(new Set(allocationsStatus.map(a => a.designInfo).filter(d => d && d !== '-')));
+
                       const formatCountVal = (id) => {
                         const y = yarnCounts.find(c => c.id === id);
                         return y ? `${y.count_value} ${y.material}` : '-';
@@ -743,17 +969,36 @@ export default function ReceiveYarn() {
                                   <span style={{ fontWeight: '900', fontSize: '1rem', color: 'var(--color-primary)' }}>
                                     {dof.dof_number}
                                   </span>
-                                  <span style={{ 
-                                    padding: '0.15rem 0.5rem', 
-                                    borderRadius: '4px', 
-                                    fontSize: '0.7rem', 
-                                    fontWeight: '800',
-                                    textTransform: 'capitalize',
-                                    backgroundColor: dof.status === 'approved' || dof.status === 'partially_received' || dof.status === 'received' ? '#dcfce7' : '#fef9c3',
-                                    color: dof.status === 'approved' || dof.status === 'partially_received' || dof.status === 'received' ? '#15803d' : '#854d0e'
-                                  }}>
-                                    {dof.status}
-                                  </span>
+                                  {(() => {
+                                    const approvalBadge = getApprovalStatusBadge(dof.status);
+                                    const yarnBadge = getYarnStatusBadge(dof.status);
+                                    return (
+                                      <>
+                                        <span style={{ 
+                                          padding: '0.15rem 0.5rem', 
+                                          borderRadius: '4px', 
+                                          fontSize: '0.7rem', 
+                                          fontWeight: '800',
+                                          backgroundColor: approvalBadge.bg,
+                                          color: approvalBadge.text,
+                                          textTransform: 'uppercase'
+                                        }}>
+                                          {approvalBadge.label}
+                                        </span>
+                                        <span style={{ 
+                                          padding: '0.15rem 0.5rem', 
+                                          borderRadius: '4px', 
+                                          fontSize: '0.7rem', 
+                                          fontWeight: '800',
+                                          backgroundColor: yarnBadge.bg,
+                                          color: yarnBadge.text,
+                                          textTransform: 'uppercase'
+                                        }}>
+                                          {yarnBadge.label}
+                                        </span>
+                                      </>
+                                    );
+                                  })()}
                                   {alertInfo && (
                                     <span style={{ 
                                       padding: '0.15rem 0.5rem', 
@@ -769,33 +1014,53 @@ export default function ReceiveYarn() {
                                     </span>
                                   )}
                                 </div>
-                                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', fontWeight: '500' }}>
-                                  Partner: <strong style={{ color: '#334155' }}>{dof.dyeing_unit?.partner_name || 'N/A'}</strong> | Target Delivery: <strong style={{ color: '#334155' }}>{dof.expected_delivery_date || 'N/A'}</strong>
+                                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', fontWeight: '500', display: 'flex', flexWrap: 'wrap', gap: '0.25rem 0.75rem' }}>
+                                  <span>Partner: <strong style={{ color: '#334155' }}>{dof.dyeing_unit?.partner_name || 'N/A'}</strong></span>
+                                  <span>|</span>
+                                  <span>Target Delivery: <strong style={{ color: '#334155' }}>{dof.expected_delivery_date || 'N/A'}</strong></span>
+                                  {uniqueOrders.length > 0 && (
+                                    <>
+                                      <span>|</span>
+                                      <span>Order: <strong style={{ color: '#334155' }}>{uniqueOrders.join(', ')}</strong></span>
+                                    </>
+                                  )}
+                                  {uniqueDesigns.length > 0 && (
+                                    <>
+                                      <span>|</span>
+                                      <span>Design: <strong style={{ color: '#334155' }}>{uniqueDesigns.join(', ')}</strong></span>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDirectReceive(dof);
-                                }}
-                                className="btn"
-                                style={{ 
-                                  padding: '0.5rem 1rem', 
-                                  fontSize: '0.8rem', 
-                                  fontWeight: '800',
-                                  backgroundColor: '#7f1d1d',
-                                  color: '#fff',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  cursor: 'pointer',
-                                  boxShadow: '0 4px 6px rgba(127, 29, 29, 0.15)'
-                                }}
-                              >
-                                Receive Yarn
-                              </button>
+                              {dof.status !== 'received' ? (
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDirectReceive(dof);
+                                  }}
+                                  className="btn"
+                                  style={{ 
+                                    padding: '0.5rem 1rem', 
+                                    fontSize: '0.8rem', 
+                                    fontWeight: '800',
+                                    backgroundColor: '#7f1d1d',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 4px 6px rgba(127, 29, 29, 0.15)'
+                                  }}
+                                >
+                                  Receive Yarn
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#166534' }}>
+                                  Fully Received
+                                </span>
+                              )}
                             </div>
 
                           </div>
@@ -902,17 +1167,36 @@ export default function ReceiveYarn() {
                     <div>
                       <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>STATUS</div>
                       <div style={{ marginTop: '2px', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span style={{ 
-                          padding: '0.15rem 0.5rem', 
-                          borderRadius: '4px', 
-                          fontSize: '0.75rem', 
-                          fontWeight: '800',
-                          backgroundColor: selectedDof.status === 'approved' || selectedDof.status === 'partially_received' || selectedDof.status === 'received' ? '#dcfce7' : '#fef9c3',
-                          color: selectedDof.status === 'approved' || selectedDof.status === 'partially_received' || selectedDof.status === 'received' ? '#15803d' : '#854d0e',
-                          textTransform: 'capitalize'
-                        }}>
-                          {selectedDof.status}
-                        </span>
+                        {(() => {
+                          const approvalBadge = getApprovalStatusBadge(selectedDof.status);
+                          const yarnBadge = getYarnStatusBadge(selectedDof.status);
+                          return (
+                            <>
+                              <span style={{ 
+                                padding: '0.15rem 0.5rem', 
+                                borderRadius: '4px', 
+                                fontSize: '0.75rem', 
+                                fontWeight: '800',
+                                backgroundColor: approvalBadge.bg,
+                                color: approvalBadge.text,
+                                textTransform: 'uppercase'
+                              }}>
+                                {approvalBadge.label}
+                              </span>
+                              <span style={{ 
+                                padding: '0.15rem 0.5rem', 
+                                borderRadius: '4px', 
+                                fontSize: '0.75rem', 
+                                fontWeight: '800',
+                                backgroundColor: yarnBadge.bg,
+                                color: yarnBadge.text,
+                                textTransform: 'uppercase'
+                              }}>
+                                {yarnBadge.label}
+                              </span>
+                            </>
+                          );
+                        })()}
                         {activeDofAlert && (
                           <span style={{ 
                             padding: '0.15rem 0.5rem', 
@@ -928,6 +1212,39 @@ export default function ReceiveYarn() {
                         )}
                       </div>
                     </div>
+                    
+                    {(() => {
+                      const uniqueOrders = Array.from(new Set((selectedDof.yarn_allocations || []).map(alloc => {
+                        const matchedOrder = allOrders.find(o => o.id === alloc.orderId);
+                        return matchedOrder?.order_number;
+                      }).filter(Boolean)));
+                      const uniqueDesigns = Array.from(new Set((selectedDof.yarn_allocations || []).map(alloc => {
+                        const matchedOrder = allOrders.find(o => o.id === alloc.orderId);
+                        return matchedOrder ? `${matchedOrder.design_no} / ${matchedOrder.design_name}` : null;
+                      }).filter(Boolean)));
+
+                      return (
+                        <>
+                          {uniqueOrders.length > 0 && (
+                            <div style={{ gridColumn: 'span 2' }}>
+                              <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>ASSOCIATED ORDERS</div>
+                              <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px', wordBreak: 'break-all', whiteSpace: 'normal' }}>
+                                {uniqueOrders.join(', ')}
+                              </div>
+                            </div>
+                          )}
+                          {uniqueDesigns.length > 0 && (
+                            <div style={{ gridColumn: 'span 2' }}>
+                              <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>DESIGNS</div>
+                              <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px', wordBreak: 'break-all', whiteSpace: 'normal' }}>
+                                {uniqueDesigns.join(', ')}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+
                     <div style={{ gridColumn: 'span 2' }}>
                       <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>DYEING PARTNER</div>
                       <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{selectedDof.dyeing_unit?.partner_name || 'N/A'}</div>
@@ -1001,7 +1318,99 @@ export default function ReceiveYarn() {
           </div>
         )}
 
-        {(selectedDof || sourceType === 'production') && (
+        {sourceType === 'production' && (
+          <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem', border: '1px solid #eee' }}>
+            <form onSubmit={handleSearchProductionForm} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem', maxWidth: '600px' }}>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="Enter WOF or Weaving Order Number..." 
+                value={productionFormNumber} 
+                onChange={e => setProductionFormNumber(e.target.value)} 
+                style={{ fontWeight: '800' }} 
+              />
+              <button disabled={fetching} type="submit" className="btn btn-primary" style={{ backgroundColor: '#7f1d1d' }}>
+                {fetching ? <Loader size={18} className="spin" /> : 'Fetch Details'}
+              </button>
+            </form>
+
+            {selectedProductionForm && (
+              <div style={{ 
+                marginTop: '1.5rem', 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
+                gap: '1.5rem' 
+              }}>
+                {/* Card: Production Form Details */}
+                <div style={{ 
+                  backgroundColor: 'var(--surface-current, #fff)', 
+                  border: '1px solid var(--border-current, #eee)', 
+                  borderRadius: '12px', 
+                  padding: '1.5rem',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+                }}>
+                  <h4 style={{ 
+                    margin: '0 0 1rem 0', 
+                    fontSize: '0.9rem', 
+                    fontWeight: '900', 
+                    color: '#7f1d1d', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: '1px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <FileText size={16} /> Production Form Details
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.875rem' }}>
+                    <div>
+                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>FORM TYPE</div>
+                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px', textTransform: 'uppercase' }}>
+                        {productionFormType === 'warping' ? 'Warping (WOF)' : 'Weaving (WEV)'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>NUMBER</div>
+                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>
+                        {productionFormType === 'warping' ? selectedProductionForm.wof_number : selectedProductionForm.weaving_number}
+                      </div>
+                    </div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>ORDER NUMBER</div>
+                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>
+                        {selectedProductionForm.order?.order_number || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>DESIGN NO</div>
+                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>
+                        {selectedProductionForm.design_no || selectedProductionForm.order?.design_no || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>STATUS</div>
+                      <div style={{ marginTop: '2px' }}>
+                        <span style={{ 
+                          padding: '0.15rem 0.5rem', 
+                          borderRadius: '4px', 
+                          fontSize: '0.75rem', 
+                          fontWeight: '800',
+                          backgroundColor: selectedProductionForm.status === 'completed' ? '#dcfce7' : '#fef9c3',
+                          color: selectedProductionForm.status === 'completed' ? '#15803d' : '#854d0e',
+                          textTransform: 'capitalize'
+                        }}>
+                          {selectedProductionForm.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(selectedDof || (sourceType === 'production' && selectedProductionForm)) && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             {Object.entries(groupedItemsByOrder()).map(([oid, group]) => (
               <div key={oid} className="glass-panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid #eee' }}>
@@ -1014,34 +1423,58 @@ export default function ReceiveYarn() {
                 {group.warp.length > 0 && (
                   <div style={{ padding: '1.25rem 1.5rem 0 1.5rem' }}>
                     <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '900', color: '#7f1d1d', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Warp Details
+                      {sourceType === 'partner' ? 'Warp Details' : 'Warp Yarn Returns'}
                     </h4>
                     <table className="item-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
-                        <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
-                          <th style={{ width: '12%', textAlign: 'left' }}>Count</th>
-                          <th style={{ width: '10%', textAlign: 'left' }}>Colour</th>
-                          <th style={{ width: '10%', textAlign: 'right' }}>Required (kg)</th>
-                          <th style={{ width: '10%', textAlign: 'right' }}>Sent (kg)</th>
-                          <th style={{ width: '10%', textAlign: 'right' }}>Prev. Rec (kg)</th>
-                          <th style={{ width: '10%', textAlign: 'right', color: '#b91c1c' }}>Balance (kg)</th>
-                          <th style={{ width: '10%' }}>Received Weight (kg)</th>
-                          <th style={{ width: '10%' }}>Lot Number</th>
-                          <th style={{ width: '10%' }}>Location</th>
-                          <th style={{ width: '8%', textAlign: 'center' }}>Actions</th>
-                        </tr>
+                        {sourceType === 'partner' ? (
+                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
+                            <th style={{ width: '12%', textAlign: 'left' }}>Count</th>
+                            <th style={{ width: '10%', textAlign: 'left' }}>Colour</th>
+                            <th style={{ width: '10%', textAlign: 'right' }}>Required (kg)</th>
+                            <th style={{ width: '10%', textAlign: 'right' }}>Sent (kg)</th>
+                            <th style={{ width: '10%', textAlign: 'right' }}>Prev. Rec (kg)</th>
+                            <th style={{ width: '10%', textAlign: 'right', color: '#b91c1c' }}>Balance (kg)</th>
+                            <th style={{ width: '10%' }}>Received Weight (kg)</th>
+                            <th style={{ width: '10%' }}>Lot Number</th>
+                            <th style={{ width: '10%' }}>Location</th>
+                            <th style={{ width: '8%', textAlign: 'center' }}>Actions</th>
+                          </tr>
+                        ) : (
+                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
+                            <th style={{ width: '15%', textAlign: 'left' }}>Count</th>
+                            <th style={{ width: '15%', textAlign: 'left' }}>Colour</th>
+                            <th style={{ width: '15%', textAlign: 'left' }}>Lot Number</th>
+                            <th style={{ width: '15%', textAlign: 'right' }}>Delivered Qty (kg)</th>
+                            <th style={{ width: '15%' }}>Return Qty (kg)</th>
+                            <th style={{ width: '15%' }}>Location</th>
+                            <th style={{ width: '10%', textAlign: 'center' }}>Actions</th>
+                          </tr>
+                        )}
                       </thead>
                       <tbody>
                         {group.warp.map((item, idx) => (
-                          <DataRow 
-                            key={`warp-${idx}`} 
-                            item={item} 
-                            yarnCounts={yarnCounts} 
-                            locations={locations} 
-                            updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
-                            onAddLot={() => addLotSplit(item.originalIndex)}
-                            onRemoveLot={() => removeLotSplit(item.originalIndex)}
-                          />
+                          sourceType === 'partner' ? (
+                            <DataRow 
+                              key={`warp-${idx}`} 
+                              item={item} 
+                              yarnCounts={yarnCounts} 
+                              locations={locations} 
+                              updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
+                              onAddLot={() => addLotSplit(item.originalIndex)}
+                              onRemoveLot={() => removeLotSplit(item.originalIndex)}
+                            />
+                          ) : (
+                            <ProductionDataRow 
+                              key={`warp-${idx}`} 
+                              item={item} 
+                              yarnCounts={yarnCounts} 
+                              locations={locations} 
+                              updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
+                              onAddLot={() => addLotSplit(item.originalIndex)}
+                              onRemoveLot={() => removeLotSplit(item.originalIndex)}
+                            />
+                          )
                         ))}
                       </tbody>
                     </table>
@@ -1051,34 +1484,58 @@ export default function ReceiveYarn() {
                 {group.weft.length > 0 && (
                   <div style={{ padding: '1.25rem 1.5rem 1.5rem 1.5rem' }}>
                     <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '900', color: '#0d9488', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Weft Details
+                      {sourceType === 'partner' ? 'Weft Details' : 'Weft Yarn Returns'}
                     </h4>
                     <table className="item-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
-                        <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
-                          <th style={{ width: '12%', textAlign: 'left' }}>Count</th>
-                          <th style={{ width: '10%', textAlign: 'left' }}>Colour</th>
-                          <th style={{ width: '10%', textAlign: 'right' }}>Required (kg)</th>
-                          <th style={{ width: '10%', textAlign: 'right' }}>Sent (kg)</th>
-                          <th style={{ width: '10%', textAlign: 'right' }}>Prev. Rec (kg)</th>
-                          <th style={{ width: '10%', textAlign: 'right', color: '#b91c1c' }}>Balance (kg)</th>
-                          <th style={{ width: '10%' }}>Received Weight (kg)</th>
-                          <th style={{ width: '10%' }}>Lot Number</th>
-                          <th style={{ width: '10%' }}>Location</th>
-                          <th style={{ width: '8%', textAlign: 'center' }}>Actions</th>
-                        </tr>
+                        {sourceType === 'partner' ? (
+                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
+                            <th style={{ width: '12%', textAlign: 'left' }}>Count</th>
+                            <th style={{ width: '10%', textAlign: 'left' }}>Colour</th>
+                            <th style={{ width: '10%', textAlign: 'right' }}>Required (kg)</th>
+                            <th style={{ width: '10%', textAlign: 'right' }}>Sent (kg)</th>
+                            <th style={{ width: '10%', textAlign: 'right' }}>Prev. Rec (kg)</th>
+                            <th style={{ width: '10%', textAlign: 'right', color: '#b91c1c' }}>Balance (kg)</th>
+                            <th style={{ width: '10%' }}>Received Weight (kg)</th>
+                            <th style={{ width: '10%' }}>Lot Number</th>
+                            <th style={{ width: '10%' }}>Location</th>
+                            <th style={{ width: '8%', textAlign: 'center' }}>Actions</th>
+                          </tr>
+                        ) : (
+                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
+                            <th style={{ width: '15%', textAlign: 'left' }}>Count</th>
+                            <th style={{ width: '15%', textAlign: 'left' }}>Colour</th>
+                            <th style={{ width: '15%', textAlign: 'left' }}>Lot Number</th>
+                            <th style={{ width: '15%', textAlign: 'right' }}>Delivered Qty (kg)</th>
+                            <th style={{ width: '15%' }}>Return Qty (kg)</th>
+                            <th style={{ width: '15%' }}>Location</th>
+                            <th style={{ width: '10%', textAlign: 'center' }}>Actions</th>
+                          </tr>
+                        )}
                       </thead>
                       <tbody>
                         {group.weft.map((item, idx) => (
-                          <DataRow 
-                            key={`weft-${idx}`} 
-                            item={item} 
-                            yarnCounts={yarnCounts} 
-                            locations={locations} 
-                            updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
-                            onAddLot={() => addLotSplit(item.originalIndex)}
-                            onRemoveLot={() => removeLotSplit(item.originalIndex)}
-                          />
+                          sourceType === 'partner' ? (
+                            <DataRow 
+                              key={`weft-${idx}`} 
+                              item={item} 
+                              yarnCounts={yarnCounts} 
+                              locations={locations} 
+                              updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
+                              onAddLot={() => addLotSplit(item.originalIndex)}
+                              onRemoveLot={() => removeLotSplit(item.originalIndex)}
+                            />
+                          ) : (
+                            <ProductionDataRow 
+                              key={`weft-${idx}`} 
+                              item={item} 
+                              yarnCounts={yarnCounts} 
+                              locations={locations} 
+                              updateItem={(f, v) => updateItem(item.originalIndex, f, v)}
+                              onAddLot={() => addLotSplit(item.originalIndex)}
+                              onRemoveLot={() => removeLotSplit(item.originalIndex)}
+                            />
+                          )
                         ))}
                       </tbody>
                     </table>
@@ -1086,8 +1543,6 @@ export default function ReceiveYarn() {
                 )}
               </div>
             ))}
-
-            {sourceType === 'production' && <button onClick={addManualItem} className="btn btn-secondary" style={{ width: 'fit-content' }}>+ Add Return Order</button>}
 
             <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem', border: '1px solid #eee' }}>
               <button onClick={() => navigate('/dyed-yarn')} className="btn btn-secondary">Cancel</button>
@@ -1127,11 +1582,40 @@ export default function ReceiveYarn() {
 
                 <div><label className="form-label">DC Number</label><input className="form-input" placeholder="e.g. DC-12345" value={logistics.dc_number} onChange={e => setLogistics({...logistics, dc_number: e.target.value})} /></div>
                 <div><label className="form-label">Vehicle No</label><input className="form-input" placeholder="e.g. TN 01 AB 1234" value={logistics.vehicle_no} onChange={e => setLogistics({...logistics, vehicle_no: e.target.value})} /></div>
-                <div><label className="form-label">Received By</label><input className="form-input" value={logistics.received_by} onChange={e => setLogistics({...logistics, received_by: e.target.value})} /></div>
+                <div>
+                  <label className="form-label">Received By</label>
+                  <select
+                    className="form-input"
+                    value={logistics.received_by}
+                    onChange={e => setLogistics({...logistics, received_by: e.target.value})}
+                    style={{ backgroundColor: '#fff', cursor: 'pointer' }}
+                  >
+                    <option value="">Select Personnel...</option>
+                    {logistics.received_by && !yarnWorkers.some(w => w.worker_name === logistics.received_by) && (
+                      <option value={logistics.received_by}>{logistics.received_by}</option>
+                    )}
+                    {yarnWorkers.map(w => (
+                      <option key={w.id} value={w.worker_name}>{w.worker_name}</option>
+                    ))}
+                  </select>
+                </div>
                 
                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
                   <button onClick={() => setStep(1)} className="btn btn-secondary" style={{ flex: 1 }}>Back</button>
-                  <button onClick={handleSubmit} className="btn btn-primary" style={{ flex: 2, fontWeight: '900', backgroundColor: '#7f1d1d' }}>{loading ? <Loader size={18} className="spin" /> : 'Confirm & Generate Receipt'}</button>
+                  <button 
+                    onClick={handleSubmit} 
+                    disabled={loading} 
+                    className="btn btn-primary" 
+                    style={{ 
+                      flex: 2, 
+                      fontWeight: '900', 
+                      backgroundColor: '#7f1d1d',
+                      opacity: loading ? 0.7 : 1,
+                      cursor: loading ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {loading ? <Loader size={18} className="spin" /> : 'Confirm & Generate Receipt'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1194,6 +1678,104 @@ function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLo
           value={item.lot_number || ''} 
           onChange={e => updateItem('lot_number', e.target.value)} 
           placeholder="e.g. Lot 1" 
+        />
+      </td>
+      <td>
+        <select 
+          className="form-input" 
+          style={{ fontWeight: '700', fontSize: '0.85rem' }} 
+          value={item.location_id} 
+          onChange={e => updateItem('location_id', e.target.value)}
+        >
+          <option value="">Select Location</option>
+          {locations.map(l => <option key={l.id} value={l.id}>{l.location_name}</option>)}
+        </select>
+      </td>
+      <td style={{ textAlign: 'center' }}>
+        {item.isSplit ? (
+          <button 
+            type="button"
+            onClick={onRemoveLot}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: '#ef4444', 
+              cursor: 'pointer',
+              padding: '0.25rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '4px'
+            }}
+            title="Remove Lot Split"
+          >
+            <X size={18} />
+          </button>
+        ) : (
+          <button 
+            type="button"
+            onClick={onAddLot}
+            className="btn btn-secondary"
+            style={{ 
+              padding: '4px 10px', 
+              fontSize: '0.75rem', 
+              fontWeight: '800', 
+              borderRadius: '6px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.25rem'
+            }}
+          >
+            + Add Lot
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function ProductionDataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLot }) {
+  const countObj = yarnCounts.find(y => y.id === item.yarn_count_id);
+  
+  return (
+    <tr style={{ backgroundColor: item.isSplit ? '#f8fafc' : 'transparent' }}>
+      <td>
+        {item.isSplit ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#64748b', paddingLeft: '1rem', fontWeight: '700', fontSize: '0.85rem' }}>
+            <MoveHorizontal size={14} />
+            <span>↳ Lot Split</span>
+          </div>
+        ) : (
+          <span style={{ fontWeight: '800', color: '#1e293b' }}>
+            {countObj?.count_value || '-'}
+          </span>
+        )}
+      </td>
+      <td style={{ fontWeight: '700', color: '#7f1d1d' }}>
+        {item.isSplit ? '' : item.colour}
+      </td>
+      <td>
+        <input 
+          type="text" 
+          className="form-input" 
+          style={{ fontWeight: '700', fontSize: '0.875rem', padding: '6px 12px' }} 
+          value={item.lot_number || ''} 
+          onChange={e => updateItem('lot_number', e.target.value)} 
+          placeholder="e.g. Lot 1" 
+        />
+      </td>
+      <td style={{ textAlign: 'right', fontWeight: '600' }}>
+        {item.isSplit ? '' : item.sent_qty.toFixed(2)}
+      </td>
+      <td>
+        <input 
+          type="number" 
+          step="0.01" 
+          className="form-input" 
+          style={{ textAlign: 'right', fontWeight: '900', fontSize: '1rem', padding: '6px 12px' }} 
+          value={item.received_weight} 
+          onChange={e => updateItem('received_weight', e.target.value)} 
+          placeholder="0.00" 
         />
       </td>
       <td>

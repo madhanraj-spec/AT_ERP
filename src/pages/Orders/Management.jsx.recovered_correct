@@ -1,0 +1,2148 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { 
+  Plus, ArrowLeft, Trash2, Loader, 
+  ChevronDown, ChevronUp, ChevronRight, Info, Layers, 
+  Zap, Search, Check, Eye, FileText, 
+  Truck, ArrowRight, Package, Calculator,
+  ExternalLink, X, CheckCircle, Clock, XCircle,
+  SlidersHorizontal
+} from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
+import OrderWarpingTab from './OrderWarpingTab';
+import OrderSizingTab from './OrderSizingTab';
+import OrderYarnUsageTab from './OrderYarnUsageTab';
+import OrderWeavingTab from './OrderWeavingTab';
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Helpers for Expected Delivery Dates & Warning Alerts
+// ──────────────────────────────────────────────────────────────────────────────
+const getTodayString = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+
+  const today = getTodayString();
+  const expected = dof.expected_delivery_date;
+
+  if (dof.status === 'received') {
+    const dofReceipts = (dyrrs || []).filter(r => r.dof_id === dof.id);
+    if (dofReceipts.length > 0 && expected) {
+      const maxReceiptDate = dofReceipts.reduce((max, r) => {
+        return (!max || r.received_date > max) ? r.received_date : max;
+      }, null);
+
+      if (maxReceiptDate && maxReceiptDate <= expected) {
+        return {
+          type: 'received_on_time',
+          label: 'Received On Time',
+          color: '#166534',
+          bgColor: '#dcfce7',
+          borderColor: '#bbf7d0'
+        };
+      } else {
+        return {
+          type: 'received_late',
+          label: 'Received Late',
+          color: '#b91c1c',
+          bgColor: '#fee2e2',
+          borderColor: '#fca5a5'
+        };
+      }
+    }
+    return {
+      type: 'received_on_time',
+      label: 'Received On Time',
+      color: '#166534',
+      bgColor: '#dcfce7',
+      borderColor: '#bbf7d0'
+    };
+  }
+
+  if (!expected) return null;
+
+  if (expected === today) {
+    return {
+      type: 'expected_today',
+      label: 'Expected Today',
+      color: '#b45309',
+      bgColor: '#fef3c7',
+      borderColor: '#fcd34d'
+    };
+  } else if (expected < today) {
+    return {
+      type: 'late',
+          {/* Row 2: Quantities & Constructions */}
+      color: '#b91c1c',
+      bgColor: '#fee2e2',
+      borderColor: '#fca5a5'
+    };
+  }
+
+  return null;
+};
+
+const getApprovalStatus = (status) => {
+  if (status === 'pending') return 'pending';
+  if (status === 'rejected') return 'rejected';
+  return 'approved';
+};
+
+const getYarnStatus = (status) => {
+  switch (status) {
+    case 'pending':
+    case 'rejected':
+    case 'approved':           return 'greige_not_sent';
+    case 'partially_sent':      return 'greige_partially_sent';
+    case 'fully_sent':         return 'greige_sent';
+    case 'partially_received': return 'partially_received';
+    case 'received':           return 'fully_received';
+    default:                   return status || 'greige_not_sent';
+  }
+};
+
+const getLocalDateString = (dateInput) => {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const getDyeingSummaryStatus = (orderDofs, allDyrrs) => {
+  if (!orderDofs || orderDofs.length === 0) {
+    return { label: 'Not Started', bg: '#f1f5f9', text: '#64748b', border: '#cbd5e1' };
+  }
+
+  const today = getTodayString();
+  let hasLate = false;
+  let hasExpectedToday = false;
+  let hasPending = false;
+  let hasRejected = false;
+  let hasPartiallyReceived = false;
+  let hasReceived = false;
+  let hasFullySent = false;
+  let hasPartiallySent = false;
+  let hasApproved = false;
+
+  orderDofs.forEach(dof => {
+    const alertInfo = getDofAlertInfo(dof, allDyrrs);
+    if (alertInfo) {
+      if (alertInfo.type === 'late') hasLate = true;
+      if (alertInfo.type === 'expected_today') hasExpectedToday = true;
+    }
+
+    if (dof.status === 'pending') hasPending = true;
+    else if (dof.status === 'rejected') hasRejected = true;
+    else if (dof.status === 'received') hasReceived = true;
+    else if (dof.s
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if (yarnStatus === 'Not Delivered') return 'Yarn Not Delivered';
+    if (yarnStatus === 'Partially Delivered') return 'Yarn Part-Delivered';
+    return 'Ready to Start';
+  }
+  if (wof.status === 'completed') return 'Completed';
+  return wof.status || 'Created';
+};
+
+const getSingleSofStatusLabel = (sof) => {
+  const todayStr = getLocalDateString(new Date());
+  let isSofLate = false;
+  if (sof.status === 'completed') {
+    const actualEndStr = sof.process_completed_at
+      ? getLocalDateString(sof.process_completed_at)
+      : (getLocalDateString(sof.updated_at) || todayStr);
+    if (sof.end_date && actualEndStr > sof.end_date) {
+      isSofLate = true;
+    }
+  } else {
+    if (sof.end_date && todayStr > sof.end_date) {
+      isSofLate = true;
+    }
+  }
+
+  if (isSofLate) return 'Late';
+  if (sof.status === 'stopped') return 'Stopped';
+  if (sof.status === 'on_process') return 'On Process';
+  if (sof.status === 'created') return 'Created';
+  if (sof.status === 'completed') return 'Completed';
+  return sof.status || 'Created';
+};
+
+const getSingleWvofStatusLabel = (wvof, orderDydis) => {
+  const todayStr = getLocalDateString(new Date());
+  if (wvof.status !== 'completed' && wvof.status !== 'late_complete') {
+    if (wvof.end_date && todayStr > wvof.end_date) {
+      return 'Late';
+    }
+  }
+  if (wvof.status === 'completed') return 'Completed';
+  if (wvof.status === 'late_complete') return 'Late Complete';
+  if (wvof.status === 'stopped') return 'Stopped';
+  if (wvof.status === 'on_process') return 'On Process';
+  if (wvof.status === 'weft_yarn_allotted') return 'Weft Yarn Allotted';
+  if (wvof.status === 'weft_yarn_partially_delivered') return 'Weft Yarn Partially Delivered';
+  if (wvof.status === 'weft_yarn_delivered') return 'Weft Yarn Delivered';
+  if (wvof.status === 'pending') return 'Pending';
+  return wvof.status || 'Pending';
+};
+
+const getStatusThemeColor = (statusLabel) => {
+  switch (statusLabel) {
+    case 'Late':
+    case 'Late Complete':
+    case 'Rejected':
+    case 'Yarn Not Delivered':
+      return { bg: '#fee2e2', text: '#b91c1c', border: '#fca5a5' };
+    
+    case 'Expected Today':
+    case 'Pending Approval':
+    case 'Pending':
+    case 'Stopped':
+    case 'Yarn Part-Delivered':
+      return { bg: '#fffbeb', text: '#d97706', border: '#fcd34d' };
+    
+    case 'Weft Yarn Allotted':
+      return { bg: '#fef9c3', text: '#854d0e', border: '#fde047' };
+    case 'We
+  if (wvof.status === 'pending') return 'Pending';
+  return wvof.status || 'Pending';
+};
+
+const getStatusThemeColor = (statusLabel) => {
+  switch (statusLabel) {
+    case 'Late':
+    case 'Late Complete':
+    case 'Rejected':
+    case 'Greige Part Sent':
+    case 'Part Received':
+    case 'Approved':
+      return { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd' };
+    
+    case 'Received':
+    case 'Completed':
+      return { bg: '#dcfce7', text: '#166534', border: '#86efac' };
+    
+    default:
+      return { bg: '#f1f5f9', text: '#64748b', border: '#cbd5e1' };
+  }
+};
+
+const getAggregatedStatusSummary = (items, resolverFn) => {
+  if (!items || items.length === 0) {
+    return { label: 'Not Started', bg: '#f1f5f9', text: '#64748b', border: '#cbd5e1' };
+  }
+
+  const counts = {};
+  items.forEach(item => {
+    const label = resolverFn(item);
+    counts[label] = (counts[label] || 0) + 1;
+  });
+
+  const labelParts = Object.entries(counts).map(([label, count]) => {
+    return items.length === 1 ? label : `${count} ${label}`;
+  });
+  const finalLabel = labelParts.join(', ');
+
+  const priorityOrder = [
+    'Late', 'Late Complete', 'Rejected', 'Yarn Not Delivered',
+    'Expected Today', 'Pending Approval', 'Pending', 'Stopped', 'Yarn Part-Delivered',
+    'Weft Yarn Allotted', 'Weft Yarn Partially Delivered',
+    'On Process',
+    'Ready to Start', 'Greige Sent', 'Greige Part Sent', 'Part Received', 'Approved',
+    'Weft Yarn Delivered',
+    'Received', 'Completed'
+  ];
+
+  let selectedLabel = 'Completed';
+  for (const pLabel of priorityOrder) {
+    if (counts[pLabel] > 0) {
+      selectedLabel = pLabel;
+      break;
+    }
+  }
+
+  const theme = getStatusThemeColor(selectedLabel);
+  return {
+    label: finalLabel,
+    bg: theme.bg,
+    text: theme.text,
+    border: theme.border
+  for (const pLabel of priorityOrder) {
+    if (counts[pLabel] > 0) {
+      selectedLabel = pLabel;
+      break;
+    }
+  }
+
+  const theme = getStatusThemeColor(selectedLabel);
+  return {
+    label: finalLabel,
+    bg: theme.bg,
+    text: theme.text,
+    border: theme.border
+  };
+};
+
+function ProcessSummaryBadge({ code, name, status }) {
+  return (
+    <span 
+      title={`${name} status: ${status.label}`}
+      style={{ 
+        backgroundColor: status.bg, 
+        color: status.text, 
+        border: `1px solid ${status.border || 'transparent'}`,
+        padding: '2px 8px', 
+        borderRadius: '6px', 
+        fontSize: '0.65rem', 
+        fontWeight: '800',
+        display: 'inline-flex',
+      title={`${name} status: ${status.label}`}
+      style={{ 
+        backgroundColor: status.bg, 
+        color: status.text, 
+        border: `1px solid ${status.border || 'transparent'}`,
+        padding: '2px 8px', 
+        borderRadius: '6px', 
+        fontSize: '0.65rem', 
+        fontWeight: '800',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.25rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.01em',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+        transition: 'all 0.2s ease',
+        cursor: 'default'
+      }}
+    >
+      <span style={{ opacity: 0.75 }}>{code}:</span>
+      <span>{status.label}</span>
+    </span>
+  );
+}
+
+// ──────────────────────────────────────────────
+// OrderCard Sub-component
+// ──────────────────────────────────────────────
+function OrderCard({ 
+  order, 
+  basePath, 
+  onDelete, 
+  yarnCounts, 
+  onViewDOF, 
+  onViewGYDR, 
+  onViewDYRR, 
+  onViewDYDR, 
+  orderDofs = [], 
+  allDyrrs = [],
+  orderWofs = [],
+  orderSofs = [],
+  orderWvofs = [],
+  orderDydis = []
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState('order_info');
+  const navigate = useNavigate();
+
+  const totalGreigeInputQty = useMemo(() => {
+    let sum = 0;
+    (orderWvofs || []).forEach(wv => {
+      const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
+      const greigeRolls = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected');
+      sum += greigeRolls.reduce((acc, r) => acc + parseFloat(r.qty || 0), 0);
+    });
+    return sum;
+  }, [orderWvofs, order.order_number]);
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'draft': return { bg: '#fef3c7', text: '#92400e', label: 'Draft' };
+      case 'active': return { bg: '#dcfce7', text: '#166534', label: 'Active' };
+      case 'in_progress': return { bg: '#e0f2fe', text: '#0369a1', label: 'In Progress' };
+      case 'completed': return { bg: '#f1f5f9', text: '#475569', label: 'Completed' };
+      default: return { bg: '#f1f5f9', text: '#475569', label: status };
+    }
+  };
+
+  const statusStyle = getStatusColor(order.status);
+
+  const getShortCountsString = (specs) => {
+  const getShortCountsString = (specs) => {
+    if (!specs) return '-';
+    const allWarpIds = specs.warp_selections?.flat() || [];
+    const allWeftIds = specs.weft_selections?.flat() || [];
+    const warpStr = allWarpIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
+    const weftStr = allWeftIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
+    return `${warpStr || '-'} X ${weftStr || '-'}`;
+  };
+
+  return (
+    <div style={{ 
+      backgroundColor: 'var(--surface-current)', 
+      border: '1px solid var(--border-current)', 
+      borderRadius: 'var(--radius-lg)', 
+      overflow: 'hidden',
+      transition: 'all 0.2s ease',
+      boxShadow: isExpanded ? '0 10px 25px -5px rgba(0,0,0,0.1)' : 'none'
+    }}>
+      {/* ── Card Header / Main Info ── */}
+      <div 
+        onClick={() => setIsExpanded(!isExpanded)}
+        style={{ 
+          padding: '1.25rem 1.5rem',
+          cursor: 'pointer',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem'
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Package size={20} />
+            </div>
+            <div>
+              <div style={{ fontWeight: '800', fontSize: '1.125rem', color: 'var(--text-current)', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {order.order_number}
+                <span style={{ 
+                  backgroundColor: statusStyle.bg, 
+                  color: statusStyle.text, 
+                  padding: '2px 10px', 
+                  borderRadius: '20px', 
+                  fontSize: '0.7rem', 
+                  fontWeight: '700',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.025em'
+                }}>
+                  {statusStyle.label}
+                </span>
+
+               
+                  <ProcessSummaryBadge code="DY" name="Dyeing" status={getAggregatedStatusSummary(orderDofs, dof => getSingleDofStatusLabel(dof, allDyrrs))} />
+                  <ProcessSummaryBadge code="WP" name="Warping" status={getAggregatedStatusSummary(orderWofs, wof => getSingleWofStatusLabel(wof, orderDydis))} />
+                  <ProcessSummaryBadge code="SZ" name="Sizing" status={getAggregatedStatusSummary(orderSofs, sof => getSingleSofStatusLabel(sof))} />
+                  <ProcessSummaryBadge code="WV" name="Weaving" status={getAggregatedStatusSummary(orderWvofs, wvof => getSingleWvofStatusLabel(wvof, orderDydis))} />
+                  <ProcessSummaryBadge code="PR" name="Processing" status={getAggregatedStatusSummary([], () => '')} />
+                </div>
+                {(() => {
+                  let expectedTodayCount = 0;
+                  const lateDofNumbers = [];
+
+                  (orderDofs || []).forEach(dof => {
+                    const alertInfo = getDofAlertInfo(dof, allDyrrs);
+                    if (alertInfo) {
+                      if (alertInfo.type === 'expected_today') {
+                        expectedTodayCount++;
+                      } else if (alertInfo.type === 'late') {
+                        lateDofNumbers.push(dof.dof_number);
+                      }
+                    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                          letterSpacing: '0.025em'
+                        }}>
+                          Late: {lateDofNumbers.join(', ')}
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+              <div style={{ color: 'var(--text-muted-current)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ textTransform: 'capitalize' }}>{order.order_type} Order</span>
+                <span>•</span>
+                <span>{new Date(order.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem' }} onClick={e => e.stopPropagation()}>
+               <button 
+                onClick={() => navigate(`${basePath}/edit-order/${order.id}`)}
+                className="btn-icon"
+                title="Edit Order"
+                style={{ color: 'var(--text-muted-current)' }}
+              >
+                <Eye size={18} />
+              </button>
+              <button 
+                onClick={onDelete}
+                className="btn-icon"
+                title="Delete Order"
+                style={{ color: '#ef4
+                  {statusStyle.label}
+                </span>
+
+                {/* Section Status Summary Badges */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap', marginLeft: '0.5rem' }} onClick={e => e.stopPropagation()}>
+                  <ProcessSummaryBadge code="DY" name="Dyeing" status={getDyeingSummaryStatus(orderDofs, allDyrrs)} />
+                  <ProcessSummaryBadge code="WP" name="Warping" status={getWarpingSummaryStatus(orderWofs, orderDydis)} />
+                  <ProcessSummaryBadge code="SZ" name="Sizing" status={getSizingSummaryStatus(orderSofs)} />
+                  <ProcessSummaryBadge code="WV" name="Weaving" status={getWeavingSummaryStatus(orderWvofs, orderDydis)} />
+                  <ProcessSummaryBadge code="PR" name="Processing" status={getProcessingSummaryStatus()} />
+                </div>
+                {(() => {
+                  let expectedTodayCount = 0;
+                  const lateDofNumbers = [];
+
+                  (orderDofs || []).forEach(dof => {
+                    const alertInfo = getDofAlertInfo(dof, allDyrrs);
+            <div style={{ fontWeight: '600', fontSize: '0.85rem' }}>{order.design_no} / {order.design_name}</div>
+                style={{ color: '#ef4444' }}
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+            <div style={{ color: 'var(--text-muted-current)', display: 'flex', alignItems: 'center' }}>
+              {isExpanded ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0.5rem 0' }}>
+          {/* Row 1: Primary Meta */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.5fr 1.2fr 0.8fr 1fr', gap: '1.5rem', alignItems: 'center' }}>
+            <div>
+              <label style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block', letterSpacing: '0.05em' }}>Buyer / Brand</label>
+              <div style={{ fontWeight: '700', fontSize: '0.9rem', color: 'var(--text-current)' }}>{order.master_brands?.brand_name || 'N/A'}</div>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block', letterSpacing: '0.05em' }}>Fabric Design</label>
+              <div style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--text-current)' }}>{order.design_no} / {order.design_name}</div>
+     
+              <label style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block', letterSpacing: '0.05em' }}>Dispatch</label>
+              <div style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--text-current)' }}>{order.dispatch_date ? new Date(order.dispatch_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—'}</div>
+            </div>
+          </div>
+
+          {/* Subtle divider */}
+          <div style={{ borderTop: '1px solid var(--border-current)', opacity: 0.3, margin: '0.25rem 0' }}></div>
+
+          {/* Row 2: Quantities & Constructions */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr 1.5fr 1.5fr', gap: '1.5rem', alignItems: 'center' }}>
+            <div>
+              <label style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block', letterSpacing: '0.05em' }}>Order Qty</label>
+              <div style={{ fontWeight: '800', fontSize: '0.9rem', color: 'var(--text-current)' }}>
+                {Number(order.total_quantity).toLocaleString()} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Mtrs</span>
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block', letterSpacing: '0.05em' }}>Greige Input Qty</label>
+              <div style={{ fontWeight: '800', fontSize: '0.9rem', color: '#0284c7' }}>
+                {totalGreigeInputQty.toLocaleString()} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Mtrs</span>
+              </div>
+            </div>
+            <div>
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block', letterSpacing: '0.05em' }}>Greige Input Qty</label>
+              <div style={{ fontWeight: '800', fontSize: '0.9rem', color: '#0284c7' }}>
+                {totalGreigeInputQty.toLocaleString()} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Mtrs</span>
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block', letterSpacing: '0.05em' }}>Order Construction</label>
+              <div style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-current)' }}>
+                {order.technical_specs?.order_reed || '—'} / {order.technical_specs?.order_pick || '—'}
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.25rem', display: 'block', letterSpacing: '0.05em' }}>Production Construction</label>
+              <div style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-current)' }}>
+                {order.technical_specs?.on_loom_reed || '—'} / {order.technical_specs?.on_loom_pick || '—'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Expansion Section ── */}
+      {isExpanded && (
+              { id: 'weaving', label: 'Weaving', icon: <Package size={16} /> },
+              { id: 'inspection', label: 'Inspection', icon: <Search size={16} /> },
+            ].map(tab => (
+              <button 
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{ 
+                  padding: '1rem 0',
+                  border: 'none',
+                  background: 'none',
+
+
+
+
+
+
+
+
+
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f9fafb', textAlign: 'left', borderBottom: '1px solid #eee' }}>
+                <th style={{ padding: '0.75rem 1rem' }}>Yarn Details</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Type</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Colour</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Dyeing Unit</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Net Req (kg)</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Dyeing At (kg)</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Sent (kg)</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Rec (kg)</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Bal (kg)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaryData.length === 0 ? (
+                <tr><td colSpan="9" style={{ padding: '2rem', textAlign: 'center', color: '#999' }}>No dyeing allocations found for this order.</td></tr>
+              ) : summaryData.map((row, idx) => {
+                const balance = row.netRequired - row.received;
+                // Check if we need a section header
+                const showWarpHeader = idx === 0 && row.type === 'warp';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('weaving_orders')
+          .select(`
+            id,
+            weaving_number,
+            start_date,
+            end_date,
+            qty,
+            weaving_type,
+            machine_name,
+            partner_name,
+            fabric_rolls,
+  const [loading, setLoading] = useState(true);
+  const [expandedWvofs, setExpandedWvofs] = useState({});
+
+  useEffect(() => {
+    async function fetchInspectionData() {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('weaving_orders')
+          .select(`
+            id,
+            weaving_number,
+            start_date,
+            end_date,
+            qty,
+            weaving_type,
+            machine_name,
+            partner_name,
+            fabric_rolls,
+            production_logs,
+            machine:master_machines(machine_name),
+            partner:master_partners(partner_name)
+          `)
+          .eq('order_id', order.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setWeavingOrders(data || []);
+      } catch (err) {
+        console.error('Error fetching inspection weaving orders:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (order?.id) {
+      fetchInspectionData();
+    }
+  }, [order?.id]);
+
+  // Calculations
+  const productionQty = order.technical_specs?.production_quantity || order.total_quantity || '—';
+
+  const totalDailyLogs = useMemo(() => {
+    let sum = 0;
+    weavingOrders.forEach(wv => {
+      const logs = Array.isArray(wv.production_logs) ? wv.production_logs : [];
+      logs.forEach(log => {
+        sum += parseFloat(log.qty || 0);
+      });
+    });
+    return sum;
+  }, [weavingOrders]);
+
+  const totalGreigeInputQty = useMemo(() => {
+    let sum = 0;
+    weavingOrders.forEach(wv => {
+          colour: a.colour, 
+          type: a.type, 
+          netRequired: 0, 
+          dyeingReq: 0, 
+          sent: 0, 
+          received: 0,
+          dyeingUnit: parentDof?.dyeing_unit?.partner_name || '-',
+          expectedDate: parentDof?.expected_delivery_date || '-'
+        };
+      } else {
+        if (parentDof && parentDof.dyeing_unit?.partner_name) {
+          if (summary[key].dyeingUnit === '-') {
+            summary[key].dyeingUnit = parentDof.dyeing_unit.partner_name;
+          } else if (!summary[key].dyeingUnit.includes(parentDof.dyeing_unit.partner_name)) {
+            summary[key].dyeingUnit += `, ${parentDof.dyeing_unit.partner_name}`;
+          }
+        }
+        if (parentDof && parentDof.expected_delivery_date) {
+          if (summary[key].expectedDate === '-') {
+            summary[key].expectedDate = parentDof.expected_delivery_date;
+          } else if (!summary[key].expectedDate.includes(parentDof.expected_delivery_date)) {
+            summary[key].expectedDate += `, ${parentDof.expected_delivery_date}`;
+          }
+        }
+
+export default function OrdersManagement() {
+  const [filter, setFilter] = useState('all');
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [yarnCounts, setYarnCounts] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [allDofs, setAllDofs] = useState([]);
+  const [allDyrrs, setAllDyrrs] = useState([]);
+  const [partners, setPartners] = useState([]);
+  
+  // Collapsible Filters State
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const [searchOrderNumber, setSearchOrderNumber] = useState('');
+  const [searchMerchandiser, setSearchMerchandiser] = useState('');
+  const [searchBuyer, setSearchBuyer] = useState('');
+  const [searchVendor, setSearchVendor] = useState('');
+  const [searchSeason, setSearchSeason] = useState('');
+  const [searchWeaveType, setSearchWeaveType] = useState('');
+
+  // Unique filter values derived from orders
+  const uniqueMerchandisers = useMemo(() => {
+    return [...new Set(orders.map(o => o.merchandiser_name).filter(Boolean))].sort();
+  }, [orders]);
+
+  const uniqueSeasons = useMemo(() => {
+    return [...new Set(orders.map(o => o.season).filter(Boolean))].sort();
+  }, [orders]);
+
+  const uniqueWeaveTypes = useMemo(() => {
+    return [...new Set(orders.map(o => o.technical_specs?.weave_type).filter(Boolean))].sort();
+  }, [orders]);
+
+  // Filtered Orders calculation
+
+
+
+
+
+
+
+
+
+
+
+              <tbody>
+                {weavingOrders.map(wvof => {
+                  const rolls = Array.isArray(wvof.fabric_rolls) ? wvof.fabric_rolls : [];
+                  const allocation = wvof.weaving_type === 'in_house' 
+                    ? `Loom: ${wvof.machine?.machine_name || wvof.machine_name || '—'}` 
+                    : `Job: ${wvof.partner?.partner_name || wvof.partner_name || '—'}`;
+                  const startDateStr = wvof.start_date ? new Date(wvof.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                  const endDateStr = wvof.end_date ? new Date(wvof.end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+                  const isExpanded = !!expandedWvofs[wvof.id];
+                  const totalWvofGreigeQty = rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+                  const totalWvofActualQty = rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.actual_length || 0), 0);
+                  
+                  const scannedCount = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected').length;
+                  const inspectedCount = rolls.filter(r => r.status === '4_point_inspected').length;
+
+                  return (
+                    <React.Fragment key={wvof.id}>
+                      {/* Weaving Order Form Header Row */}
+                      <tr 
+      setAllDyrrs((dyrrsRes.data || []).filter(r => r.source_type !== 'production'));
+      setPartners(partnersRes.data || []);
+
+      let query = supabase
+        .from('orders')
+        .select('*, vendor:master_partners(partner_name), master_brands(brand_name)')
+        .order('created_at', { ascending: false });
+
+      if (filter === 'drafts') {
+        query = query.eq('status', 'draft');
+      } else if (filter === 'completed') {
+        query = query.eq('status', 'completed');
+      } else if (filter === 'active') {
+        query = query.eq('status', 'active');
+      } else if (filter === 'bulk') {
+        query = query.eq('order_type', 'bulk');
+      } else if (filter === 'sample') {
+        query = query.eq('order_type', 'sample');
+        supabase.from('master_partners').select('*')
+      ]);
+      setYarnCounts(yarnRes.data || []);
+      setBrands(brandRes.data || []);
+      setAllDofs(dofsRes.data || []);
+      setAllDyrrs((dyrrsRes.data || []).filter(r => r.source_type !== 'production'));
+                        </td>
+                      </tr>
+
+                      {/* Fabric Rolls rows */}
+                      {isExpanded && (
+                        rolls.length === 0 ? (
+                          <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
+                            <td colSpan={5} style={{ padding: '0.75rem 1.5rem', color: 'var(--text-muted-current)', fontStyle: 'italic', fontSize: '0.78rem' }}>
+                              No fabric rolls generated for this form yet.
+                            </td>
+                          </tr>
+                        ) : (
+                          [...rolls]
+                            .sort((a, b) => a.roll_no - b.roll_no)
+                            .map(roll => {
+                              const isGreigeScanned = roll.status === 'greige received' || roll.status === '4_point_inspected';
+                              const isQCInspected = roll.status === '4_point_inspected';
+
+                              return (
+                                <tr key={roll.id} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: 'white' }}>
+                                  {/* Weaving Order Form column shows Roll ID */}
+                                  <td style={{ padding: '0.65rem 1.5rem', fontWeight: '600', color: 'var(--text-current)', fontFamily: 'monospace' }}>
+                                    Roll ID: {roll.id}
+                                  </td>
+                                  
+                                  {/* Qty column: greige input qty */}
+                                  <td style={{ padding: '0.65rem 1rem', textAlign: 'right', fontWeight: '600' }}>
+  };
+
+  // Detail Fetchers
+  const fetchDOFDetail = async (id) => {
+    setLoadingDetail(true);
+    try {
+      const [formRes, ordersRes] = await Promise.all([
+        supabase.from('dyeing_order_forms').select('*, dyeing_unit:master_partners(partner_name)').eq('id', id).single(),
+        supabase.from('dyeing_order_forms').select('order_ids').eq('id', id).single()
+      ]);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      setLoadingDetail(false);
+    }
+  };
+
+  const deleteOrder = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this order?')) return;
+    try {
+      const { error } = await supabase.from('orders').delete().eq('id', id);
+      if (error) throw error;
+      setOrders(orders.filter(o => o.id !== id));
+    } catch (err) {
+      alert('Error deleting order: ' + err.message);
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'draft': return { bg: '#fef3c7', text: '#92400e' };
+      case 'active': return { bg: '#dcfce7', text: '#166534' };
+      case 'in_progress': return { bg: '#e0f2fe', text: '#0369a1' };
+      case 'completed': return { bg: '#f1f5f9', text: '#475569' };
+      default: return { bg: '#f1f5f9', text: '#475569' };
+    }
+  };
+
+  const getShortCountsString = (specs) => {
+    if (!specs) return '-';
+    const allWarpIds = specs.warp_selections?.flat() || [];
+    const allWeftIds = specs.weft_selections?.flat() || [];
+    
+    const warpStr = allWarpIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
+    const weftStr = allWeftIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
+    
+    return `${warpStr || '-'} X ${weftStr || '-'}`;
+  };
+
+  return (
+    <div style={{ maxWidth
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                              <span style={{ color: '#94a3b8' }}>Mistakes:</span>
+            Orders Management
+          </h1>
+        </div>
+        
+        <Link 
+          to={`${basePath}/create-order`} 
+          className="btn btn-primary" 
+          style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', fontWeight: 'bold', padding: '0.625rem 1.25rem' }}
+        >
+          <Plus size={18} />
+          New Order
+        </Link>
+      </div>
+
+      {/* Filter Bar */}
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        padding: '0.75rem 1rem', 
+        backgroundColor: 'var(--surface-current)', 
+        border: '1px solid var(--border-current)', 
+        borderRadius: 'var(--radius-md)', 
+        marginBottom: '1rem',
+        flexWrap: 'wrap',
+        gap: '1rem'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+  const [gydrs, setGydrs] = useState([]);
+  const [dyrrs, setDyrrs] = useState([]);
+  const [deliveryItems, setDeliveryItems] = useState([]);
+  const [receiptItems, setReceiptItems] = useState([]);
+  const [returns, setReturns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const { profile } = useAuth();
+
+  useEffect(() => {
+    async function fetchData() {
+      setLoading(true);
+      try {
+        // 1. Fetch DOFs related to this order
+        const { data: dofData } = await supabase
+          .from('dyeing_order_forms')
+          .select('*, dyeing_unit:master_partners(partner_name)')
+          .contains('order_ids', [order.id]);
+        
+        setDofs(dofData || []);
+        const dofIds = (dofData || []).map(d => d.id);
+
+        // 2. Fetch GYDI (Greige Delivery Items)
+        // Fetch by order_id OR by linked dof_ids
+        let gydiQuery = supabase
+          .from('greige_yarn_delivery_items')
+          .select('*, receipt:greige_yarn_delivery_receipts(*)');
+        
+        if (dofIds.length > 0) {
+          gydiQuery = gydiQuery.or(`order_id.eq.${order.id},receipt_id.in.(${
+            // We need to fetch receipt IDs linked to these DOFs first or do a join
+            // For simplicity, let's fetch receipts separately if needed, but 'or' with subquery isn't supported easily.
+            // Let's just fetch all items where receipt.dof_id is in dofIds.
+            ''
+          })`);
+        } else {
+          gydiQuery = gydiQuery.eq('order_id', order.id);
+        }
+
+        // Revised approach: Fetch all receipts for these DOFs
+        const { data: relatedReceipts } = await supabase
+          .from('greige_yarn_delivery_receipts')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    setLoading(true);
+    try {
+      // Fetch Masters for display names and all DOFs/Receipts/WOFs/SOFs/Weaving orders/DYDR deliveries
+      const [yarnRes, brandRes, dofsRes, dyrrsRes, partnersRes, wofsRes, sofsRes, wvofsRes, dydiRes] = await Promise.all([
+        supabase.from('master_yarn_counts').select('*'),
+        supabase.from('master_brands').select('*'),
+        supabase.from('dyeing_order_forms').select('id, dof_number, expected_delivery_date, order_ids, status'),
+        supabase.from('dyed_yarn_receipts').select('id, dof_id, received_date, source_type'),
+        supabase.from('master_partners').select('*'),
+        supabase.from('warping_order_forms').select('id, wof_number, order_id, status, end_date, process_completed_at, updated_at, colour_allotments'),
+  }, [filter]);
+
+  const fetchOrders = async () => {
+    setLoading(true);
+    try {
+      // Fetch Masters for display names and all DOFs/Receipts/WOFs/SOFs/Weaving orders/DYDR deliveries
+      const [yarnRes, brandRes, dofsRes, dyrrsRes, partnersRes, wofsRes, sofsRes, wvofsRes, dydiRes] = await Promise.all([
+        supabase.from('master_yarn_counts').select('*'),
+        supabase.from('master_brands').select('*'),
+        supabase.from('dyeing_order_forms').select('id, dof_number, expected_delivery_date, order_ids, status'),
+        supabase.from('dyed_yarn_receipts').select('id, dof_id, received_date, source_type'),
+        supabase.from('master_partners').select('*'),
+        supabase.from('warping_order_forms').select('id, wof_number, order_id, status, end_date, process_completed_at, updated_at, colour_allotments'),
+        supabase.from('sizing_order_forms').select('id, sof_number, order_id, status, end_date, process_completed_at, updated_at'),
+        supabase.from('weaving_orders').select('id, weaving_number, order_id, status, end_date, weft_allotments'),
+        supabase.from('dyed_yarn_delivery_items').select('id, production_form_id, quantity_kg, process_type, order_id')
+      ]);
+      setYarnCounts(yarnRes.data || []);
+      setBrands(brandRes.data || []);
+      setAllDofs(dofsRes.data || []);
+      setAllDyrrs((dyrrsRes.data || []).filter(r => r.source_type !== 'production'));
+      setPartners(partnersRes.data || []);
+      setAllWofs(wofsRes.data || []);
+      setAllSofs(sofsRes.data || []);
+      setAllWvofs(wvofsRes.data || []);
+      setAllDydi(dydiRes.data || []);
+
+      let query = supabase
+        .from('orders')
+        .select('*, vendor:master_partners(partner_name), master_brands(brand_name)')
+        .order('created_at', { ascending: false });
+
+      if (filter === 'drafts') {
+        query = query.eq('status', 'draft');
+      } else if (filter === 'completed') {
+        query = query.eq('status', 'completed');
+      } else if (filter === 'active') {
+        query = query.eq('status', 'active');
+      } else if (filter === 'bulk') {
+        query = query.eq('order_type', 'bulk');
+      } else if (filter === 'sample') {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '3rem' }}>
+            <Loader size={32} style={{ animation: 'spin 1s linear infinite' }} />
+            <p style={{ marginTop: '1rem', color: 'var(--text-muted-current)' }}>Fetching orders...</p>
+          </div>
+        ) : orders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', backgroundColor: 'var(--surface-current)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-current)' }}>
+            <p style={{ color: 'var(--text-muted-current)' }}>No orders found for this filter.</p>
+          </div>
+        ) : filteredOrders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', backgroundColor: 'var(--surface-current)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-current)' }}>
+            <p style={{ color: 'var(--text-muted-current)', fontWeight: '500' }}>No orders match the selected search filters.</p>
+          </div>
+        ) : (
+          filteredOrders.map(order => {
+            const orderDofs = allDofs.filter(d => d.order_ids && d.order_ids.includes(order.id));
+            return (
+              <OrderCard 
+                key={order.id} 
+                order={order} 
+                basePath={basePath} 
+                onDelete={() => deleteOrder(order.id)}
+                yarnCounts={yarnCounts}
+                onViewDOF={fetchDOFDetail}
+                onViewGYDR={fetchGYDRDetail}
+                onViewDYRR={fetchDYRRDetail}
+                onViewDYDR={fetchDYDRDetail}
+                orderDofs={orderDofs}
+                allDyrrs={allDyrrs}
+              />
+            );
+          })
+        )}
+      </div>
+
+      {/* Detail Modals */}
+      {viewDofData && (
+        <DOFModal 
+          data={viewDofData} 
+          yarnCounts={yarnCounts} 
+          onClose={() => setViewDofData(null)} 
+        />
+      )}
+      {viewGydrData && (
+        <GYDRModal 
+          data={viewGydrData} 
+          yarnCounts={yarnCounts} 
+          onClose={() => setViewGydrData(null)} 
+        />
+      )}
+      {viewDyrrData && (
+        <DYRRModal 
+          data={viewDyrrData} 
+          yarnCounts={yarnCounts} 
+          onClose={() => setViewDyrrData(null)} 
+        />
+      )}
+      {viewDydrData && (
+        <DYDRModal 
+          data={viewDydrData} 
+
+
+
+
+
+
+          <Loader size={32} className="spin" color="var(--color-primary)" />
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Modal Sub-components
+// ──────────────────────────────────────────────
+
+function ModalWrapper({ title, onClose, children }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+      <div className="fade-in" style={{ backgroundColor: '#fff', borderRadius: '12px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', position: 'relative' }}>
+        <div style={{ position: 'sticky', top: 0, backgroundColor: '#fff', borderBottom: '1px solid #eee', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+          <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: 'var(--color-primary)' }}>{title}</h3>
+          <X size={24} style={{ cursor: 'pointer', color: '#666' }} onClick={onClose} />
+        </div>
+        <div style={{ padding: '2rem' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DOFModal({ data, yarnCounts, onClose }) {
+  const { form, orders } = data;
+  const formatYarn = (id) => {
+    const y = yarnCounts.find(c => c.id === id);
+    if (!y) return 'Unknown';
+    return `${y.count_value}-${y.material}-${y.product_type}`;
+  };
+
+  return (
+    <ModalWrapper title={`Dyeing Order Form: ${form.dof_number}`} onClose={onClose}>
+      <div style={{ border: '2px solid #7f1d1d', padding: '2rem', borderRadius: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #7f1d1d', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+          <div>
+            <h2 style={{ margin: 0, color: '#7f1d1d', fontWeight: '900' }}>DYEING ORDER FORM</h2>
+            <p style={{ margin: 0, fontSize: '0.9rem', color: '#666' }}>{form.dyeing_unit?.partner_name}</p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontWeight: '800' }}>#{form.dof_number}</div>
+            <div style={{ fontSize: '0.8rem' }}>Date: {new Date(form.created_at).toLocaleDateString()}</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
+          <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', color: '#999', m
+            <p style={{ margin: '0.2rem 0' }}><strong>Unit:</strong> {form.dyeing_unit?.partner_name}</p>
+            <p style={{ margin: '0.2rem 0' }}><strong>Expected:</strong> {form.expected_delivery_date || '-'}</p>
+          </div>
+          <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', color: '#999', marginBottom: '0.5rem' }}>Order Context</div>
+            <p style={{ margin: '0.2rem 0' }}><strong>Linked Orders:</strong> {orders.map(o => o.order_number).join(', ')}</p>
+            <p style={{ margin: '0.2rem 0' }}><strong>Status:</strong> <span style={{ textTransform: 'uppercase', fontWeight: 700 }}>{form.status}</span></p>
+          </div>
+        </div>
+
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#7f1d1d', color: '#fff' }}>
+              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Order</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Type</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Yarn Count</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Colour</th>
+              <th style={{ padding: '0.75rem', textAlign: 'right' }}>Qty (kg)</th>
+            </tr>
+          </thead>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
+        {/* DOFs List */}
+        <section>
+          <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em' }}>Dyeing Order Forms</h5>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {dofs.map(d => {
+              const alertInfo = getDofAlertInfo(d, dyrrs);
+              const cardBg = alertInfo ? alertInfo.bgColor : '#fff';
+              const cardBorder = alertInfo ? `1px solid ${alertInfo.borderColor}` : '1px solid #eee';
+              const badgeColor = alertInfo ? alertInfo.color : '#666';
+              const badgeBg = alertInfo ? alertInfo.bgColor : '#f1f5f9';
+
+              return (
+                <div key={d.id} style={{ 
+                  padding: '0.75rem', 
+                  backgroundColor: cardBg, 
+                  border: cardBorder, 
+                  borderRadius: '8px', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center' 
+                }}>
+                  <div>
+                    <div style={{ fontWeight: '700', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {d.dof_number}
+                      {alertInfo && (
+                        <span style={{
+                          backgroundColor: badgeBg,
+                          color: alertInfo.color,
+                          border: `1px solid ${alertInfo.borderColor}`,
+                          padding: '1px 6px',
+        </table>
+      </div>
+    </ModalWrapper>
+  );
+}
+
+function GYDRModal({ data, yarnCounts, onClose }) {
+  const { receipt, items } = data;
+  const formatYarn = (id) => {
+    const y = yarnCounts.find(c => c.id === id);
+    if (!y) return 'Unknown';
+    return `${y.count_value}-${y.material}-${y.product_type}`;
+  };
+
+  return (
+    <ModalWrapper title={`Greige Yarn Delivery Receipt: ${receipt.gydr_number}`} onClose={onClose}>
+      <div style={{ border: '2px solid var(--color-primary)', padding: '2rem', borderRadius: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid var(--color-primary)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+          <div>
+            <h2 style={{ margin: 0, color: 'var(--color-primary)', fontWeight: '900' }}>DELIVERY RECEIPT</h2>
+            <p style={{ margin: 0, fontSize: '0.9rem', color: '#666' }}>ASHOK TEXTILES · Greige Warehouse</p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontWeight: '800' }}>#{receipt.gydr_number}</div>
+            <div style={{ fontSize: '0.8rem' }}>Date: {new Date(receipt.created_at).toLocaleDateString()}</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
+          <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#b45309' }}>
+                  {r.total_weight ? `${Number(r.total_weight).toFixed(1)} kg` : '-'}
+                </div>
+              </div>
+            ))}
+            {uniqueReturns.length === 0 && <p style={{ fontSize: '0.8rem', color: '#999' }}>No returns found.</p>}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function TabUnderDevelopment({ title }) {
+  return (
+    <div style={{ padding: '3rem', textAlign: 'center', backgroundColor: '#fef2f2', borderRadius: '12px', border: '1px dashed #fecaca' }}>
+      <Layers size={48} style={{ color: '#ef4444', marginBottom: '1rem', opacity: 0.5 }} />
+      <h3 style={{ margin: '0 0 0.5rem 0', color: '#991b1b' }}>{title} Module</h3>
+      <p style={{ margin: 0, color: '#b91c1c', fontSize: '0.9rem', fontWeight: '500' }}>This section is currently under development. Detailed tracking will be available soon.</p>
+    </div>
+  );
+}
+
+export default function OrdersManagement() {
+  const [filter, setFilter] = useState('all');
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [yarnCounts, setYarnCounts] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [allDofs, setAllDofs] = useState([]);
+  const [allDyrrs, setAllDyrrs] = useState([]);
+  const [partners, setPartners] = useState([]);
+  const [allWofs, setAllWofs] = useState([]);
+  const [allSofs, setAllSofs] = useState([]);
+  const [allWvofs, setAllWvofs] = useState([]);
+  const [allDydi, setAllDydi] = useState([]);
+  
+  // Collapsible Filters State
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const [searchOrderNumber, setSearchOrderNumber] = useState('');
+  const [searchMerchandiser, setSearchMerchandiser] = useState('');
+  const [searchBuyer, setSearchBuyer] = useState('');
+  const [searchVendor, setSearchVendor] = useState('');
+  const [searchSeason, setSearchSeason] = useState('');
+  const [searchWeaveType, setSearchWeaveType] = useState('');
+
+  // Unique filter values derived from orders
+  const uniqueMerchandisers = useMemo(() => {
+    return [...new Set(orders.map(o => o.merchandiser_name).filter(Boolean))].sort();
+  }, [orders]);
+
+  const uniqueSeasons = useMemo(() => {
+    return [...new Set(orders.map(o => o.season).filter(Boolean))].sort();
+  }, [orders]);
+
+  const uniqueWeaveTypes = useMemo(() => {
+    return [...new Set(orders.map(o => o.technical_specs?.weave_type).filter(Boolean))].sort();
+  }, [orders]);
+
+  // Filtered Orders calculation
+
+export default function OrdersManagement() {
+  const [filter, setFilter] = useState('all');
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [yarnCounts, setYarnCounts] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [allDofs, setAllDofs] = useState([]);
+  const [allDyrrs, setAllDyrrs] = useState([]);
+  const [partners, setPartners] = useState([]);
+  const [allWofs, setAllWofs] = useState([]);
+  const [allSofs, setAllSofs] = useState([]);
+  const [allWvofs, setAllWvofs] = useState([]);
+  const [allDydi, setAllDydi] = useState([]);
+  
+  // Collapsible Filters State
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const [searchOrderNumber, setSearchOrderNumber] = useState('');
+  const [searchMerchandiser, setSearchMerchandiser] = useState('');
+  const [searchBuyer, setSearchBuyer] = useState('');
+  const [searchVendor, setSearchVendor] = useState('');
+  const [searchSeason, setSearchSeason] = useState('');
+  const [searchWeaveType, setSearchWeaveType] = useState('');
+
+  // Unique filter values derived from orders
+  const uniqueMerchandisers = useMemo(() => {
+    return [...new Set(orders.map(o => o.merchandiser_name).filter(Boolean))].sort();
+  }, [orders]);
+
+  const uniqueSeasons = useMemo(() => {
+    return [...new Set(orders.map(o => o.season).filter(Boolean))].sort()
+              />
+            );
+          })
+        )}
+      </div>
+
+      {/* Detail Modals */}
+      {viewDofData && (
+        <DOFModal 
+          data={viewDofData} 
+          yarnCounts={yarnCounts} 
+          onClose={() => setViewDofData(null)} 
+        />
+      )}
+      {viewGydrData && (
+        <GYDRModal 
+          data={viewGydrData} 
+          yarnCounts={yarnCounts} 
+          onClose={() => setViewGydrData(null)} 
+        />
+      )}
+      {viewDyrrData && (
+        <DYRRModal 
+          data={viewDyrrData} 
+          yarnCounts={yarnCounts} 
+      setBrands(brandRes.data || []);
+      setAllDofs(dofsRes.data || []);
+      setAllDyrrs((dyrrsRes.data || []).filter(r => r.source_type !== 'production'));
+      setPartners(partnersRes.data || []);
+      setAllWofs(wofsRes.data || []);
+      setAllSofs(sofsRes.data || []);
+      setAllWvofs(wvofsRes.data || []);
+      setAllDydi(dydiRes.data || []);
+
+      let query = supabase
+        .from('orders')
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  const navigate = useNavigate();
+  const { profile } = useAuth();
+  
+  const basePath = profile?.role === 'admin' ? '/admin' : '/merchandiser';
+
+  useEffect(() => {
+    fetchOrders();
+  }, [filter]);
+
+  const fetchOrders = async () => {
+    setLoading(true);
+    try {
+      // Fetch Masters for display names and all DOFs/Receipts/WOFs/SOFs/Weaving orders/DYDR deliveries
+      const [yarnRes, brandRes, dofsRes, dyrrsRes, partnersRes, wofsRes, sofsRes, wvofsRes, dydiRes] = await Promise.all([
+        supabase.from('master_yarn_counts').select('*'),
+        supabase.from('master_brands').select('*'),
+        supabase.from('dyeing_order_forms').select('id, dof_number, expected_delivery_date, order_ids, status'),
+        supabase.from('dyed_yarn_receipts').select('id, dof_id, received_date, source_type'),
+        supabase.from('master_partners').select('*'),
+        supabase.from('warping_order_forms').select('id, wof_number, order_id, status, end_date, process_completed_at, updated_at, colour_allotments'),
+        supabase.from('sizing_order_forms').select('id, sof_number, order_id, status, end_date, process_completed_at, updated_at'),
+        supabase.from('weaving_orders').select('id, weaving_number, order_id, status, start_date, end_date, process_started_at, process_completed_at, updated_at, weft_allotments, fabric_rolls, production_logs'),
+        supabase.from('dyed_yarn_delivery_items').select('id, production_form_id, quantity_kg, process_type, order_id')
+      ]);
+      setYarnCounts(yarnRes.data || []);
+      setBrands(brandRes.data || []);
+      setAllDofs(dofsRes.data || []);
+  // Detail Fetchers
+  const fetchDOFDetail = async (id) => {
+    setLoadingDetail(true);
+    try {
+      const formRes = await supabase.from('dyeing_order_forms').select('*, dyeing_unit:master_partners(partner_name)').eq('id', id).single();
+      
+      const { data: ordersData } = await supabase.from('orders').select('id, order_number').in('id', formRes.data.order_ids);
+      setViewDofData({ form: formRes.data, orders: ordersData || [] });
+    } catch (err) {
+      console.error(err);
+      console.error('Error fetching orders:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Detail Fetchers
+  const fetchDOFDetail = async (id) => {
+    setLoadingDetail(true);
+    try {
+      const [formRes, ordersRes] = await Promise.all([
+        supabase.from('dyeing_order_forms').select('*, dyeing_unit:master_partners(partner_name)').eq('id', id).single(),
+        supabase.from('dyeing_order_forms').select('order_ids').eq('id', id).single()
+      ]);
+      
+      const { data: ordersData } = await supabase.from('orders').select('id, order_number').in('id', formRes.data.order_ids);
+      setViewDofData({ form: formRes.data, orders: ordersData || [] });
+    } catch (err) {
+      console.error(err);
+      alert('Error loading DOF details');
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setOrders(data || []);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    try {
+      const { error } = await supabase.from('orders').delete().eq('id', id);
+      if (error) throw error;
+      setOrders(orders.filter(o => o.id !== id));
+    } catch (err) {
+      alert('Error deleting order: ' + err.message);
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'draft': return { bg: '#fef3c7', text: '#92400e' };
+      case 'active': return { bg: '#dcfce7', text: '#166534' };
+      case 'in_progress': return { bg: '#e0f2fe', text: '#0369a1' };
+      case 'completed': return { bg: '#f1f5f9', text: '#475569' };
+      default: return { bg: '#f1f5f9', text: '#475569' };
+    }
+  };
+
+  const getShortCountsString = (specs) => {
+    if (!specs) return '-';
+    const allWarpIds = specs.warp_selections?.flat() || [];
+    const allWeftIds = specs.weft_selections?.flat() || [];
+    
+    const warpStr = allWarpIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
+    const weftStr = allWeftIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
+    
+    return `${warpStr || '-'} X ${weftStr || '-'}`;
+  };
+
+  return (
+    <div style={{ width: '100%', padding: '1.5rem', boxSizing: 'border-box' }}>
+      
+      {/* Top Header Section */}
+      <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Weave Type</label>
+            <select
+              className="input"
+              value={searchWeaveType}
+              onChange={e => setSearchWeaveType(e.target.value)}
+              style={{ fontSize: '0.85rem', padding: '0.5rem', width: '100%' }}
+            >
+              <option value="">All Weave Types</option>
+              {uniqueWeaveTypes.map(w => (
+                <option key={w} value={w}>{w}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Reset Filters button */}
+          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button
+              onClick={() => {
+                setSearchOrderNumber('');
+                setSearchMerchandiser('');
+                setSearchBuyer('');
+                setSearchVendor('');
+                setSearchSeason('');
+                setSearchWeaveType('');
+              }}
+              className="btn btn-secondary"
+              style={{ padding: '0.5rem 1.25rem', fontSize: '0.875rem', fontWeight: '600' }}
+            >
+              Reset Filters
+            </button>
+              {uniqueSeasons.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter by Weave Type */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Weave Type</label>
+            <select
+              className="input"
+              value={searchWeaveType}
+              onChange={e => setSearchWeaveType(e.target.value)}
+              style={{ fontSize: '0.85rem', padding: '0.5rem', width: '100%' }}
+            >
+              <option value="">All Weave Types</option>
+              {uniqueWeaveTypes.map(w => (
+                <option key={w} value={w}>{w}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Reset Filters button */}
+          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button
+              onClick={() => {
+                setSearchOrderNumber('');
+                setSearchMerchandiser('');
+                setSearchBuyer('');
+                setSearchVendor('');
+                setSearchSeason('');
+                setSearchWeaveType('');
+              }}
+              className="btn btn-secondary"
+              style={{ padding: '0.5rem 1.25rem', fontSize: '0.875rem', fontWeight: '600' }}
+            >
+              Reset Filters
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Orders List */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '3rem' }}>
+            <Loader size={32} style={{ animation: 'spin 1s linear infinite' }} />
+            <p style={{ marginTop: '1rem', color: 'var(--text-muted-current)' }}>Fetching orders...</p>
+          </div>
+        ) : orders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', backgroundColor: 'var(--surface-current)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-current)' }}>
+      {viewDofData && (
+        <DOFModal 
+          data={viewDofData} 
+          yarnCounts={yarnCounts} 
+          onClose={() => setViewDofData(null)} 
+        />
+      )}
+      {viewGydrData && (
+        <GYDRModal 
+          data={viewGydrData} 
+              Reset Filters
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Orders List */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '3rem' }}>
+            <Loader size={32} style={{ animation: 'spin 1s linear infinite' }} />
+            <p style={{ marginTop: '1rem', color: 'var(--text-muted-current)' }}>Fetching orders...</p>
+          </div>
+        ) : orders.length === 0 ? (
+        ) : orders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', backgroundColor: 'var(--surface-current)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-current)' }}>
+            <p style={{ color: 'var(--text-muted-current)' }}>No orders found for this filter.</p>
+          </div>
+        ) : filteredOrders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', backgroundColor: 'var(--surface-current)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-current)' }}>
+            <p style={{ color: 'var(--text-muted-current)', fontWeight: '500' }}>No orders match the selected search filters.</p>
+          </div>
+        ) : (
+          filteredOrders.map(order => {
+            const orderDofs = allDofs.filter(d => d.order_ids && d.order_ids.includes(order.id));
+            const orderWofs = allWofs.filter(w => w.order_id === order.id);
+            const orderSofs = allSofs.filter(s => s.order_id === order.id);
+            const orderWvofs = allWvofs.filter(wv => wv.order_id === order.id);
+            const orderDydis = allDydi.filter(d => d.order_id === order.id);
+
+            return (
+              <OrderCard 
+                key={order.id} 
+                order={order} 
+                basePath={basePath} 
+                onDelete={() => deleteOrder(order.id)}
+                yarnCounts={yarnCounts}
+                onViewDOF={fetchDOFDetail}
+                onViewGYDR={fetchGYDRDetail}
+                onViewDYRR={fetchDYRRDetail}
+                onViewDYDR={fetchDYDRDetail}
+                orderDofs={orderDofs}
+                allDyrrs={allDyrrs}
+                orderWofs={orderWofs}
+                orderSofs={orderSofs}
+                orderWvofs={orderWvofs}
+                orderDydis={orderDydis}
+              />
+            );
+          })
+        )}
+      </div>
+
+      {/* Detail Modals */}
+      {viewDofData && (
+        <DOFModal 
+          data={viewDofData} 
+          yarnCounts={yarnCounts} 
+          onClose={() => setViewDofData(null)} 
+        />
+      )}
+      {viewGydrData && (
+        <GYDRModal 
+          data={viewGydrData} 
+          yarnCounts={yarnCounts} 
+        />
+      )}
+      {viewDyrrData && (
+        <DYRRModal 
+          data={viewDyrrData} 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <thead>
+            <tr style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}>
+              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Yarn Count</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Colour</th>
+              <th style={{ padding: '0.75rem', textAlign: 'left' }}>From Location</th>
+              <th style={{ padding: '0.75rem', textAlign: 'right' }}>Qty (kg)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items?.map((item, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.75rem', fontWeight: '600' }}>{formatYarn(item.yarn_count_id)}</td>
+                <td style={{ padding: '0.75rem' }}>{item.colour}</td>
+                <td style={{ padding: '0.75rem' }}>{item.location?.location_name || '-'}</td>
+                <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '700' }}>{parseFloat(item.quantity_kg).toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ backgroundColor: '#f9fafb' }}>
+              <td colSpan="3" style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '800' }}>Total Delivered:</td>
+              <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '800', color: 'var(--color-primary)' }}>
+                {items?.reduce((s, i) => s + parseFloat(i.quantity_kg), 0).toFixed(2)} kg
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </ModalWrapper>
+  );
+}
+
+

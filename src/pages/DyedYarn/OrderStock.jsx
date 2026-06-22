@@ -3,9 +3,52 @@ import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Search, Filter, Package, Loader, ChevronRight, ChevronDown,
   FileText, Truck, Download, Layers, CheckCircle2, ClipboardList,
-  Printer, X, User, Calendar, MapPin, AlertCircle, RefreshCw, SlidersHorizontal
+  Printer, X, User, Calendar, MapPin, AlertCircle, RefreshCw, SlidersHorizontal,
+  Clock, XCircle, CheckCircle, Send
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import PrintableWOFDC from '../Production/PrintableWOFDC';
+
+function getApprovalStatus(status) {
+  if (status === 'pending') return 'pending';
+  if (status === 'rejected') return 'rejected';
+  return 'approved';
+}
+
+function getApprovalStatusBadge(status) {
+  const approval = getApprovalStatus(status);
+  switch (approval) {
+    case 'pending':  return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'PENDING' };
+    case 'approved': return { bg: '#dcfce7', text: '#166534', icon: <CheckCircle size={12} />, label: 'APPROVED' };
+    case 'rejected': return { bg: '#fee2e2', text: '#991b1b', icon: <XCircle size={12} />, label: 'REJECTED' };
+    default:         return { bg: '#f1f5f9', text: '#475569', icon: null, label: approval.toUpperCase() };
+  }
+}
+
+function getYarnStatus(status) {
+  switch (status) {
+    case 'pending':
+    case 'rejected':
+    case 'approved':           return 'greige_not_sent';
+    case 'partially_sent':      return 'greige_partially_sent';
+    case 'fully_sent':         return 'greige_sent';
+    case 'partially_received': return 'partially_received';
+    case 'received':           return 'fully_received';
+    default:                   return status || 'greige_not_sent';
+  }
+}
+
+function getDofYarnStatusBadge(status) {
+  const yarn = getYarnStatus(status);
+  switch (yarn) {
+    case 'greige_not_sent':       return { bg: '#f1f5f9', text: '#475569', icon: null, label: 'GREIGE NOT SENT' };
+    case 'greige_partially_sent': return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'GREIGE PARTIALLY SENT' };
+    case 'greige_sent':           return { bg: '#dbeafe', text: '#1e40af', icon: <Send size={12} />, label: 'GREIGE SENT' };
+    case 'partially_received':    return { bg: '#e0f2fe', text: '#0369a1', icon: <Clock size={12} />, label: 'PARTIALLY RECEIVED' };
+    case 'fully_received':        return { bg: '#dcfce7', text: '#166534', icon: <CheckCircle size={12} />, label: 'FULLY RECEIVED' };
+    default:                      return { bg: '#f1f5f9', text: '#475569', icon: null, label: yarn.toUpperCase().replace(/_/g, ' ') };
+  }
+}
 
 function getYarnStatusBadge(allotments, associatedDydrs) {
   const totalAllotted = (allotments || []).reduce((sum, a) => sum + parseFloat(a.allotted_qty || a.kg || a.allottedQty || 0), 0);
@@ -51,6 +94,7 @@ export default function OrderStock() {
   const [activeSubTab, setActiveSubTab] = useState('dyeing'); // 'dyeing' | 'warping' | 'weaving'
   const [expandedWofs, setExpandedWofs] = useState({});
   const [expandedDydrs, setExpandedDydrs] = useState({});
+  const [expandedWofdcId, setExpandedWofdcId] = useState(null);
 
   const handleToggleExpandWof = (wofId) => {
     setExpandedWofs(prev => ({
@@ -311,24 +355,37 @@ export default function OrderStock() {
       }
     });
 
-    // 4. Received from Dyeing (dyed_yarn_receipt_items)
+    // 4. Received from Dyeing (dyed_yarn_receipt_items) — split partner receipts vs production returns
     dyri.forEach(item => {
-      const key = `${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}`;
-      if (summary[key]) {
-        summary[key].dyedReceived += parseFloat(item.quantity_kg || 0);
-      } else {
+      const type = item.yarn_type || 'warp';
+      const key = `${item.yarn_count_id}-${item.colour}-${type}`;
+      const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+
+      if (!summary[key]) {
         summary[key] = {
           countId: item.yarn_count_id,
           colour: item.colour,
-          type: item.yarn_type || 'warp',
+          type,
           required: 0,
           greigeSent: 0,
-          dyedReceived: parseFloat(item.quantity_kg || 0),
+          dyedReceived: 0,
           deliveredWarping: 0,
           receivedWarping: 0,
           deliveredWeaving: 0,
           receivedWeaving: 0
         };
+      }
+
+      if (isExcess) {
+        // Production return — goes to receivedWarping or receivedWeaving
+        if (type === 'warp') {
+          summary[key].receivedWarping += parseFloat(item.quantity_kg || 0);
+        } else {
+          summary[key].receivedWeaving += parseFloat(item.quantity_kg || 0);
+        }
+      } else {
+        // Partner dyeing receipt
+        summary[key].dyedReceived += parseFloat(item.quantity_kg || 0);
       }
     });
 
@@ -357,20 +414,6 @@ export default function OrderStock() {
       }
     });
 
-    // 6. Received from Warping / Weaving (completion status mappings)
-    const warpingCompleted = warpingOrders.some(w => w.status === 'completed');
-    const weavingCompleted = weavingOrders.some(w => w.status === 'completed');
-
-    Object.keys(summary).forEach(key => {
-      const row = summary[key];
-      if (warpingCompleted) {
-        row.receivedWarping = row.deliveredWarping;
-      }
-      if (weavingCompleted) {
-        row.receivedWeaving = row.deliveredWeaving;
-      }
-    });
-
     return Object.values(summary).sort((a, b) => {
       if (a.type === 'warp' && b.type !== 'warp') return -1;
       if (a.type !== 'warp' && b.type === 'warp') return 1;
@@ -392,11 +435,12 @@ export default function OrderStock() {
       }
     });
 
-    // 3. DYRRs
+    // 3. DYRRs — only partner dyeing receipts (exclude production returns)
     const dyrrSeen = new Set();
     const dyrrs = [];
     dyri.forEach(item => {
-      if (item.receipt && !dyrrSeen.has(item.receipt.id)) {
+      const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+      if (!isExcess && item.receipt && !dyrrSeen.has(item.receipt.id)) {
         dyrrSeen.add(item.receipt.id);
         dyrrs.push(item.receipt);
       }
@@ -730,7 +774,8 @@ export default function OrderStock() {
                               {[
                                 { key: 'dyeing', label: 'Dyeing Stage' },
                                 { key: 'warping', label: 'Warping Stage' },
-                                { key: 'weaving', label: 'Weaving Stage' }
+                                { key: 'weaving', label: 'Weaving Stage' },
+                                { key: 'yarn_usage', label: 'Yarn Usage' }
                               ].map(tab => (
                                 <button
                                   key={tab.key}
@@ -856,8 +901,28 @@ export default function OrderStock() {
                                             className="hover-lift"
                                           >
                                             <div style={{ fontWeight: '700' }}>{d.dof_number}</div>
-                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
-                                              {d.dyeing_unit?.partner_name} • {d.status}
+                                            <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                              <div>{d.dyeing_unit?.partner_name}</div>
+                                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                                <span style={{
+                                                  padding: '1px 4px',
+                                                  borderRadius: '3px',
+                                                  fontSize: '0.65rem',
+                                                  fontWeight: '800',
+                                                  backgroundColor: getApprovalStatusBadge(d.status).bg,
+                                                  color: getApprovalStatusBadge(d.status).text,
+                                                  textTransform: 'uppercase'
+                                                }}>{getApprovalStatusBadge(d.status).label}</span>
+                                                <span style={{
+                                                  padding: '1px 4px',
+                                                  borderRadius: '3px',
+                                                  fontSize: '0.65rem',
+                                                  fontWeight: '800',
+                                                  backgroundColor: getDofYarnStatusBadge(d.status).bg,
+                                                  color: getDofYarnStatusBadge(d.status).text,
+                                                  textTransform: 'uppercase'
+                                                }}>{getDofYarnStatusBadge(d.status).label}</span>
+                                              </div>
                                             </div>
                                           </div>
                                         ))
@@ -1094,9 +1159,10 @@ export default function OrderStock() {
                                                       <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
                                                         <th style={thStyle}>Colour</th>
                                                         <th style={thStyle}>Count</th>
-                                                        <th style={numericThStyle}>Qty Allotted for this WOF (kg)</th>
+                                                        <th style={numericThStyle}>Qty Allotted (kg)</th>
                                                         <th style={numericThStyle}>Qty Received (kg)</th>
                                                         <th style={numericThStyle}>Qty Delivered (kg)</th>
+                                                        <th style={numericThStyle}>Qty Returned (kg)</th>
                                                         <th style={numericThStyle}>Qty Balance (kg)</th>
                                                       </tr>
                                                     </thead>
@@ -1107,14 +1173,29 @@ export default function OrderStock() {
                                                         
                                                         const allottedThisWof = parseFloat(a.allotted_qty || a.kg || a.allottedQty || 0);
 
-                                                        // Dyed yarn received (matching both count and colour) for the whole order
+                                                        // Dyed yarn received from partner dyeing (exclude production returns)
                                                         const receivedItems = dyri.filter(item => {
+                                                          const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+                                                          if (isExcess) return false;
                                                           const matchCount = (item.yarn_count_id && a.countId && item.yarn_count_id === a.countId) || 
                                                                              (item.yarn_count?.count_value === a.countValue);
                                                           const matchColour = (item.colour === a.colour);
                                                           return matchCount && matchColour;
                                                         });
                                                         const receivedQty = receivedItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+                                                        // Dyed yarn returned from warping (production returns matching this WOF's number)
+                                                        const returnedItems = dyri.filter(item => {
+                                                          const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+                                                          if (!isExcess) return false;
+                                                          const matchCount = (item.yarn_count_id && a.countId && item.yarn_count_id === a.countId) || 
+                                                                             (item.yarn_count?.count_value === a.countValue);
+                                                          const matchColour = (item.colour === a.colour);
+                                                          // Match to this WOF by wof_number stored in receipt's dof_number field
+                                                          const matchWof = !item.receipt?.dof_number || item.receipt?.dof_number === w.wof_number;
+                                                          return matchCount && matchColour && matchWof;
+                                                        });
+                                                        const returnedQty = returnedItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
 
                                                         // Dyed yarn delivered (matching both count and colour) for this WOF
                                                         const deliveredItems = wofDydi.filter(item => {
@@ -1125,7 +1206,7 @@ export default function OrderStock() {
                                                         });
                                                         const deliveredQty = deliveredItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
                                                         
-                                                        const qtyBalance = Math.max(0, allottedThisWof - deliveredQty);
+                                                        const qtyBalance = Math.max(0, deliveredQty - returnedQty);
 
                                                         return (
                                                           <tr key={rIdx} style={{ borderBottom: '1px solid var(--border-current)' }}>
@@ -1134,6 +1215,7 @@ export default function OrderStock() {
                                                             <td style={numericTdStyle}>{allottedThisWof.toFixed(2)}</td>
                                                             <td style={{ ...numericTdStyle, color: '#1d4ed8' }}>{receivedQty.toFixed(2)}</td>
                                                             <td style={{ ...numericTdStyle, color: '#047857' }}>{deliveredQty.toFixed(2)}</td>
+                                                            <td style={{ ...numericTdStyle, color: returnedQty > 0 ? '#7c3aed' : '#6b7280' }}>{returnedQty.toFixed(2)}</td>
                                                             <td style={{ ...numericTdStyle, color: qtyBalance > 0.01 ? '#b45309' : '#047857' }}>{qtyBalance.toFixed(2)}</td>
                                                           </tr>
                                                         );
@@ -1143,7 +1225,48 @@ export default function OrderStock() {
                                                 </div>
                                               )}
 
-                                              {/* 2. Collapsible DYDR Details */}
+                                              {/* 2. Warp Split Configuration */}
+                                              {w.warp_splits && w.warp_splits.length > 0 && (
+                                                <div style={{ marginBottom: '1.5rem' }}>
+                                                  <h6 style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                    Warp Split Configuration ({w.warp_splits.length} split{w.warp_splits.length !== 1 ? 's' : ''})
+                                                  </h6>
+                                                  <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                                                      <thead>
+                                                        <tr style={{ backgroundColor: '#f0f9ff', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                                                          <th style={thStyle}>Warp / SOF Number</th>
+                                                          <th style={numericThStyle}>Quantity (m)</th>
+                                                          <th style={thStyle}>Beam</th>
+                                                          <th style={thStyle}>Scheduled Start</th>
+                                                          <th style={thStyle}>Scheduled End</th>
+                                                        </tr>
+                                                      </thead>
+                                                      <tbody>
+                                                        {w.warp_splits.map((split, sIdx) => (
+                                                          <tr key={sIdx} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                                                            <td style={{ ...tdStyle, fontWeight: '700', fontFamily: 'monospace', color: '#0ea5e9' }}>
+                                                              {split.warp_no || `Split ${sIdx + 1}`}
+                                                            </td>
+                                                            <td style={numericTdStyle}>{parseFloat(split.qty || 0).toLocaleString('en-IN')} m</td>
+                                                            <td style={{ ...tdStyle, fontWeight: '600', color: split.beam_name ? '#800000' : '#94a3b8' }}>
+                                                              {split.beam_name || '—'}
+                                                            </td>
+                                                            <td style={tdStyle}>
+                                                              {split.start_date ? new Date(split.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                            </td>
+                                                            <td style={tdStyle}>
+                                                              {split.end_date ? new Date(split.end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                            </td>
+                                                          </tr>
+                                                        ))}
+                                                      </tbody>
+                                                    </table>
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {/* 3. Collapsible DYDR Details */}
                                               <h6 style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                                 Delivered Dyed Yarn (DYDR) Details ({Object.keys(dydrGroups).length})
                                               </h6>
@@ -1250,6 +1373,43 @@ export default function OrderStock() {
                                                       </div>
                                                     );
                                                   })}
+                                                </div>
+                                              )}
+
+                                              {/* 4. Collapsible WOFDC Delivery Receipt */}
+                                              {w.status === 'completed' && (
+                                                <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-current)', paddingTop: '1.25rem' }}>
+                                                  <div
+                                                    onClick={() => setExpandedWofdcId(expandedWofdcId === w.id ? null : w.id)}
+                                                    style={{
+                                                      display: 'flex',
+                                                      justifyContent: 'space-between',
+                                                      alignItems: 'center',
+                                                      backgroundColor: 'rgba(128,0,0,0.04)',
+                                                      padding: '0.75rem 1rem',
+                                                      borderRadius: '8px',
+                                                      border: '1px solid #800000',
+                                                      cursor: 'pointer',
+                                                      userSelect: 'none'
+                                                    }}
+                                                  >
+                                                    <span style={{ fontWeight: '800', color: '#800000', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                      📄 Delivery Receipt (WOFDC): {w.wofdc_number || '—'}
+                                                    </span>
+                                                    <span style={{ fontSize: '0.75rem', fontWeight: '750', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                      {expandedWofdcId === w.id ? 'Collapse Details ▲' : 'Expand Details ▼'}
+                                                    </span>
+                                                  </div>
+                                                  {expandedWofdcId === w.id && (
+                                                    <div style={{ marginTop: '1rem' }}>
+                                                      <PrintableWOFDC
+                                                        wof={w}
+                                                        order={selectedOrder}
+                                                        splits={w.warp_splits || []}
+                                                        yarnReturns={w.yarn_returns || []}
+                                                      />
+                                                    </div>
+                                                  )}
                                                 </div>
                                               )}
                                             </div>
@@ -1371,6 +1531,295 @@ export default function OrderStock() {
                                 </div>
                               </div>
                             )}
+
+                            {/* YARN USAGE TAB CONTENT */}
+                            {activeSubTab === 'yarn_usage' && (() => {
+                              // ── Compute Yarn Usage summary inline (uses already-fetched state) ──
+                              const usageSummary = (() => {
+                                const s = {};
+
+                                // A. Seed from order requirements
+                                (selectedOrder.yarn_requirements || []).forEach(yr => {
+                                  const type = yr.type || 'warp';
+                                  const key = `${yr.countId}-${yr.color}-${type}`;
+                                  s[key] = { countId: yr.countId, colour: yr.color, type, required: parseFloat(yr.kg || 0), sentToDyeing: 0, receivedFromDyeing: 0, sentToWarp: 0, receivedFromWarping: 0, sentToWeaving: 0, receivedFromWeaving: 0 };
+                                });
+
+                                // B. Greige sent
+                                gydi.forEach(item => {
+                                  const type = item.yarn_type || 'warp';
+                                  const key = `${item.yarn_count_id}-${item.colour}-${type}`;
+                                  if (!s[key]) s[key] = { countId: item.yarn_count_id, colour: item.colour, type, required: 0, sentToDyeing: 0, receivedFromDyeing: 0, sentToWarp: 0, receivedFromWarping: 0, sentToWeaving: 0, receivedFromWeaving: 0 };
+                                  s[key].sentToDyeing += parseFloat(item.quantity_kg || 0);
+                                });
+
+                                // Deduct greige returns
+                                returns.forEach(ret => {
+                                  const key = `${ret.yarn_count_id}-${ret.colour}-${ret.yarn_type || 'warp'}`;
+                                  if (s[key]) s[key].sentToDyeing = Math.max(0, s[key].sentToDyeing - parseFloat(ret.total_weight || 0));
+                                });
+
+                                // C. Dyed receipts — split partner vs production return
+                                dyri.forEach(item => {
+                                  const type = item.yarn_type || 'warp';
+                                  const key = `${item.yarn_count_id}-${item.colour}-${type}`;
+                                  const isExcess = item.is_excess || item.receipt?.source_type === 'production';
+                                  if (!s[key]) s[key] = { countId: item.yarn_count_id, colour: item.colour, type, required: 0, sentToDyeing: 0, receivedFromDyeing: 0, sentToWarp: 0, receivedFromWarping: 0, sentToWeaving: 0, receivedFromWeaving: 0 };
+                                  if (isExcess) {
+                                    if (type === 'warp') s[key].receivedFromWarping += parseFloat(item.quantity_kg || 0);
+                                    else s[key].receivedFromWeaving += parseFloat(item.quantity_kg || 0);
+                                  } else {
+                                    s[key].receivedFromDyeing += parseFloat(item.quantity_kg || 0);
+                                  }
+                                });
+
+                                // D. Dyed deliveries
+                                dydi.forEach(item => {
+                                  const type = item.yarn_type || (item.process_type === 'warping' ? 'warp' : 'weft');
+                                  const key = `${item.yarn_count_id}-${item.colour}-${type}`;
+                                  if (!s[key]) s[key] = { countId: item.yarn_count_id, colour: item.colour, type, required: 0, sentToDyeing: 0, receivedFromDyeing: 0, sentToWarp: 0, receivedFromWarping: 0, sentToWeaving: 0, receivedFromWeaving: 0 };
+                                  if (item.process_type === 'warping') s[key].sentToWarp += parseFloat(item.quantity_kg || 0);
+                                  else s[key].sentToWeaving += parseFloat(item.quantity_kg || 0);
+                                });
+
+                                return Object.values(s).sort((a, b) => (a.type === 'warp' && b.type !== 'warp' ? -1 : a.type !== 'warp' && b.type === 'warp' ? 1 : 0));
+                              })();
+
+                              // ── Inventory breakdown per row ──
+                              const getInventory = (row) => {
+                                const groups = {};
+                                dyri.filter(i => i.yarn_count_id === row.countId && i.colour === row.colour && (i.yarn_type || 'warp') === row.type)
+                                  .forEach(i => {
+                                    const k = `${i.lot_number || '—'}||${i.location?.location_name || '—'}`;
+                                    if (!groups[k]) groups[k] = { lot: i.lot_number || '—', loc: i.location?.location_name || '—', received: 0, delivered: 0 };
+                                    groups[k].received += parseFloat(i.quantity_kg || 0);
+                                  });
+                                dydi.filter(i => i.yarn_count_id === row.countId && i.colour === row.colour && (i.yarn_type || (i.process_type === 'warping' ? 'warp' : 'weft')) === row.type)
+                                  .forEach(i => {
+                                    const k = `${i.lot_number || '—'}||${i.location?.location_name || '—'}`;
+                                    if (!groups[k]) groups[k] = { lot: i.lot_number || '—', loc: i.location?.location_name || '—', received: 0, delivered: 0 };
+                                    groups[k].delivered += parseFloat(i.quantity_kg || 0);
+                                  });
+                                return Object.values(groups).map(g => ({ ...g, balance: g.received - g.delivered })).filter(g => g.balance > 0.001);
+                              };
+
+                              return (
+                                <div className="fade-in">
+                                  <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#800000', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    Yarn Usage Summary
+                                  </h4>
+
+                                  <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '2rem' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                      <thead>
+                                        <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
+                                          <th style={{ width: '32px', padding: '0.6rem 0.4rem' }}></th>
+                                          <th style={thStyle}>Yarn Count</th>
+                                          <th style={thStyle}>Colour</th>
+                                          <th style={thStyle}>Type</th>
+                                          <th style={numericThStyle}>Required (kg)</th>
+                                          <th style={numericThStyle}>Greige Sent (kg)</th>
+                                          <th style={numericThStyle}>Dyeing Recv. (kg)</th>
+                                          <th style={numericThStyle}>Warp Sent (kg)</th>
+                                          <th style={numericThStyle}>Warp Recv. (kg)</th>
+                                          <th style={numericThStyle}>Weaving Sent (kg)</th>
+                                          <th style={numericThStyle}>Weaving Recv. (kg)</th>
+                                          <th style={{ ...numericThStyle, color: '#16a34a' }}>Available (kg)</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {usageSummary.length === 0 ? (
+                                          <tr><td colSpan="12" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>No yarn data found for this order.</td></tr>
+                                        ) : (() => {
+                                          const rows = [];
+                                          let lastType = null;
+                                          usageSummary.forEach((row) => {
+                                            const isWarp = row.type === 'warp';
+                                            const rowKey = `yu-${row.countId}-${row.colour}-${row.type}`;
+                                            const isExpanded = expandedDydrs[rowKey];
+                                            const available = row.receivedFromDyeing - row.sentToWarp - row.sentToWeaving + row.receivedFromWarping + row.receivedFromWeaving;
+                                            const inv = isExpanded ? getInventory(row) : [];
+
+                                            // Section header
+                                            if (row.type !== lastType) {
+                                              lastType = row.type;
+                                              rows.push(
+                                                <tr key={`hdr-${row.type}`} style={{ backgroundColor: isWarp ? '#eff6ff' : '#f0fdf4', borderBottom: '1px solid #cbd5e1' }}>
+                                                  <td colSpan="12" style={{ padding: '0.4rem 0.75rem', fontWeight: '800', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: isWarp ? '#1e40af' : '#166534' }}>
+                                                    {isWarp ? '⬡ Warp Yarn' : '⬡ Weft Yarn'}
+                                                  </td>
+                                                </tr>
+                                              );
+                                            }
+
+                                            rows.push(
+                                              <tr
+                                                key={rowKey}
+                                                onClick={() => setExpandedDydrs(prev => ({ ...prev, [rowKey]: !prev[rowKey] }))}
+                                                style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', backgroundColor: isExpanded ? '#fafafa' : '#fff' }}
+                                              >
+                                                <td style={{ textAlign: 'center', padding: '0.6rem 0.4rem', color: '#94a3b8' }}>
+                                                  <ChevronDown size={13} style={{ transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />
+                                                </td>
+                                                <td style={{ ...tdStyle, fontWeight: '700', color: '#1e293b' }}>{formatYarnCount(row.countId)}</td>
+                                                <td style={{ ...tdStyle, fontWeight: '800', color: 'var(--color-primary)' }}>{row.colour}</td>
+                                                <td style={{ padding: '0.6rem 0.75rem' }}>
+                                                  <span style={{ padding: '2px 7px', borderRadius: '4px', fontSize: '0.65rem', fontWeight: '800', textTransform: 'uppercase', backgroundColor: isWarp ? '#eff6ff' : '#f0fdf4', color: isWarp ? '#1e40af' : '#166534' }}>
+                                                    {row.type}
+                                                  </span>
+                                                </td>
+                                                <td style={numericTdStyle}>{row.required.toFixed(2)}</td>
+                                                <td style={{ ...numericTdStyle, color: '#4f46e5' }}>{row.sentToDyeing.toFixed(2)}</td>
+                                                <td style={{ ...numericTdStyle, color: '#16a34a' }}>{row.receivedFromDyeing.toFixed(2)}</td>
+                                                <td style={isWarp ? { ...numericTdStyle, color: '#2563eb' } : { ...numericTdStyle, color: '#cbd5e1', fontStyle: 'italic' }}>
+                                                  {isWarp ? row.sentToWarp.toFixed(2) : '—'}
+                                                </td>
+                                                <td style={isWarp ? { ...numericTdStyle, color: '#059669' } : { ...numericTdStyle, color: '#cbd5e1', fontStyle: 'italic' }}>
+                                                  {isWarp ? row.receivedFromWarping.toFixed(2) : '—'}
+                                                </td>
+                                                <td style={!isWarp ? { ...numericTdStyle, color: '#d97706' } : { ...numericTdStyle, color: '#cbd5e1', fontStyle: 'italic' }}>
+                                                  {!isWarp ? row.sentToWeaving.toFixed(2) : '—'}
+                                                </td>
+                                                <td style={!isWarp ? { ...numericTdStyle, color: '#b45309' } : { ...numericTdStyle, color: '#cbd5e1', fontStyle: 'italic' }}>
+                                                  {!isWarp ? row.receivedFromWeaving.toFixed(2) : '—'}
+                                                </td>
+                                                <td style={{ ...numericTdStyle, fontWeight: '800', color: available > 0.001 ? '#16a34a' : '#94a3b8' }}>
+                                                  {available.toFixed(2)}
+                                                </td>
+                                              </tr>
+                                            );
+
+                                            // Expanded inventory detail
+                                            if (isExpanded) {
+                                              rows.push(
+                                                <tr key={`${rowKey}-inv`} style={{ backgroundColor: '#fafafa' }}>
+                                                  <td colSpan="12" style={{ padding: '1rem 1.5rem', borderLeft: '3px solid var(--color-primary)', borderBottom: '1px solid #e2e8f0' }}>
+                                                    <div style={{ maxWidth: '720px' }}>
+                                                      <h6 style={{ margin: '0 0 0.6rem 0', fontSize: '0.72rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#475569' }}>
+                                                        Available Inventory — {row.colour} ({row.type})
+                                                      </h6>
+                                                      {inv.length === 0 ? (
+                                                        <p style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>No active stock remaining in any warehouse location.</p>
+                                                      ) : (
+                                                        <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                                                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                                                            <thead>
+                                                              <tr style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc', textAlign: 'left' }}>
+                                                                <th style={{ padding: '0.4rem 0.75rem', color: '#475569', fontWeight: '700' }}>Lot Number</th>
+                                                                <th style={{ padding: '0.4rem 0.75rem', color: '#475569', fontWeight: '700' }}>Storage Location</th>
+                                                                <th style={{ padding: '0.4rem 0.75rem', color: '#16a34a', fontWeight: '700', textAlign: 'right' }}>Received (kg)</th>
+                                                                <th style={{ padding: '0.4rem 0.75rem', color: '#b45309', fontWeight: '700', textAlign: 'right' }}>Delivered Out (kg)</th>
+                                                                <th style={{ padding: '0.4rem 0.75rem', color: '#16a34a', fontWeight: '800', textAlign: 'right' }}>Balance (kg)</th>
+                                                              </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                              {inv.map((item, iIdx) => (
+                                                                <tr key={iIdx} style={{ borderBottom: iIdx < inv.length - 1 ? '1px solid #f1f5f9' : 'none', backgroundColor: '#fff' }}>
+                                                                  <td style={{ padding: '0.4rem 0.75rem', fontWeight: '700', color: '#334155', fontFamily: 'monospace' }}>{item.lot}</td>
+                                                                  <td style={{ padding: '0.4rem 0.75rem', color: '#475569' }}>{item.loc}</td>
+                                                                  <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#16a34a', fontWeight: '700' }}>{item.received.toFixed(2)}</td>
+                                                                  <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#b45309', fontWeight: '700' }}>{item.delivered.toFixed(2)}</td>
+                                                                  <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', fontWeight: '800', color: '#16a34a' }}>{item.balance.toFixed(2)} kg</td>
+                                                                </tr>
+                                                              ))}
+                                                            </tbody>
+                                                          </table>
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  </td>
+                                                </tr>
+                                              );
+                                            }
+                                          });
+                                          return rows;
+                                        })()}
+                                      </tbody>
+                                    </table>
+                                  </div>
+
+                                  {/* ── Receipt Document Lists ── */}
+                                  <h5 style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#475569', borderBottom: '1px dashed #e2e8f0', paddingBottom: '0.5rem' }}>
+                                    Associated Documents
+                                  </h5>
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.25rem' }}>
+
+                                    {/* GYDRs */}
+                                    <div style={docBoxStyle}>
+                                      <h5 style={docBoxTitleStyle}>Greige Deliveries (GYDR)</h5>
+                                      <div style={docListContainerStyle}>
+                                        {associatedDocs.gydrs.length === 0 ? (
+                                          <div style={emptyDocStyle}>No GYDRs linked</div>
+                                        ) : (
+                                          associatedDocs.gydrs.map(g => (
+                                            <div key={g.id} onClick={() => setActiveModal({ type: 'gydr', data: g })} style={docItemStyle} className="hover-lift">
+                                              <div style={{ fontWeight: '700' }}>{g.gydr_number}</div>
+                                              <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                                                {g.delivered_by} • {new Date(g.created_at).toLocaleDateString()}
+                                              </div>
+                                            </div>
+                                          ))
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* DYRRs — ALL (partner + production returns) */}
+                                    <div style={docBoxStyle}>
+                                      <h5 style={docBoxTitleStyle}>Dyed Receipts (DYRR)</h5>
+                                      <div style={docListContainerStyle}>
+                                        {(() => {
+                                          const seen = new Set();
+                                          const all = [];
+                                          dyri.forEach(item => {
+                                            if (item.receipt && !seen.has(item.receipt.id)) {
+                                              seen.add(item.receipt.id);
+                                              all.push(item.receipt);
+                                            }
+                                          });
+                                          if (all.length === 0) return <div style={emptyDocStyle}>No DYRRs linked</div>;
+                                          return all.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(r => {
+                                            const isProd = r.source_type === 'production';
+                                            return (
+                                              <div key={r.id} onClick={() => setActiveModal({ type: 'dyrr', data: r })} style={docItemStyle} className="hover-lift">
+                                                <div style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                                  {r.dyrr_number}
+                                                  <span style={{ padding: '1px 5px', borderRadius: '4px', fontSize: '0.55rem', fontWeight: '800', textTransform: 'uppercase', backgroundColor: isProd ? '#fef3c7' : '#dcfce7', color: isProd ? '#b45309' : '#15803d', border: isProd ? '1px solid #fcd34d' : '1px solid #bbf7d0' }}>
+                                                    {isProd ? 'Return' : 'Partner'}
+                                                  </span>
+                                                </div>
+                                                <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                                                  {r.received_by} • {new Date(r.received_date || r.created_at).toLocaleDateString()}
+                                                </div>
+                                              </div>
+                                            );
+                                          });
+                                        })()}
+                                      </div>
+                                    </div>
+
+                                    {/* DYDRs */}
+                                    <div style={docBoxStyle}>
+                                      <h5 style={docBoxTitleStyle}>Dyed Deliveries (DYDR)</h5>
+                                      <div style={docListContainerStyle}>
+                                        {associatedDocs.dydrs.length === 0 ? (
+                                          <div style={emptyDocStyle}>No DYDRs linked</div>
+                                        ) : (
+                                          associatedDocs.dydrs.map(d => (
+                                            <div key={d.id} onClick={() => setActiveModal({ type: 'dydr', data: d })} style={docItemStyle} className="hover-lift">
+                                              <div style={{ fontWeight: '700' }}>{d.dydr_number}</div>
+                                              <div style={{ fontSize: '0.7rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                                                {d.delivered_by} • {new Date(d.created_at).toLocaleDateString()}
+                                              </div>
+                                            </div>
+                                          ))
+                                        )}
+                                      </div>
+                                    </div>
+
+                                  </div>
+                                </div>
+                              );
+                            })()}
 
                           </div>
                         )}
@@ -1566,7 +2015,42 @@ function DetailViewerModal({ modal, onClose, yarnCounts, gydi, dyri, dydi, forma
               <ModalField label="Dyeing Order Form No" value={data.dof_number} highlight={true} />
               <ModalField label="Dyeing Partner" value={data.dyeing_unit?.partner_name || 'N/A'} />
               <ModalField label="Expected Delivery" value={data.expected_delivery_date ? new Date(data.expected_delivery_date).toLocaleDateString() : 'N/A'} />
-              <ModalField label="Status" value={data.status} />
+              <div style={{ padding: '0.75rem', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Approval Status</div>
+                <div style={{ 
+                  fontSize: '0.85rem', 
+                  fontWeight: '700', 
+                  marginTop: '0.2rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  backgroundColor: getApprovalStatusBadge(data.status).bg,
+                  color: getApprovalStatusBadge(data.status).text,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  width: 'fit-content'
+                }}>
+                  {getApprovalStatusBadge(data.status).icon} {getApprovalStatusBadge(data.status).label}
+                </div>
+              </div>
+              <div style={{ padding: '0.75rem', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Yarn Status</div>
+                <div style={{ 
+                  fontSize: '0.85rem', 
+                  fontWeight: '700', 
+                  marginTop: '0.2rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  backgroundColor: getDofYarnStatusBadge(data.status).bg,
+                  color: getDofYarnStatusBadge(data.status).text,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  width: 'fit-content'
+                }}>
+                  {getDofYarnStatusBadge(data.status).icon} {getDofYarnStatusBadge(data.status).label}
+                </div>
+              </div>
               <ModalField label="Created Date" value={new Date(data.created_at).toLocaleDateString()} />
               <ModalField label="Remarks" value={data.remarks || 'None'} />
             </div>

@@ -50,6 +50,7 @@ export default function DeliverYarn() {
   const [deliveredBy, setDeliveredBy] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [saving, setSaving] = useState(false);
+  const [yarnWorkers, setYarnWorkers] = useState([]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -112,6 +113,27 @@ export default function DeliverYarn() {
         .order('created_at', { ascending: false });
 
       setExistingReturns(returnsData || []);
+
+      // 5c) Fetch Yarn workers
+      try {
+        const { data: deptData } = await supabase
+          .from('master_departments')
+          .select('id')
+          .ilike('department_name', '%yarn%');
+          
+        const yarnDeptIds = (deptData || []).map(d => d.id);
+        
+        if (yarnDeptIds.length > 0) {
+          const { data: workersData } = await supabase
+            .from('master_workers')
+            .select('*')
+            .in('department_id', yarnDeptIds)
+            .order('worker_name', { ascending: true });
+          setYarnWorkers(workersData || []);
+        }
+      } catch (err) {
+        console.error('Error fetching yarn workers:', err);
+      }
 
       // Flatten all delivery items for this DOF
       const allItems = (receiptsData || []).flatMap(r => r.greige_yarn_delivery_items || []);
@@ -962,14 +984,20 @@ export default function DeliverYarn() {
                     <User size={12} style={{ display: 'inline', marginRight: '4px' }} />
                     Delivered By (Person Name) *
                   </label>
-                  <input
-                    type="text"
+                  <select
                     className="input-field"
-                    placeholder="Enter person name"
                     value={deliveredBy}
                     onChange={e => setDeliveredBy(e.target.value)}
-                    style={{ width: '100%', padding: '0.6rem 0.75rem', border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', fontSize: '0.875rem', boxSizing: 'border-box' }}
-                  />
+                    style={{ width: '100%', padding: '0.6rem 0.75rem', border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', fontSize: '0.875rem', boxSizing: 'border-box', backgroundColor: '#fff', cursor: 'pointer' }}
+                  >
+                    <option value="">Select Personnel...</option>
+                    {deliveredBy && !yarnWorkers.some(w => w.worker_name === deliveredBy) && (
+                      <option value={deliveredBy}>{deliveredBy}</option>
+                    )}
+                    {yarnWorkers.map(w => (
+                      <option key={w.id} value={w.worker_name}>{w.worker_name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-muted-current)', display: 'block', marginBottom: '0.4rem' }}>

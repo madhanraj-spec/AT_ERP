@@ -12,6 +12,7 @@ export default function ReceiptForm() {
   const [yarnCounts, setYarnCounts] = useState([]);
   const [mills, setMills] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [yarnWorkers, setYarnWorkers] = useState([]);
 
   // Form State
   const [receiptType, setReceiptType] = useState('spinning_mill');
@@ -302,6 +303,27 @@ export default function ReceiptForm() {
     if (counts.data) setYarnCounts(counts.data);
     if (partners.data) setMills(partners.data);
     if (locs.data) setLocations(locs.data);
+
+    // Fetch Yarn workers
+    try {
+      const { data: deptData } = await supabase
+        .from('master_departments')
+        .select('id')
+        .ilike('department_name', '%yarn%');
+        
+      const yarnDeptIds = (deptData || []).map(d => d.id);
+      
+      if (yarnDeptIds.length > 0) {
+        const { data: workersData } = await supabase
+          .from('master_workers')
+          .select('*')
+          .in('department_id', yarnDeptIds)
+          .order('worker_name', { ascending: true });
+        setYarnWorkers(workersData || []);
+      }
+    } catch (err) {
+      console.error('Error fetching yarn workers:', err);
+    }
   };
 
   const handleChange = (e) => {
@@ -891,7 +913,15 @@ export default function ReceiptForm() {
               </div>
               <div className="input-group">
                 <label className="input-label">Received By (Personnel)</label>
-                <input type="text" name="received_by" className="input-field" value={formData.received_by} onChange={handleChange} required />
+                <select name="received_by" className="input-field" value={formData.received_by} onChange={handleChange} required>
+                  <option value="">Select Personnel...</option>
+                  {formData.received_by && !yarnWorkers.some(w => w.worker_name === formData.received_by) && (
+                    <option value={formData.received_by}>{formData.received_by}</option>
+                  )}
+                  {yarnWorkers.map(w => (
+                    <option key={w.id} value={w.worker_name}>{w.worker_name}</option>
+                  ))}
+                </select>
               </div>
               <div className="input-group" style={{ gridColumn: 'span 2' }}>
                 <label className="input-label">Invoice Attachment (Optional)</label>

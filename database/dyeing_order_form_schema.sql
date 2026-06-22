@@ -59,10 +59,10 @@ CREATE INDEX IF NOT EXISTS idx_dof_created_at    ON dyeing_order_forms(created_a
 -- ============================================================
 ALTER TABLE dyeing_order_forms ENABLE ROW LEVEL SECURITY;
 
+-- Allow authenticated users to read DOFs
 DROP POLICY IF EXISTS "Merchandiser sees own DOFs" ON dyeing_order_forms;
-CREATE POLICY "Merchandiser sees own DOFs" ON dyeing_order_forms FOR SELECT USING (
-  auth.uid() = created_by OR
-  (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
+CREATE POLICY "Allow authenticated users to read DOFs" ON dyeing_order_forms FOR SELECT USING (
+  auth.role() = 'authenticated'
 );
 
 DROP POLICY IF EXISTS "Merchandiser can create DOFs" ON dyeing_order_forms;

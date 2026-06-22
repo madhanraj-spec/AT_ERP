@@ -52,6 +52,7 @@ export default function DeliverDyedYarn() {
   // Delivery Line Items & Masters
   const [items, setItems] = useState([]);
   const [yarnCounts, setYarnCounts] = useState([]);
+  const [yarnWorkers, setYarnWorkers] = useState([]);
   const [docList, setDocList] = useState([]);
   const [loadingList, setLoadingList] = useState(false);
   const [expandedDocId, setExpandedDocId] = useState(null);
@@ -73,6 +74,27 @@ export default function DeliverDyedYarn() {
   const fetchMasters = async () => {
     const { data } = await supabase.from('master_yarn_counts').select('*');
     setYarnCounts(data || []);
+
+    // Fetch Yarn workers
+    try {
+      const { data: deptData } = await supabase
+        .from('master_departments')
+        .select('id')
+        .ilike('department_name', '%yarn%');
+        
+      const yarnDeptIds = (deptData || []).map(d => d.id);
+      
+      if (yarnDeptIds.length > 0) {
+        const { data: workersData } = await supabase
+          .from('master_workers')
+          .select('*')
+          .in('department_id', yarnDeptIds)
+          .order('worker_name', { ascending: true });
+        setYarnWorkers(workersData || []);
+      }
+    } catch (err) {
+      console.error('Error fetching yarn workers:', err);
+    }
   };
 
   const fetchDocList = async () => {
@@ -135,6 +157,7 @@ export default function DeliverDyedYarn() {
             *,
             order:orders(id, order_number, design_no, design_name, yarn_requirements)
           `)
+          .neq('status', 'pending')
           .order('created_at', { ascending: false });
         if (error) throw error;
         setDocList(data || []);
@@ -249,10 +272,11 @@ export default function DeliverDyedYarn() {
             order:orders(id, order_number, design_no, design_name, yarn_requirements)
           `)
           .ilike('weaving_number', enteredDocNo.trim())
+          .neq('status', 'pending')
           .single();
 
         if (error || !data) {
-          setOrderFormError('Weaving Order not found. Please verify the Weaving Order Number.');
+          setOrderFormError('Weaving Order not found or not yet allotted. Please verify the Weaving Order Number.');
         } else {
           setSelectedTarget(data);
           // Default weaving type to in_house (user can toggle it)
@@ -301,7 +325,7 @@ export default function DeliverDyedYarn() {
     // Safety guard: check if yarn status is already Delivered (complete)
     const allotments = targetProcess === 'warping'
       ? (doc.colour_allotments || [])
-      : (doc.order?.yarn_requirements || []).filter(y => y.type === 'weft');
+      : (doc.weft_allotments || []);
     const associatedDydrs = dydrsByDoc[doc.id] || [];
     const yarnBadge = getYarnStatusBadge(allotments, associatedDydrs);
     if (yarnBadge.label === 'Delivered') {
@@ -334,6 +358,21 @@ export default function DeliverDyedYarn() {
 
       if (delErr) throw delErr;
 
+      // Fetch all existing warping and weaving forms for this order to filter out orphaned deliveries
+      const [{ data: activeWarping }, { data: activeWeaving }] = await Promise.all([
+        supabase.from('warping_order_forms').select('id').eq('order_id', doc.order_id),
+        supabase.from('weaving_orders').select('id').eq('order_id', doc.order_id)
+      ]);
+
+      const activeFormIds = new Set([
+        ...(activeWarping || []).map(w => w.id),
+        ...(activeWeaving || []).map(w => w.id)
+      ]);
+
+      const validDeliveries = (deliveries || []).filter(d => 
+        !d.production_form_id || activeFormIds.has(d.production_form_id)
+      );
+
       // 3. Summarize stock in hand grouped by count, colour, lot, location, and dof_id
       const stockMap = {};
       receipts?.forEach(r => {
@@ -354,7 +393,7 @@ export default function DeliverDyedYarn() {
         stockMap[key].available += parseFloat(r.quantity_kg || 0);
       });
 
-      deliveries?.forEach(d => {
+      validDeliveries.forEach(d => {
         const dofId = d.source_receipt?.dof_id || '';
         const key = `${d.yarn_count_id}-${d.colour}-${d.lot_number || ''}-${d.location_id || ''}-${dofId}`;
         if (stockMap[key]) {
@@ -369,67 +408,151 @@ export default function DeliverDyedYarn() {
       });
 
       // 4. Build line items based on WOF/Weaving requirements
-      const requirements = targetProcess === 'warping'
-        ? (doc.colour_allotments || [])
-        : (doc.order?.yarn_requirements || []).filter(y => y.type === 'weft');
-
       const builtItems = [];
-      requirements.forEach(req => {
-        const countId = req.countId || req.count_id;
-        const colour = req.colour || req.color || req.colour;
-        const allottedQty = parseFloat(req.allotted_qty || req.kg || 0);
 
-        // Calculate already delivered quantity for this specific requirement of this form
-        const formDeliveries = (deliveries || []).filter(d => 
-          d.production_form_id === doc.id &&
-          d.yarn_count_id === countId &&
-          d.colour === colour
-        );
-        const deliveredQty = formDeliveries.reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+      if (targetProcess === 'warping') {
+        const requirements = doc.colour_allotments || [];
+        requirements.forEach(req => {
+          const countId = req.countId || req.count_id;
+          const colour = req.colour || req.color || req.colour;
+          const allottedQty = parseFloat(req.allotted_qty || req.kg || 0);
 
-        // Find available stock matching this requirement
-        const matchingStocks = Object.values(stockMap).filter(s => 
-          s.yarn_count_id === countId && 
-          s.colour === colour &&
-          s.available > 0.01
-        );
+          // Calculate already delivered quantity for this specific requirement of this form
+          const formDeliveries = validDeliveries.filter(d => 
+            d.production_form_id === doc.id &&
+            d.yarn_count_id === countId &&
+            d.colour === colour
+          );
+          const deliveredQty = formDeliveries.reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
 
-        if (matchingStocks.length > 0) {
-          matchingStocks.forEach(stock => {
-            builtItems.push({
-              yarn_count_id: countId,
-              colour: colour,
-              lot_number: stock.lot_number,
-              location_id: stock.location_id,
-              location_name: stock.location_name,
-              dof_id: stock.dof_id,
-              dof_number: stock.dof_number,
-              receipt_id: stock.receipt_id,
-              stock_kg: stock.available,
-              allotted_qty: allottedQty,
-              delivered_qty: deliveredQty,
+          // Find available stock matching this requirement
+          const matchingStocks = Object.values(stockMap).filter(s => 
+            s.yarn_count_id === countId && 
+            s.colour === colour &&
+            s.available > 0.01
+          );
+
+          let defaultAllocations = [];
+          if (matchingStocks.length === 1) {
+            defaultAllocations = [{
+              lot_number: matchingStocks[0].lot_number,
+              location_id: matchingStocks[0].location_id,
+              location_name: matchingStocks[0].location_name,
+              dof_id: matchingStocks[0].dof_id,
+              dof_number: matchingStocks[0].dof_number,
+              receipt_id: matchingStocks[0].receipt_id,
+              stock_kg: matchingStocks[0].available,
               quantity_kg: '',
-              no_of_bags: ''
-            });
-          });
-        } else {
-          // If no stock is found in the warehouse, add a disabled warning row
+              no_of_bags: '',
+              selectedIndex: '0'
+            }];
+          } else if (matchingStocks.length > 1) {
+            defaultAllocations = [{
+              lot_number: '',
+              location_id: null,
+              location_name: '',
+              dof_id: null,
+              dof_number: '',
+              receipt_id: null,
+              stock_kg: 0,
+              quantity_kg: '',
+              no_of_bags: '',
+              selectedIndex: ''
+            }];
+          } else {
+            defaultAllocations = [{
+              lot_number: '',
+              location_id: null,
+              location_name: 'No stock in warehouse',
+              dof_id: null,
+              dof_number: '—',
+              receipt_id: null,
+              stock_kg: 0,
+              quantity_kg: '',
+              no_of_bags: '',
+              disabled: true,
+              selectedIndex: ''
+            }];
+          }
+
           builtItems.push({
             yarn_count_id: countId,
             colour: colour,
-            lot_number: '—',
-            location_id: null,
-            location_name: 'No stock in warehouse',
-            dof_number: '—',
-            stock_kg: 0,
             allotted_qty: allottedQty,
             delivered_qty: deliveredQty,
-            quantity_kg: '',
-            no_of_bags: '',
-            disabled: true
+            availableStocks: matchingStocks,
+            allocations: defaultAllocations
           });
-        }
-      });
+        });
+      } else {
+        // Weaving - load from specific weft_allotments!
+        const requirements = doc.weft_allotments || [];
+        requirements.forEach(req => {
+          const countId = req.yarn_count_id || req.countId || req.count_id;
+          const colour = req.colour || req.colour;
+          const allottedQty = parseFloat(req.allotted_qty || 0);
+          const lotNum = req.lot_number;
+          const locId = req.location_id;
+
+          // Calculate already delivered quantity for this specific allotment of this form (matching count, colour, lot, location)
+          const formDeliveries = validDeliveries.filter(d => 
+            d.production_form_id === doc.id &&
+            d.yarn_count_id === countId &&
+            d.colour === colour &&
+            (d.lot_number === lotNum || (!d.lot_number && !lotNum) || (d.lot_number === '—' && !lotNum) || (lotNum === '—' && !d.lot_number)) &&
+            d.location_id === locId
+          );
+          const deliveredQty = formDeliveries.reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+
+          // Find available stock matching this requirement
+          const matchingStocks = Object.values(stockMap).filter(s => 
+            s.yarn_count_id === countId && 
+            s.colour === colour &&
+            (s.lot_number === lotNum || (!s.lot_number && !lotNum) || (s.lot_number === '—' && !lotNum) || (lotNum === '—' && !s.lot_number)) &&
+            s.location_id === locId
+          );
+
+          let defaultAllocations = [];
+          if (matchingStocks.length > 0) {
+            defaultAllocations = [{
+              lot_number: matchingStocks[0].lot_number,
+              location_id: matchingStocks[0].location_id,
+              location_name: matchingStocks[0].location_name,
+              dof_id: matchingStocks[0].dof_id,
+              dof_number: matchingStocks[0].dof_number,
+              receipt_id: matchingStocks[0].receipt_id,
+              stock_kg: matchingStocks[0].available,
+              quantity_kg: '',
+              no_of_bags: '',
+              selectedIndex: '0',
+              disabled: matchingStocks[0].available <= 0.01
+            }];
+          } else {
+            defaultAllocations = [{
+              lot_number: lotNum || '—',
+              location_id: locId,
+              location_name: req.location_name || 'No stock in warehouse',
+              dof_id: null,
+              dof_number: '—',
+              receipt_id: null,
+              stock_kg: 0,
+              quantity_kg: '',
+              no_of_bags: '',
+              disabled: true,
+              selectedIndex: ''
+            }];
+          }
+
+          builtItems.push({
+            yarn_count_id: countId,
+            colour: colour,
+            allotted_qty: allottedQty,
+            delivered_qty: deliveredQty,
+            availableStocks: matchingStocks,
+            allocations: defaultAllocations
+          });
+        });
+      }
 
       setSelectedTarget(doc);
       if (targetProcess === 'warping') {
@@ -447,19 +570,80 @@ export default function DeliverDyedYarn() {
     }
   };
 
-  const updateItem = (index, field, value) => {
+  const addAllocationRow = (reqIndex) => {
     const newItems = [...items];
-    if (field === 'quantity_kg') {
-      const floatVal = parseFloat(value) || 0;
-      if (floatVal > newItems[index].stock_kg) {
-        newItems[index][field] = newItems[index].stock_kg.toString();
-      } else if (floatVal < 0) {
-        newItems[index][field] = '0';
+    newItems[reqIndex].allocations.push({
+      lot_number: '',
+      location_id: null,
+      location_name: '',
+      dof_id: null,
+      dof_number: '',
+      receipt_id: null,
+      stock_kg: 0,
+      quantity_kg: '',
+      no_of_bags: '',
+      selectedIndex: ''
+    });
+    setItems(newItems);
+  };
+
+  const removeAllocationRow = (reqIndex, allocIndex) => {
+    const newItems = [...items];
+    newItems[reqIndex].allocations.splice(allocIndex, 1);
+    if (newItems[reqIndex].allocations.length === 0) {
+      newItems[reqIndex].allocations.push({
+        lot_number: '',
+        location_id: null,
+        location_name: '',
+        dof_id: null,
+        dof_number: '',
+        receipt_id: null,
+        stock_kg: 0,
+        quantity_kg: '',
+        no_of_bags: '',
+        selectedIndex: ''
+      });
+    }
+    setItems(newItems);
+  };
+
+  const updateAllocation = (reqIndex, allocIndex, field, value) => {
+    const newItems = [...items];
+    const alloc = newItems[reqIndex].allocations[allocIndex];
+    if (field === 'lot_number') {
+      const stockOption = newItems[reqIndex].availableStocks[parseInt(value)];
+      if (stockOption) {
+        alloc.lot_number = stockOption.lot_number;
+        alloc.location_id = stockOption.location_id;
+        alloc.location_name = stockOption.location_name;
+        alloc.dof_id = stockOption.dof_id;
+        alloc.dof_number = stockOption.dof_number;
+        alloc.receipt_id = stockOption.receipt_id;
+        alloc.stock_kg = stockOption.available;
+        alloc.selectedIndex = value;
       } else {
-        newItems[index][field] = value;
+        alloc.lot_number = '';
+        alloc.location_id = null;
+        alloc.location_name = '';
+        alloc.dof_id = null;
+        alloc.dof_number = '';
+        alloc.receipt_id = null;
+        alloc.stock_kg = 0;
+        alloc.quantity_kg = '';
+        alloc.no_of_bags = '';
+        alloc.selectedIndex = '';
+      }
+    } else if (field === 'quantity_kg') {
+      const floatVal = parseFloat(value) || 0;
+      if (floatVal > alloc.stock_kg) {
+        alloc.quantity_kg = alloc.stock_kg.toString();
+      } else if (floatVal < 0) {
+        alloc.quantity_kg = '0';
+      } else {
+        alloc.quantity_kg = value;
       }
     } else {
-      newItems[index][field] = value;
+      alloc[field] = value;
     }
     setItems(newItems);
   };
@@ -467,16 +651,38 @@ export default function DeliverDyedYarn() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (items.length === 0) return alert('No items to deliver.');
-    const validItems = items.filter(i => parseFloat(i.quantity_kg) > 0);
-    if (validItems.length === 0) return alert('Please enter quantities for at least one item.');
 
-    // Validate quantities against stock
-    for (const item of validItems) {
-      if (parseFloat(item.quantity_kg) > item.stock_kg) {
-        alert(`Entered quantity for ${item.colour} exceeds available stock of ${item.stock_kg.toFixed(2)} kg!`);
-        return;
+    // Extract allocations with positive quantity
+    const validItems = [];
+    for (const req of items) {
+      const allocations = req.allocations || [];
+      for (const alloc of allocations) {
+        const qty = parseFloat(alloc.quantity_kg) || 0;
+        if (qty > 0) {
+          // Validate quantity against available stock
+          if (qty > alloc.stock_kg) {
+            alert(`Entered quantity for ${req.colour} (${qty.toFixed(2)} kg) exceeds available stock of ${alloc.stock_kg.toFixed(2)} kg!`);
+            return;
+          }
+          if (!alloc.lot_number) {
+            alert(`Please select a lot number for the allocated quantity of ${req.colour}.`);
+            return;
+          }
+          validItems.push({
+            yarn_count_id: req.yarn_count_id,
+            colour: req.colour,
+            quantity_kg: qty,
+            no_of_bags: parseInt(alloc.no_of_bags) || null,
+            lot_number: alloc.lot_number,
+            location_id: alloc.location_id,
+            location_name: alloc.location_name,
+            receipt_id: alloc.receipt_id
+          });
+        }
       }
     }
+
+    if (validItems.length === 0) return alert('Please enter quantities for at least one lot.');
 
     if (!deliveredBy) return alert('Please enter the Delivered By person name.');
     if (deliveryType === 'job_work' && !vehicleNo) return alert('Please enter the Vehicle Number for job work.');
@@ -528,7 +734,7 @@ export default function DeliverDyedYarn() {
       const totalDelivered = (allDydi || []).reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
       const allotments = targetProcess === 'warping'
         ? (selectedTarget.colour_allotments || [])
-        : (selectedTarget.order?.yarn_requirements || []).filter(y => y.type === 'weft');
+        : (selectedTarget.weft_allotments || []);
       const totalAllotted = allotments.reduce((sum, a) => sum + parseFloat(a.allotted_qty || a.kg || a.allottedQty || 0), 0);
 
       let nextYarnStatus = 'not_delivered';
@@ -548,9 +754,27 @@ export default function DeliverDyedYarn() {
           .update({ yarn_status: nextYarnStatus, updated_at: new Date().toISOString() })
           .eq('id', docId);
       } else {
+        let mainStatus = 'weft_yarn_allotted';
+        if (nextYarnStatus === 'delivered') {
+          mainStatus = 'weft_yarn_delivered';
+        } else if (nextYarnStatus === 'partially_delivered') {
+          mainStatus = 'weft_yarn_partially_delivered';
+        }
+
+        const currentStatus = selectedTarget.status;
+        const statusNeedsUpdate = ['weft_yarn_allotted', 'weft_yarn_partially_delivered', 'weft_yarn_delivered', 'pending'].includes(currentStatus);
+
+        const updates = { 
+          yarn_status: nextYarnStatus,
+          updated_at: new Date().toISOString()
+        };
+        if (statusNeedsUpdate) {
+          updates.status = mainStatus;
+        }
+
         await supabase
           .from('weaving_orders')
-          .update({ yarn_status: nextYarnStatus, updated_at: new Date().toISOString() })
+          .update(updates)
           .eq('id', docId);
       }
 
@@ -591,7 +815,7 @@ export default function DeliverDyedYarn() {
   const selectedAllotments = selectedTarget
     ? (targetProcess === 'warping'
         ? (selectedTarget.colour_allotments || [])
-        : (selectedTarget.order?.yarn_requirements || []).filter(y => y.type === 'weft'))
+        : (selectedTarget.weft_allotments || []))
     : [];
   const selectedDydrs = selectedTarget ? (dydrsByDoc[selectedTarget.id] || []) : [];
   const selectedYarnBadge = getYarnStatusBadge(selectedAllotments, selectedDydrs);
@@ -700,20 +924,9 @@ export default function DeliverDyedYarn() {
                   <thead>
                     <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '2px solid var(--border-current)', textAlign: 'left' }}>
                       <th style={{ width: '40px', padding: '0.75rem 0.5rem' }}></th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>
-                        {targetProcess === 'warping' ? 'Order Form Number' : 'Weaving Number'}
-                      </th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Order Number</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Design Specification</th>
-                      {targetProcess === 'warping' && (
-                        <>
-                          <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Machine</th>
-                          <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Type & Partner</th>
-                          <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Order Form Qty</th>
-                        </>
-                      )}
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Status</th>
-                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Yarn Status</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Document & Order Details</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Destination Unit & Qty</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Status Info</th>
                       <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Action</th>
                     </tr>
                   </thead>
@@ -722,7 +935,7 @@ export default function DeliverDyedYarn() {
                       const isExpanded = expandedDocId === doc.id;
                       const allotments = targetProcess === 'warping'
                         ? (doc.colour_allotments || [])
-                        : (doc.order?.yarn_requirements || []).filter(y => y.type === 'weft');
+                        : (doc.weft_allotments || []);
                       const associatedDydrs = dydrsByDoc[doc.id] || [];
                       const yarnBadge = getYarnStatusBadge(allotments, associatedDydrs);
 
@@ -732,48 +945,68 @@ export default function DeliverDyedYarn() {
                             <td onClick={e => { e.stopPropagation(); handleToggleExpandDoc(doc.id); }} style={{ textAlign: 'center', padding: '0.75rem 0.5rem' }}>
                               {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </td>
-                            <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: '#800000', fontFamily: 'monospace' }}>
-                              {targetProcess === 'warping' ? doc.wof_number : doc.weaving_number}
-                            </td>
-                            <td style={{ padding: '0.75rem 1rem', fontWeight: '600' }}>
-                              {doc.order?.order_number || '—'}
-                            </td>
+                            {/* Column 2: Document & Order Details */}
                             <td style={{ padding: '0.75rem 1rem' }}>
-                              {doc.design_no || doc.order?.design_no || '—'} {doc.order?.design_name ? `/ ${doc.order.design_name}` : ''}
+                              <div style={{ fontWeight: '700', color: '#800000', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                                {targetProcess === 'warping' ? doc.wof_number : doc.weaving_number}
+                              </div>
+                              <div style={{ color: 'var(--text-muted-current)', fontSize: '0.7rem', marginTop: '2px', fontWeight: '500' }}>
+                                <span>Order: <strong>{doc.order?.order_number || '—'}</strong></span>
+                                {Boolean(doc.design_no || doc.order?.design_no) && (
+                                  <>
+                                    <span style={{ margin: '0 4px', opacity: 0.5 }}>·</span>
+                                    <span>Design: <strong>{doc.design_no || doc.order?.design_no}</strong> {doc.order?.design_name ? `(${doc.order.design_name})` : ''}</span>
+                                  </>
+                                )}
+                              </div>
                             </td>
-                            {targetProcess === 'warping' && (
-                              <>
-                                <td style={{ padding: '0.75rem 1rem' }}>
-                                  {doc.wof_type === 'in_house' ? (doc.machine?.machine_name || doc.machine_name || '—') : '—'}
-                                </td>
-                                <td style={{ padding: '0.75rem 1rem' }}>
-                                  {doc.wof_type === 'job_work' ? (
-                                    <span style={{ color: '#059669', fontWeight: '600' }}>
-                                      Job Work ({doc.partner?.partner_name || doc.partner_name || '—'})
-                                    </span>
-                                  ) : (
-                                    <span style={{ color: '#800000', fontWeight: '600' }}>In-House</span>
-                                  )}
-                                </td>
-                                <td style={{ padding: '0.75rem 1rem', fontWeight: '600' }}>
-                                  {doc.qty ? `${doc.qty} m` : '—'}
-                                </td>
-                              </>
-                            )}
+                            {/* Column 3: Destination Unit & Qty */}
                             <td style={{ padding: '0.75rem 1rem' }}>
-                              <span style={{
-                                backgroundColor: doc.status === 'completed' ? '#dcfce7' : doc.status === 'stopped' ? '#fff7ed' : doc.status === 'on_process' ? '#dbeafe' : '#fef9c3',
-                                color: doc.status === 'completed' ? '#166534' : doc.status === 'stopped' ? '#c2410c' : doc.status === 'on_process' ? '#1d4ed8' : '#854d0e',
-                                padding: '2px 8px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase'
-                              }}>
-                                {doc.status || 'created'}
-                              </span>
+                              <div style={{ fontWeight: '650', color: 'var(--text-current)', fontSize: '0.8rem' }}>
+                                {(() => {
+                                  const type = doc.wof_type || doc.weaving_type;
+                                  const machineName = doc.machine?.machine_name || doc.machine_name;
+                                  const partnerName = doc.partner?.partner_name || doc.partner_name;
+                                  if (type === 'job_work') {
+                                    return (
+                                      <span style={{ color: '#059669', fontWeight: '600' }}>
+                                        🏢 Job Work ({partnerName || '—'})
+                                      </span>
+                                    );
+                                  } else {
+                                    return (
+                                      <span style={{ color: '#800000', fontWeight: '600' }}>
+                                        🏠 In-House ({machineName || '—'})
+                                      </span>
+                                    );
+                                  }
+                                })()}
+                              </div>
+                              {doc.qty && (
+                                <div style={{ color: 'var(--text-muted-current)', fontSize: '0.7rem', marginTop: '2px', fontWeight: '500' }}>
+                                  Target Qty: <strong>{Number(doc.qty).toLocaleString()} m</strong>
+                                </div>
+                              )}
                             </td>
+                            {/* Column 4: Status Info */}
                             <td style={{ padding: '0.75rem 1rem' }}>
-                              <span style={{ backgroundColor: yarnBadge.bg, color: yarnBadge.color, border: `1px solid ${yarnBadge.border}`, padding: '2px 8px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: '700' }}>
-                                {yarnBadge.label}
-                              </span>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                                <span style={{
+                                  backgroundColor: doc.status === 'completed' ? '#dcfce7' : doc.status === 'stopped' ? '#fff7ed' : doc.status === 'on_process' ? '#dbeafe' : '#fef9c3',
+                                  color: doc.status === 'completed' ? '#166534' : doc.status === 'stopped' ? '#c2410c' : doc.status === 'on_process' ? '#1d4ed8' : '#854d0e',
+                                  padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', letterSpacing: '0.02em', border: '1px solid transparent'
+                                }}>
+                                  {doc.status || 'created'}
+                                </span>
+                                <span style={{
+                                  backgroundColor: yarnBadge.bg, color: yarnBadge.color, border: `1px solid ${yarnBadge.border}`,
+                                  padding: '1px 6px', borderRadius: '4px', fontSize: '0.62rem', fontWeight: '750', letterSpacing: '0.02em'
+                                }}>
+                                  Yarn: {yarnBadge.label}
+                                </span>
+                              </div>
                             </td>
+                            {/* Column 5: Action */}
                             <td style={{ padding: '0.5rem 1rem', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                               <button
                                 type="button"
@@ -781,8 +1014,8 @@ export default function DeliverDyedYarn() {
                                 onClick={() => handleProceedToDelivery(doc)}
                                 className="btn btn-primary"
                                 style={{
-                                  padding: '0.35rem 0.75rem',
-                                  fontSize: '0.75rem',
+                                  padding: '0.35rem 0.65rem',
+                                  fontSize: '0.72rem',
                                   backgroundColor: yarnBadge.label === 'Delivered' ? '#cbd5e1' : '#800000',
                                   color: yarnBadge.label === 'Delivered' ? '#64748b' : '#ffffff',
                                   border: 'none',
@@ -794,14 +1027,14 @@ export default function DeliverDyedYarn() {
                                   gap: '0.25rem'
                                 }}
                               >
-                                <Layers size={12} /> Deliver Dyed Yarn
+                                <Layers size={11} /> Deliver
                               </button>
                             </td>
                           </tr>
 
                           {isExpanded && (
                             <tr style={{ backgroundColor: '#fff' }}>
-                              <td colSpan={targetProcess === 'warping' ? 10 : 7} style={{ padding: '1.5rem', borderLeft: '3px solid #800000' }}>
+                              <td colSpan={5} style={{ padding: '1.5rem', borderLeft: '3px solid #800000' }}>
                                 <div style={{ marginBottom: '1.5rem' }}>
                                   <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                     Yarn Allotments & Deliveries
@@ -926,7 +1159,7 @@ export default function DeliverDyedYarn() {
                   </span>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', flex: 1, maxWidth: '600px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem', flex: 1, maxWidth: '750px' }}>
                   <div>
                     <label style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Order Number</label>
                     <div style={{ fontWeight: '700', fontSize: '0.9rem' }}>{selectedTarget.order?.order_number}</div>
@@ -936,14 +1169,22 @@ export default function DeliverDyedYarn() {
                     <div style={{ fontWeight: '700', fontSize: '0.85rem' }}>{selectedTarget.order?.design_no} / {selectedTarget.order?.design_name}</div>
                   </div>
                   <div>
-                    <label style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>
-                      {targetProcess === 'warping' ? 'Machine / Partner' : 'Status'}
-                    </label>
+                    <label style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Machine / Partner</label>
                     <div style={{ fontWeight: '700', fontSize: '0.85rem' }}>
-                      {targetProcess === 'warping' 
-                        ? (selectedTarget.wof_type === 'in_house' ? selectedTarget.machine?.machine_name : selectedTarget.partner?.partner_name)
-                        : <span style={{ textTransform: 'capitalize' }}>{selectedTarget.status}</span>
-                      }
+                      {(() => {
+                        const type = selectedTarget.wof_type || selectedTarget.weaving_type;
+                        if (type === 'job_work') {
+                          return `Job Work (${selectedTarget.partner?.partner_name || selectedTarget.partner_name || '—'})`;
+                        } else {
+                          return `In-House (${selectedTarget.machine?.machine_name || selectedTarget.machine_name || '—'})`;
+                        }
+                      })()}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Status</label>
+                    <div style={{ fontWeight: '700', fontSize: '0.85rem' }}>
+                      <span style={{ textTransform: 'capitalize' }}>{selectedTarget.status}</span>
                     </div>
                   </div>
                 </div>
@@ -1017,7 +1258,7 @@ export default function DeliverDyedYarn() {
           
           {/* Step 2 Panel: Stock Allocation Table */}
           <div className="glass-panel" style={{ padding: '1.5rem' }}>
-            <h3 style={{ margin: '0 0 1.25rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem', fontWeight: 'bold', color: 'var(--text-current)' }}>
+<h3 style={{ margin: '0 0 1.25rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem', fontWeight: 'bold', color: 'var(--text-current)' }}>
               <Layers size={18} color="var(--color-primary)" />
               2. Warehouse Stock Allocation
             </h3>
@@ -1031,49 +1272,170 @@ export default function DeliverDyedYarn() {
                   <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '2px solid var(--border-current)', textAlign: 'left' }}>
                     <th style={{ padding: '0.75rem 1rem' }}>Colour</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Yarn Count</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>DOF Number</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Lot Number</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Location</th>
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Allotted (kg)</th>
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Already Delivered (kg)</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Available Stock (kg)</th>
-                    <th style={{ padding: '0.75rem 1rem', width: '130px' }}>Delivery Qty (kg)</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right', width: '150px' }}>Total Allocated (kg)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, idx) => {
-                    const remaining = item.stock_kg - (parseFloat(item.quantity_kg) || 0);
+                  {items.map((req, reqIdx) => {
+                    const totalAllocated = (req.allocations || []).reduce((sum, a) => sum + (parseFloat(a.quantity_kg) || 0), 0);
                     return (
-                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: item.disabled ? '#fafafa' : '#fff' }}>
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: '#800000' }}>{item.colour}</td>
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: '600' }}>{getFormatCount(item.yarn_count_id)}</td>
-                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace' }}>{item.dof_number}</td>
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: '700' }}>{item.lot_number}</td>
-                        <td style={{ padding: '0.75rem 1rem', color: item.disabled ? '#ef4444' : 'var(--text-current)', fontStyle: item.disabled ? 'italic' : 'normal' }}>
-                          {item.location_name}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600' }}>{item.allotted_qty.toFixed(2)}</td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>
-                          {(item.delivered_qty || 0).toFixed(2)}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '700', color: item.stock_kg > 0 ? '#047857' : '#9ca3af' }}>
-                          {item.stock_kg.toFixed(2)}
-                        </td>
-                        <td style={{ padding: '0.5rem 1rem' }}>
-                          <input 
-                            type="number" 
-                            step="0.01" 
-                            min="0"
-                            max={item.stock_kg}
-                            disabled={item.disabled}
-                            className="form-input" 
-                            style={{ fontWeight: '800', textAlign: 'right', padding: '0.35rem 0.5rem', fontSize: '0.8rem' }} 
-                            value={item.quantity_kg} 
-                            onChange={e => updateItem(idx, 'quantity_kg', e.target.value)} 
-                            placeholder={item.disabled ? '—' : '0.00'} 
-                          />
-                        </td>
-                      </tr>
+                      <React.Fragment key={reqIdx}>
+                        {/* Requirement Row */}
+                        <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '1px solid var(--border-current)', fontWeight: 'bold' }}>
+                          <td style={{ padding: '0.75rem 1rem', color: '#800000' }}>{req.colour}</td>
+                          <td style={{ padding: '0.75rem 1rem', fontWeight: '600' }}>{getFormatCount(req.yarn_count_id)}</td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{req.allotted_qty.toFixed(2)}</td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#047857' }}>{req.delivered_qty.toFixed(2)}</td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#800000' }}>{totalAllocated.toFixed(2)}</td>
+                        </tr>
+                        {/* Sub-row for Allocations */}
+                        <tr>
+                          <td colSpan={5} style={{ padding: '1rem', backgroundColor: '#fafafa', borderBottom: '2px solid var(--border-current)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                              <div style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                Lot Allocations for {req.colour} ({getFormatCount(req.yarn_count_id)})
+                              </div>
+                              
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                {(req.allocations || []).map((alloc, allocIdx) => {
+                                  return (
+                                    <div 
+                                      key={allocIdx} 
+                                      style={{ 
+                                        display: 'grid', 
+                                        gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1.2fr auto', 
+                                        gap: '1rem', 
+                                        alignItems: 'center', 
+                                        backgroundColor: '#fff', 
+                                        padding: '0.5rem 0.75rem', 
+                                        borderRadius: '6px', 
+                                        border: '1px solid var(--border-current)',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+                                      }}
+                                    >
+                                      {/* Lot Number Dropdown */}
+                                      <div>
+                                        <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>Lot Number</label>
+                                        {req.availableStocks.length === 0 ? (
+                                          <span style={{ fontSize: '0.78rem', color: '#ef4444', fontStyle: 'italic', fontWeight: '600' }}>No stock in warehouse</span>
+                                        ) : (
+                                          <select
+                                            className="form-input"
+                                            style={{ fontWeight: '750', padding: '0.35rem 0.5rem', fontSize: '0.8rem', width: '100%', backgroundColor: '#fff', border: '1px solid var(--border-current)', borderRadius: '4px', cursor: 'pointer' }}
+                                            value={alloc.selectedIndex !== undefined ? alloc.selectedIndex : ''}
+                                            onChange={e => updateAllocation(reqIdx, allocIdx, 'lot_number', e.target.value)}
+                                            disabled={alloc.disabled}
+                                          >
+                                            <option value="">Select Lot...</option>
+                                            {req.availableStocks.map((stock, sIdx) => {
+                                              const isAlreadySelected = req.allocations.some((a, aIdx) => aIdx !== allocIdx && a.lot_number === stock.lot_number && a.location_id === stock.location_id && a.dof_id === stock.dof_id);
+                                              return (
+                                                <option key={sIdx} value={sIdx} disabled={isAlreadySelected}>
+                                                  {stock.lot_number} {isAlreadySelected ? '(Selected)' : ''}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        )}
+                                      </div>
+
+                                      {/* DOF Number */}
+                                      <div>
+                                        <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>DOF Number</label>
+                                        <span style={{ fontSize: '0.78rem', fontWeight: '700', fontFamily: 'monospace', color: alloc.dof_number ? '#374151' : '#9ca3af' }}>
+                                          {alloc.dof_number || '—'}
+                                        </span>
+                                      </div>
+
+                                      {/* Location */}
+                                      <div>
+                                        <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>Location</label>
+                                        <span style={{ fontSize: '0.78rem', fontWeight: '600', color: alloc.location_name ? '#374151' : '#9ca3af' }}>
+                                          {alloc.location_name || '—'}
+                                        </span>
+                                      </div>
+
+                                      {/* Available Stock */}
+                                      <div>
+                                        <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>Available Stock</label>
+                                        <span style={{ fontSize: '0.78rem', fontWeight: '700', color: alloc.stock_kg > 0 ? '#047857' : '#9ca3af' }}>
+                                          {alloc.stock_kg > 0 ? `${alloc.stock_kg.toFixed(2)} kg` : '—'}
+                                        </span>
+                                      </div>
+
+                                      {/* Delivery Qty */}
+                                      <div>
+                                        <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>Delivery Qty (kg)</label>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          max={alloc.stock_kg}
+                                          disabled={!alloc.lot_number || alloc.disabled}
+                                          className="form-input"
+                                          style={{ fontWeight: '800', textAlign: 'right', padding: '0.35rem 0.5rem', fontSize: '0.8rem', width: '100%' }}
+                                          value={alloc.quantity_kg}
+                                          onChange={e => updateAllocation(reqIdx, allocIdx, 'quantity_kg', e.target.value)}
+                                          placeholder={!alloc.lot_number ? 'Select lot' : '0.00'}
+                                        />
+                                      </div>
+
+                                      {/* Delete Row Button */}
+                                      <div style={{ alignSelf: 'end', paddingBottom: '2px' }}>
+                                        <button
+                                          type="button"
+                                          disabled={alloc.disabled || req.allocations.length <= 1}
+                                          onClick={() => removeAllocationRow(reqIdx, allocIdx)}
+                                          style={{
+                                            border: 'none',
+                                            background: 'none',
+                                            color: (alloc.disabled || req.allocations.length <= 1) ? '#cbd5e1' : '#ef4444',
+                                            cursor: (alloc.disabled || req.allocations.length <= 1) ? 'not-allowed' : 'pointer',
+                                            padding: '0.25rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '1.25rem',
+                                            lineHeight: 1
+                                          }}
+                                          title="Delete allocation row"
+                                        >
+                                          &times;
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Add Row Button */}
+                              {req.availableStocks.length > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => addAllocationRow(reqIdx)}
+                                    style={{
+                                      fontSize: '0.7rem',
+                                      fontWeight: '700',
+                                      color: '#800000',
+                                      backgroundColor: 'rgba(128, 0, 0, 0.04)',
+                                      border: '1px dashed #800000',
+                                      padding: '0.2rem 0.6rem',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s'
+                                    }}
+                                  >
+                                    + Add Lot Allocation
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -1088,99 +1450,120 @@ export default function DeliverDyedYarn() {
               Allocation Summary
             </h3>
             
-            {items.filter(i => parseFloat(i.quantity_kg) > 0).length === 0 ? (
-              <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.825rem', fontStyle: 'italic' }}>
-                No dyed yarn quantities allocated yet. Enter quantities in the table above to see a summary.
-              </p>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
-                
-                {/* Individual Lot Allocations */}
-                <div>
-                  <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.825rem', fontWeight: '700', color: 'var(--text-current)' }}>
-                    Allocated Lots
-                  </h4>
-                  <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>Colour</th>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>Yarn Count</th>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>Lot Number</th>
-                          <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>Qty (kg)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {items.filter(i => parseFloat(i.quantity_kg) > 0).map((item, idx) => (
-                          <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: '#fff' }}>
-                            <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#800000' }}>{item.colour}</td>
-                            <td style={{ padding: '0.5rem 0.75rem' }}>{getFormatCount(item.yarn_count_id)}</td>
-                            <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>{item.lot_number}</td>
-                            <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700' }}>
-                              {parseFloat(item.quantity_kg).toFixed(2)}
+            {(() => {
+              const activeAllocations = [];
+              items.forEach(req => {
+                const allocations = req.allocations || [];
+                allocations.forEach(alloc => {
+                  const qty = parseFloat(alloc.quantity_kg) || 0;
+                  if (qty > 0) {
+                    activeAllocations.push({
+                      ...alloc,
+                      colour: req.colour,
+                      yarn_count_id: req.yarn_count_id
+                    });
+                  }
+                });
+              });
+
+              if (activeAllocations.length === 0) {
+                return (
+                  <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.825rem', fontStyle: 'italic' }}>
+                    No dyed yarn quantities allocated yet. Enter quantities in the table above to see a summary.
+                  </p>
+                );
+              }
+
+              const totalQty = activeAllocations.reduce((sum, a) => sum + parseFloat(a.quantity_kg || 0), 0);
+
+              const summaryGrouped = activeAllocations.reduce((acc, i) => {
+                const key = `${i.colour}_${i.yarn_count_id}`;
+                if (!acc[key]) {
+                  acc[key] = {
+                    colour: i.colour,
+                    yarn_count_id: i.yarn_count_id,
+                    qty: 0
+                  };
+                }
+                acc[key].qty += parseFloat(i.quantity_kg) || 0;
+                return acc;
+              }, {});
+              const summaryRows = Object.values(summaryGrouped);
+
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
+                  
+                  {/* Individual Lot Allocations */}
+                  <div>
+                    <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.825rem', fontWeight: '700', color: 'var(--text-current)' }}>
+                      Allocated Lots
+                    </h4>
+                    <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                            <th style={{ padding: '0.5rem 0.75rem' }}>Colour</th>
+                            <th style={{ padding: '0.5rem 0.75rem' }}>Yarn Count</th>
+                            <th style={{ padding: '0.5rem 0.75rem' }}>Lot Number</th>
+                            <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>Qty (kg)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activeAllocations.map((item, idx) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: '#fff' }}>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#800000' }}>{item.colour}</td>
+                              <td style={{ padding: '0.5rem 0.75rem' }}>{getFormatCount(item.yarn_count_id)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>{item.lot_number}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700' }}>
+                                {parseFloat(item.quantity_kg).toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ backgroundColor: 'var(--surface-current)', fontWeight: 'bold' }}>
+                            <td colSpan={3} style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Total Quantity:</td>
+                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '800', color: '#800000' }}>
+                              {totalQty.toFixed(2)} kg
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr style={{ backgroundColor: 'var(--surface-current)', fontWeight: 'bold' }}>
-                          <td colSpan={3} style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Total Quantity:</td>
-                          <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '800', color: '#800000' }}>
-                            {items.reduce((sum, i) => sum + (parseFloat(i.quantity_kg) || 0), 0).toFixed(2)} kg
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                        </tfoot>
+                      </table>
+                    </div>
                   </div>
-                </div>
 
-                {/* Summary by Colour & Count */}
-                <div>
-                  <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.825rem', fontWeight: '700', color: 'var(--text-current)' }}>
-                    Total Qty by Colour & Count
-                  </h4>
-                  <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>Colour</th>
-                          <th style={{ padding: '0.5rem 0.75rem' }}>Yarn Count</th>
-                          <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>Total Qty (kg)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.values(
-                          items.reduce((acc, i) => {
-                            const qty = parseFloat(i.quantity_kg) || 0;
-                            if (qty > 0) {
-                              const key = `${i.colour}_${i.yarn_count_id}`;
-                              if (!acc[key]) {
-                                acc[key] = {
-                                  colour: i.colour,
-                                  yarn_count_id: i.yarn_count_id,
-                                  qty: 0
-                                };
-                              }
-                              acc[key].qty += qty;
-                            }
-                            return acc;
-                          }, {})
-                        ).map((row, idx) => (
-                          <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: '#fff' }}>
-                            <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#800000' }}>{row.colour}</td>
-                            <td style={{ padding: '0.5rem 0.75rem' }}>{getFormatCount(row.yarn_count_id)}</td>
-                            <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#047857' }}>
-                              {row.qty.toFixed(2)} kg
-                            </td>
+                  {/* Summary by Colour & Count */}
+                  <div>
+                    <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.825rem', fontWeight: '700', color: 'var(--text-current)' }}>
+                      Total Qty by Colour & Count
+                    </h4>
+                    <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                            <th style={{ padding: '0.5rem 0.75rem' }}>Colour</th>
+                            <th style={{ padding: '0.5rem 0.75rem' }}>Yarn Count</th>
+                            <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>Total Qty (kg)</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {summaryRows.map((row, idx) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: '#fff' }}>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#800000' }}>{row.colour}</td>
+                              <td style={{ padding: '0.5rem 0.75rem' }}>{getFormatCount(row.yarn_count_id)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#047857' }}>
+                                {row.qty.toFixed(2)} kg
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
 
-              </div>
-            )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Delivery Receipt Header Details */}
@@ -1194,16 +1577,22 @@ export default function DeliverDyedYarn() {
               <div className="form-group">
                 <label className="form-label" style={{ fontWeight: '700' }}>Delivered By / Personnel</label>
                 <div style={{ position: 'relative' }}>
-                  <User size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                  <input 
-                    type="text" 
+                  <User size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', zIndex: 1 }} />
+                  <select 
                     required 
                     className="form-input" 
-                    style={{ paddingLeft: '2.3rem', fontWeight: '700' }}
+                    style={{ paddingLeft: '2.3rem', fontWeight: '700', backgroundColor: '#fff', cursor: 'pointer' }}
                     value={deliveredBy} 
                     onChange={e => setDeliveredBy(e.target.value)} 
-                    placeholder="Enter personnel name" 
-                  />
+                  >
+                    <option value="">Select Personnel...</option>
+                    {deliveredBy && !yarnWorkers.some(w => w.worker_name === deliveredBy) && (
+                      <option value={deliveredBy}>{deliveredBy}</option>
+                    )}
+                    {yarnWorkers.map(w => (
+                      <option key={w.id} value={w.worker_name}>{w.worker_name}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

@@ -23,9 +23,10 @@ export default function DyedDeliveryPrintModal({ delivery, wof, weaving, onClose
     orderFormNumber = wof.wof_number;
     machineName = wof.machine_name || '—';
   } else if (firstItem.process_type === 'weaving' && weaving) {
-    typeLabel = 'In House'; // Weaving orders are default in house
-    partnerLabel = 'N/A';
+    typeLabel = weaving.weaving_type === 'job_work' ? 'Job Work' : 'In House';
+    partnerLabel = weaving.partner_name || weaving.partner?.partner_name || 'N/A';
     orderFormNumber = weaving.weaving_number;
+    machineName = weaving.machine_name || '—';
   }
 
   const orderNumber = linkedOrder.order_number || '—';

@@ -16,53 +16,37 @@ envContent.split('\n').forEach(line => {
 const supabase = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY);
 
 async function run() {
-  console.log("Fetching Dyeing Order Forms...");
-  const { data: dofs, error: dofsErr } = await supabase
-    .from('dyeing_order_forms')
-    .select('*');
-  
-  if (dofsErr) {
-    console.error("Error fetching DOFs:", dofsErr);
+  console.log("Signing in...");
+  const { error: authErr } = await supabase.auth.signInWithPassword({
+    email: 'tharun@at.com',
+    password: 'admin123'
+  });
+
+  if (authErr) {
+    console.error("Auth error:", authErr);
     return;
   }
+  console.log("Signed in successfully.");
+
+  const duplicateReceiptNo = 'AT/2026/DYRR/00008';
+  console.log(`Checking if receipt ${duplicateReceiptNo} exists...`);
   
-  console.log("Fetched DOFs:", dofs.map(d => ({ id: d.id, dof_number: d.dof_number, order_ids: d.order_ids })));
+  const { data: receipts, error: findErr } = await supabase
+    .from('dyed_yarn_receipts')
+    .select('*')
+    .eq('dyrr_number', duplicateReceiptNo);
 
-  console.log("\nFetching Dyed Yarn Receipts for RED LOT A:");
-  const { data: receipts, error: recErr } = await supabase
-    .from('dyed_yarn_receipt_items')
-    .select(`
-      id,
-      colour,
-      lot_number,
-      quantity_kg,
-      order_id,
-      receipt:dyed_yarn_receipts(dof_id, dof_number, dyrr_number)
-    `)
-    .eq('colour', 'RED')
-    .eq('lot_number', 'LOT A');
+  if (findErr) {
+    console.error("Error finding receipt:", findErr);
+    return;
+  }
 
-  if (recErr) console.error(recErr);
-  else console.log(JSON.stringify(receipts, null, 2));
-
-  console.log("\nFetching Dyed Yarn Deliveries for RED LOT A:");
-  const { data: deliveries, error: delErr } = await supabase
-    .from('dyed_yarn_delivery_items')
-    .select(`
-      id,
-      colour,
-      lot_number,
-      quantity_kg,
-      order_id,
-      production_form_id,
-      process_type,
-      delivery:dyed_yarn_deliveries(dydr_number)
-    `)
-    .eq('colour', 'RED')
-    .eq('lot_number', 'LOT A');
-
-  if (delErr) console.error(delErr);
-  else console.log(JSON.stringify(deliveries, null, 2));
+  console.log("Found receipts count:", receipts.length);
+  if (receipts.length > 0) {
+    console.log("Receipt details:", receipts[0]);
+  } else {
+    console.log("Receipt does not exist anymore.");
+  }
 }
 
 run();

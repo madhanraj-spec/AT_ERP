@@ -1,23 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Printer, ArrowLeft, Loader, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import QRCode from 'qrcode';
 
 export default function DyeingFormView() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { profile } = useAuth();
   const [form, setForm] = useState(null);
   const [orders, setOrders] = useState([]);
   const [yarnCounts, setYarnCounts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
 
   const basePath = profile?.role === 'admin' ? '/admin' : '/merchandiser';
 
   useEffect(() => {
     fetchData();
   }, [id]);
+
+  useEffect(() => {
+    if (form?.dof_number) {
+      QRCode.toDataURL(form.dof_number, { margin: 1, width: 100 }, (err, url) => {
+        if (!err) setQrCodeUrl(url);
+      });
+    }
+  }, [form?.dof_number]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -62,6 +73,25 @@ export default function DyeingFormView() {
     return `${yarn.count_value} - ${yarn.material} - ${yarn.product_type}`;
   };
 
+  const getApprovalStatus = (status) => {
+    if (status === 'pending') return 'pending';
+    if (status === 'rejected') return 'rejected';
+    return 'approved';
+  };
+
+  const getYarnStatus = (status) => {
+    switch (status) {
+      case 'pending':
+      case 'rejected':
+      case 'approved':           return 'greige_not_sent';
+      case 'partially_sent':      return 'greige_partially_sent';
+      case 'fully_sent':         return 'greige_sent';
+      case 'partially_received': return 'partially_received';
+      case 'received':           return 'fully_received';
+      default:                   return status || 'greige_not_sent';
+    }
+  };
+
   const handlePrint = () => window.print();
 
   const getTotalKg = () =>
@@ -86,13 +116,24 @@ export default function DyeingFormView() {
   if (!form) return (
     <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted-current)' }}>
       <p>DOF not found.</p>
-      <button onClick={() => navigate(`${basePath}/dyeing-forms`)} className="btn btn-secondary" style={{ marginTop: '1rem' }}>
-        ← Back to DOF List
+      <button 
+        onClick={() => {
+          if (location.state?.from) {
+            navigate(location.state.from);
+          } else {
+            navigate(`${basePath}/dyeing-forms`);
+          }
+        }} 
+        className="btn btn-secondary" 
+        style={{ marginTop: '1rem' }}
+      >
+        ← Back
       </button>
     </div>
   );
 
   const statusConfig = getStatusConfig(form.status);
+  const isApproved = form.status !== 'pending' && form.status !== 'rejected';
 
   return (
     <div style={{ maxWidth: '960px', margin: '0 auto', padding: '1.5rem' }}>
@@ -100,11 +141,17 @@ export default function DyeingFormView() {
       {/* Screen-only action bar */}
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <button
-          onClick={() => navigate(`${basePath}/dyeing-forms`)}
+          onClick={() => {
+            if (location.state?.from) {
+              navigate(location.state.from);
+            } else {
+              navigate(`${basePath}/dyeing-forms`);
+            }
+          }}
           className="btn btn-secondary"
           style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
         >
-          <ArrowLeft size={16} /> Back to DOF List
+          <ArrowLeft size={16} /> Back
         </button>
         <button
           onClick={handlePrint}
@@ -126,8 +173,74 @@ export default function DyeingFormView() {
           padding: '2.5rem 3rem',
           fontFamily: "'Helvetica Neue', Arial, sans-serif",
           fontSize: '13px',
+          position: 'relative',
         }}
       >
+        {/* Approved Stamp/Seal */}
+        {isApproved && (
+          <div style={{
+            position: 'absolute',
+            top: '2.5rem',
+            left: '50%',
+            transform: 'translateX(-50%) rotate(-8deg)',
+            border: '4px double #16a34a',
+            borderRadius: '8px',
+            color: '#16a34a',
+            padding: '6px 16px',
+            fontFamily: "'Montserrat', 'Arial Black', sans-serif",
+            fontWeight: '900',
+            fontSize: '16px',
+            letterSpacing: '2px',
+            textTransform: 'uppercase',
+            backgroundColor: 'rgba(22, 163, 74, 0.05)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            lineHeight: '1.2',
+            zIndex: 10,
+            pointerEvents: 'none',
+            boxShadow: '0 0 0 2px #fff',
+          }}>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', marginBottom: '2px' }}>VERIFIED & SECURED</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              ✓ APPROVED
+            </span>
+          </div>
+        )}
+
+        {/* Rejected Stamp/Seal */}
+        {form.status === 'rejected' && (
+          <div style={{
+            position: 'absolute',
+            top: '2.5rem',
+            left: '50%',
+            transform: 'translateX(-50%) rotate(-8deg)',
+            border: '4px double #dc2626',
+            borderRadius: '8px',
+            color: '#dc2626',
+            padding: '6px 16px',
+            fontFamily: "'Montserrat', 'Arial Black', sans-serif",
+            fontWeight: '900',
+            fontSize: '16px',
+            letterSpacing: '2px',
+            textTransform: 'uppercase',
+            backgroundColor: 'rgba(220, 38, 38, 0.05)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            lineHeight: '1.2',
+            zIndex: 10,
+            pointerEvents: 'none',
+            boxShadow: '0 0 0 2px #fff',
+          }}>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', marginBottom: '2px' }}>DOCUMENT DISAPPROVED</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              ✗ REJECTED
+            </span>
+          </div>
+        )}
 
         {/* ── Company Header ── */}
         <div style={{
@@ -146,14 +259,23 @@ export default function DyeingFormView() {
               <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#555' }}>Fabric Manufacturing ERP</p>
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: '#7f1d1d', letterSpacing: '1px' }}>
-              DYEING ORDER FORM
-            </h1>
-            <p style={{ margin: '4px 0 0 0', fontSize: '1.1rem', fontWeight: '700', color: '#111' }}>{form.dof_number}</p>
-            <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#666' }}>
-              Date: {new Date(form.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
-            </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+            <div style={{ textAlign: 'right' }}>
+              <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '800', color: '#7f1d1d', letterSpacing: '1px' }}>
+                DYEING ORDER FORM
+              </h1>
+              <p style={{ margin: '4px 0 0 0', fontSize: '1.1rem', fontWeight: '700', color: '#111' }}>{form.dof_number}</p>
+              <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#666' }}>
+                Date: {new Date(form.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+              </p>
+            </div>
+            {qrCodeUrl && (
+              <img 
+                src={qrCodeUrl}
+                alt="QR Code"
+                style={{ width: '70px', height: '70px', border: '1px solid #e5e7eb', padding: '2px', borderRadius: '4px', backgroundColor: '#fff' }}
+              />
+            )}
           </div>
         </div>
 
@@ -177,7 +299,8 @@ export default function DyeingFormView() {
               ['Prepared By', form.creator?.full_name || '-'],
               ['Prepared On', new Date(form.created_at).toLocaleString('en-IN')],
               ['Linked Orders', orders.map(o => o.order_number).join(', ') || '-'],
-              ['Status', form.status?.toUpperCase()],
+              ['Approval Status', getApprovalStatus(form.status)?.toUpperCase()],
+              ['Yarn Status', getYarnStatus(form.status)?.toUpperCase().replace(/_/g, ' ')],
             ].map(([label, val]) => (
               <div key={label} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem' }}>
                 <span style={{ color: '#555', minWidth: '120px', flexShrink: 0 }}>{label}:</span>
@@ -377,12 +500,17 @@ export default function DyeingFormView() {
               <div style={{ width: '200px', borderTop: '1px solid #000', paddingTop: '8px', marginTop: '50px' }}>
                 <p style={{ margin: 0, fontWeight: '600', fontSize: '12px' }}>{form.creator?.full_name || 'Merchandiser'}</p>
                 <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#666' }}>Prepared By</p>
+                {form.created_at && (
+                  <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#888' }}>
+                    {new Date(form.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+                  </p>
+                )}
               </div>
             </div>
 
             {/* Approved By */}
             <div style={{ textAlign: 'center' }}>
-              {form.status === 'approved' ? (
+              {isApproved ? (
                 <div style={{ width: '240px', paddingTop: '8px' }}>
                   <div style={{
                     backgroundColor: '#dcfce7', border: '1px solid #86efac',
@@ -393,7 +521,27 @@ export default function DyeingFormView() {
                     <span style={{ fontWeight: '700', color: '#166534', fontSize: '12px' }}>APPROVED</span>
                   </div>
                   <div style={{ borderTop: '1px solid #000', paddingTop: '8px' }}>
-                    <p style={{ margin: 0, fontWeight: '700', fontSize: '13px' }}>T. Vijayakumar</p>
+                    <p style={{ margin: 0, fontWeight: '700', fontSize: '13px' }}>{form.approver?.full_name || 'VIJAYAKUMAR'}</p>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#444' }}>Managing Partner</p>
+                    {form.updated_at && (
+                      <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#888' }}>
+                        {new Date(form.updated_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : form.status === 'rejected' ? (
+                <div style={{ width: '240px', paddingTop: '8px' }}>
+                  <div style={{
+                    backgroundColor: '#fee2e2', border: '1px solid #fca5a5',
+                    borderRadius: '6px', padding: '0.6rem 1rem', marginBottom: '8px',
+                    display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center'
+                  }}>
+                    <XCircle size={14} color="#dc2626" />
+                    <span style={{ fontWeight: '700', color: '#dc2626', fontSize: '12px' }}>REJECTED</span>
+                  </div>
+                  <div style={{ borderTop: '1px solid #000', paddingTop: '8px' }}>
+                    <p style={{ margin: 0, fontWeight: '700', fontSize: '13px' }}>{form.approver?.full_name || 'VIJAYAKUMAR'}</p>
                     <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#444' }}>Managing Partner</p>
                     {form.updated_at && (
                       <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#888' }}>
@@ -404,9 +552,9 @@ export default function DyeingFormView() {
                 </div>
               ) : (
                 <div style={{ width: '220px', borderTop: '1px dashed #999', paddingTop: '8px', marginTop: '50px' }}>
-                  <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>T. Vijayakumar</p>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#555', fontWeight: '700' }}>VIJAYAKUMAR</p>
                   <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#888' }}>Managing Partner</p>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#aaa', fontStyle: 'italic' }}>Approval Signature</p>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#aaa', fontStyle: 'italic' }}>Approval Signature / Date</p>
                 </div>
               )}
             </div>

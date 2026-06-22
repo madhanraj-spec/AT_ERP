@@ -1,10 +1,70 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Save, ArrowLeft, ArrowRight, Check, Plus, Trash2, Calculator, List, Printer } from 'lucide-react';
+import { Save, ArrowLeft, ArrowRight, Check, Plus, Trash2, Calculator, List, Printer, Upload, FileImage, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
 const WEAVE_TYPES = ['Plain', '2/1 Twill', '2/2 Twill', '3/1 Twill', 'Oxford', 'Herringbone', 'Dobby', 'Satin'];
+const ORDER_CATEGORIES = ['Conventional', 'BCI', 'Organic', 'GOTS', 'GRS', 'OCS'];
+
+// HTML5 Canvas Client-side WebP Compression Helper
+const compressImage = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1000;
+        const MAX_HEIGHT = 1000;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Convert to blob (WebP at 70% quality)
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webp", {
+                type: 'image/webp',
+                lastModified: Date.now()
+              });
+              resolve({
+                file: compressedFile,
+                preview: URL.createObjectURL(blob),
+                sizeKb: Math.round(blob.size / 1024)
+              });
+            } else {
+              reject(new Error("Canvas compression failed"));
+            }
+          },
+          'image/webp',
+          0.7
+        );
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 export default function CreateOrder() {
   const { id } = useParams();
@@ -13,6 +73,13 @@ export default function CreateOrder() {
   const { profile } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  // Design Image State
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const [originalSize, setOriginalSize] = useState(0);
+  const [compressedSize, setCompressedSize] = useState(0);
+  const [compressionLoading, setCompressionLoading] = useState(false);
   
   // Master Data
   const [partners, setPartners] = useState([]);
@@ -43,10 +110,13 @@ export default function CreateOrder() {
       order_width: '',
       weave_type: '',
       gsm: '',
-      production_quantity: ''
+      production_quantity: '',
+      order_category: ''
     },
     // color_mapping: { type: 'warp'|'weft', countId: '', colors: [{ name: '', kg: '' }] }
-    yarn_mappings: [] 
+    yarn_mappings: [],
+    design_image_url: '',
+    status: 'draft'
   });
 
   useEffect(() => {
@@ -65,17 +135,25 @@ export default function CreateOrder() {
           order_number: data.order_number,
           order_type: data.order_type,
           merchandiser_name: data.merchandiser_name,
-          buyer_id: data.buyer_id,
-          design_no: data.design_no,
-          design_name: data.design_name,
-          vendor_id: data.vendor_id,
-          season: data.season,
-          fob_date: data.fob_date,
-          dispatch_date: data.dispatch_date,
-          total_quantity: data.total_quantity,
+          buyer_id: data.buyer_id || '',
+          design_no: data.design_no || '',
+          design_name: data.design_name || '',
+          vendor_id: data.vendor_id || '',
+          season: data.season || '',
+          fob_date: data.fob_date || '',
+          dispatch_date: data.dispatch_date || '',
+          total_quantity: data.total_quantity || '',
           technical_specs: data.technical_specs || {},
-          yarn_mappings: data.yarn_requirements || []
+          yarn_mappings: data.yarn_requirements || [],
+          design_image_url: data.design_image_url || '',
+          status: data.status || 'draft'
         });
+        if (data.design_image_url) {
+          setImagePreview(data.design_image_url);
+        }
+        if (data.order_type) {
+          setCurrentStep(1);
+        }
       }
     } catch (err) {
       console.error("Fetch error:", err);
@@ -111,6 +189,122 @@ export default function CreateOrder() {
     handleNext();
   };
 
+  const handleImageChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setCompressionLoading(true);
+    try {
+      const origSize = Math.round(file.size / 1024);
+      setOriginalSize(origSize);
+
+      const compressed = await compressImage(file);
+      setImageFile(compressed.file);
+      setImagePreview(compressed.preview);
+      setCompressedSize(compressed.sizeKb);
+    } catch (err) {
+      console.error("Compression error:", err);
+      alert("Error compressing image: " + err.message);
+    } finally {
+      setCompressionLoading(false);
+    }
+  };
+
+  const handleClearImage = () => {
+    setImageFile(null);
+    setImagePreview('');
+    setOriginalSize(0);
+    setCompressedSize(0);
+    setFormData(prev => ({ ...prev, design_image_url: '' }));
+  };
+
+  const handleSaveDraft = async () => {
+    setLoading(true);
+    try {
+      let finalOrderNumber = formData.order_number;
+      
+      if (!finalOrderNumber) {
+        const { data: orderNumber, error: numError } = await supabase.rpc('get_next_order_number', {
+          p_year: currentYear,
+          p_type: formData.order_type || 'bulk'
+        });
+        if (numError) throw numError;
+        finalOrderNumber = orderNumber;
+      }
+
+      let uploadedImageUrl = formData.design_image_url;
+
+      if (imageFile) {
+        const fileExt = 'webp';
+        const fileName = `${finalOrderNumber || Date.now()}_${Date.now()}.${fileExt}`;
+        const filePath = `design_images/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('order-images')
+          .upload(filePath, imageFile, {
+            cacheControl: '3600',
+            upsert: true
+          });
+
+        if (uploadError) {
+          throw new Error("Failed to upload design image: " + uploadError.message);
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('order-images')
+          .getPublicUrl(filePath);
+
+        uploadedImageUrl = publicUrl;
+      }
+
+      const orderPayload = {
+        order_number: finalOrderNumber,
+        order_type: formData.order_type || 'bulk',
+        merchandiser_id: profile.id,
+        merchandiser_name: formData.merchandiser_name,
+        buyer_id: formData.buyer_id || null,
+        design_no: formData.design_no || null,
+        design_name: formData.design_name || null,
+        vendor_id: formData.vendor_id || null,
+        season: formData.season || null,
+        fob_date: formData.fob_date || null,
+        dispatch_date: formData.dispatch_date || null,
+        total_quantity: parseFloat(formData.total_quantity || 0),
+        technical_specs: formData.technical_specs,
+        yarn_requirements: formData.yarn_mappings,
+        status: 'draft',
+        design_image_url: uploadedImageUrl
+      };
+
+      let result;
+      if (isEdit) {
+        result = await supabase.from('orders').update(orderPayload).eq('id', id);
+      } else {
+        const { data: existingDraft } = await supabase
+          .from('orders')
+          .select('id')
+          .eq('order_number', finalOrderNumber)
+          .maybeSingle();
+
+        if (existingDraft) {
+          result = await supabase.from('orders').update(orderPayload).eq('id', existingDraft.id);
+        } else {
+          result = await supabase.from('orders').insert([orderPayload]);
+        }
+      }
+
+      if (result.error) throw result.error;
+
+      alert(`Draft Saved Successfully! Order No: ${finalOrderNumber}`);
+      navigate(profile.role === 'admin' ? '/admin/orders' : '/merchandiser/orders');
+    } catch (err) {
+      console.error(err);
+      alert('Error saving draft: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async () => {
     setLoading(true);
     try {
@@ -126,23 +320,52 @@ export default function CreateOrder() {
         finalOrderNumber = orderNumber;
       }
 
+      let uploadedImageUrl = formData.design_image_url;
+
+      // Upload image to Storage if a new file is chosen
+      if (imageFile) {
+        const fileExt = 'webp';
+        const fileName = `${finalOrderNumber || Date.now()}_${Date.now()}.${fileExt}`;
+        const filePath = `design_images/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('order-images')
+          .upload(filePath, imageFile, {
+            cacheControl: '3600',
+            upsert: true
+          });
+
+        if (uploadError) {
+          throw new Error("Failed to upload design image: " + uploadError.message);
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('order-images')
+          .getPublicUrl(filePath);
+
+        uploadedImageUrl = publicUrl;
+      }
+
       // 2. Save/Update Order
       const orderPayload = {
         order_number: finalOrderNumber,
         order_type: formData.order_type,
         merchandiser_id: profile.id,
         merchandiser_name: formData.merchandiser_name,
-        buyer_id: formData.buyer_id,
-        design_no: formData.design_no,
-        design_name: formData.design_name,
-        vendor_id: formData.vendor_id,
-        season: formData.season,
-        fob_date: formData.fob_date,
-        dispatch_date: formData.dispatch_date,
+        buyer_id: formData.buyer_id || null,
+        design_no: formData.design_no || null,
+        design_name: formData.design_name || null,
+        vendor_id: formData.vendor_id || null,
+        season: formData.season || null,
+        fob_date: formData.fob_date || null,
+        dispatch_date: formData.dispatch_date || null,
         total_quantity: parseFloat(formData.total_quantity || 0),
         technical_specs: formData.technical_specs,
         yarn_requirements: formData.yarn_mappings,
-        status: isEdit ? undefined : 'active' // Don't reset status on edit
+        status: isEdit 
+          ? (formData.status === 'draft' ? 'active' : formData.status) 
+          : 'active',
+        design_image_url: uploadedImageUrl
       };
 
       let result;
@@ -187,16 +410,42 @@ export default function CreateOrder() {
       .join(' + ');
   };
 
+  const handleExitWithDraftCheck = async () => {
+    if (currentStep === 0) {
+      navigate(profile?.role === 'admin' ? '/admin/orders' : '/merchandiser/orders');
+      return;
+    }
+
+    const saveDraft = window.confirm("Would you like to save your progress as a draft before exiting?");
+    if (saveDraft) {
+      await handleSaveDraft();
+    } else {
+      const discard = window.confirm("Are you sure you want to discard your changes and exit?");
+      if (discard) {
+        navigate(profile?.role === 'admin' ? '/admin/orders' : '/merchandiser/orders');
+      }
+    }
+  };
+
   return (
     <div className="create-order-container" style={{ maxWidth: '1000px', margin: '0 auto', padding: '2rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }} className="no-print">
         <button 
-          onClick={() => currentStep === 0 ? navigate('/merchandiser/orders') : handleBack()}
+          onClick={handleExitWithDraftCheck}
           className="btn btn-secondary"
-          style={{ padding: '0.4rem 0.8rem' }}
+          style={{ padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
         >
-          <ArrowLeft size={16} /> {currentStep === 0 ? 'Back to Orders' : 'Previous'}
+          <ArrowLeft size={16} /> Exit to Orders
         </button>
+        {currentStep > 0 && (
+          <button 
+            onClick={handleBack}
+            className="btn btn-secondary"
+            style={{ padding: '0.4rem 0.8rem' }}
+          >
+            Previous Step
+          </button>
+        )}
         <h1 style={{ margin: 0, fontSize: '1.75rem' }}>{isEdit ? `Edit Order: ${formData.order_number}` : 'Create New Order'}</h1>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
           {[0, 1, 2, 3, 4, 5].map(step => (
@@ -345,7 +594,15 @@ export default function CreateOrder() {
               </div>
             </div>
             
-            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <button 
+                type="button"
+                onClick={handleSaveDraft}
+                className="btn btn-secondary"
+                disabled={loading}
+              >
+                Save as Draft
+              </button>
               <button onClick={handleNext} className="btn btn-primary">
                 Next <ArrowRight size={18} />
               </button>
@@ -517,9 +774,24 @@ export default function CreateOrder() {
                 <label className="input-label">GSM</label>
                 <input type="text" className="input-field" value={formData.technical_specs.gsm || ''} onChange={e => updateTechnicalSpecs('gsm', e.target.value)} placeholder="e.g. 150" />
               </div>
+              <div className="input-group">
+                <label className="input-label">Order Type</label>
+                <select className="input-field" value={formData.technical_specs.order_category || ''} onChange={e => updateTechnicalSpecs('order_category', e.target.value)}>
+                  <option value="">Select Order Type</option>
+                  {ORDER_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
             </div>
 
-            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <button 
+                type="button"
+                onClick={handleSaveDraft}
+                className="btn btn-secondary"
+                disabled={loading}
+              >
+                Save as Draft
+              </button>
               <button onClick={handleNext} className="btn btn-primary">
                 Next <ArrowRight size={18} />
               </button>
@@ -632,7 +904,15 @@ export default function CreateOrder() {
                 ))}
              </div>
 
-             <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
+             <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <button 
+                type="button"
+                onClick={handleSaveDraft}
+                className="btn btn-secondary"
+                disabled={loading}
+              >
+                Save as Draft
+              </button>
               <button onClick={handleNext} className="btn btn-primary">
                 Next <ArrowRight size={18} />
               </button>
@@ -741,7 +1021,15 @@ export default function CreateOrder() {
               </div>
             </div>
 
-            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <button 
+                type="button"
+                onClick={handleSaveDraft}
+                className="btn btn-secondary"
+                disabled={loading}
+              >
+                Save as Draft
+              </button>
               <button onClick={handleNext} className="btn btn-primary">
                 Next <ArrowRight size={18} />
               </button>
@@ -809,6 +1097,12 @@ export default function CreateOrder() {
                     <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Weave Type / GSM</td>
                     <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.technical_specs.weave_type || '-'} / {formData.technical_specs.gsm || '-'}</td>
                   </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Order Type</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', color: '#7c3aed' }}>{formData.technical_specs.order_category || '-'}</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}></td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}></td>
+                  </tr>
                   <tr>
                     <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>FOB Date</td>
                     <td className="spec-value" style={{ padding: '0.6rem 0.75rem', borderRight: '1px solid var(--border-current)' }}>{formData.fob_date || '-'}</td>
@@ -872,6 +1166,88 @@ export default function CreateOrder() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            {/* Design Image Upload Section */}
+            <div style={{ marginBottom: '2rem' }} className="no-print">
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '0.75rem', color: 'var(--color-primary)', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>Fabric Design Image</h3>
+              <div 
+                style={{ 
+                  border: '2px dashed var(--border-current)', 
+                  borderRadius: 'var(--radius-lg)', 
+                  padding: '2rem', 
+                  textAlign: 'center', 
+                  backgroundColor: 'var(--surface-current)',
+                  transition: 'all 0.2s ease',
+                  position: 'relative'
+                }}
+              >
+                {compressionLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', padding: '1rem' }}>
+                    <div className="spin" style={{ width: '40px', height: '40px', border: '4px solid var(--color-primary-light)', borderTopColor: 'var(--color-primary)', borderRadius: '50%' }}></div>
+                    <span style={{ fontSize: '0.9rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Compressing image client-side...</span>
+                  </div>
+                ) : imagePreview ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{ position: 'relative', width: '200px', height: '200px', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-current)', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                      <img 
+                        src={imagePreview} 
+                        alt="Design Preview" 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                      />
+                      <button
+                        type="button"
+                        onClick={handleClearImage}
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '8px',
+                          backgroundColor: 'rgba(239, 68, 68, 0.9)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '28px',
+                          height: '28px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justify: 'center',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                          transition: 'background-color 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ef4444'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.9)'}
+                        title="Remove Image"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                    
+                    {originalSize > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.8rem', color: 'var(--text-muted-current)' }}>
+                        <div>Original Size: <strong>{originalSize} KB</strong></div>
+                        <div>Compressed WebP Size: <strong style={{ color: '#16a34a' }}>{compressedSize} KB</strong> ({Math.round((1 - compressedSize / originalSize) * 100)}% saved!)</div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <label style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.5rem 0' }}>
+                    <div style={{ backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.25rem' }}>
+                      <Upload size={24} />
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: '700', color: 'var(--color-primary)' }}>Click to upload</span> or drag and drop
+                    </div>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>Supports PNG, JPG, JPEG (Compressed to lightweight WebP automatically)</span>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleImageChange} 
+                      style={{ display: 'none' }} 
+                    />
+                  </label>
+                )}
               </div>
             </div>
 
@@ -1015,6 +1391,15 @@ export default function CreateOrder() {
                 style={{ minWidth: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#e2e8f0', color: '#1e293b', border: '1px solid #cbd5e1', cursor: 'pointer' }}
               >
                 <Printer size={18} /> Print Summary
+              </button>
+              <button 
+                type="button"
+                onClick={handleSaveDraft}
+                className="btn btn-secondary"
+                disabled={loading}
+                style={{ minWidth: '150px' }}
+              >
+                Save as Draft
               </button>
               <button 
                 onClick={handleSubmit} 

@@ -9,23 +9,35 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import PrintableWOF from './PrintableWOF';
 
-// ─── Status badge helper (same as list page) ────────────────────────────────
+function getLocalDateString(dateInput) {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function getWofStatusBadge(wof) {
-  const today = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString(new Date());
   if (wof.status === 'completed') {
-    if (wof.end_date && wof.end_date < today)
+    const actualEndStr = wof.process_completed_at
+      ? getLocalDateString(wof.process_completed_at)
+      : (getLocalDateString(wof.updated_at) || todayStr);
+    if (wof.end_date && actualEndStr > wof.end_date)
       return { label: 'Completed Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     return { label: 'Completed', bg: '#dcfce7', color: '#166534', border: '#86efac' };
   }
   if (wof.status === 'stopped')
     return { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
   if (wof.status === 'on_process') {
-    if (wof.end_date && wof.end_date < today)
+    if (wof.end_date && todayStr > wof.end_date)
       return { label: 'Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     return { label: 'On Process', bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' };
   }
   if (wof.status === 'created') {
-    if (wof.end_date && wof.end_date < today)
+    if (wof.end_date && todayStr > wof.end_date)
       return { label: 'Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     return { label: 'Created', bg: '#fef9c3', color: '#854d0e', border: '#fde047' };
   }
@@ -47,17 +59,17 @@ async function generateWofNumber(wofType, partnerId, partnerName, orderNumber) {
     const seq = String((count || 0) + 1).padStart(5, '0');
     return `AT/${year}/WOF/${seq}`;
   } else {
-    // Job Work: AT/year/WOF/PARTNERNAME/ORDERNUMBER/seq
+    // Job Work: AT/{YYYY}/WOF/JB/{partner_SLUG}/{seq}
     const slug = (partnerName || 'PARTNER').replace(/\s+/g, '').toUpperCase();
-    const orderSlug = (orderNumber || 'ORD').replace(/\//g, '-');
+    const prefix = `AT/${year}/WOF/JB/${slug}/`;
     const { count } = await supabase
       .from('warping_order_forms')
       .select('id', { count: 'exact', head: true })
       .eq('wof_type', 'job_work')
       .eq('partner_id', partnerId)
-      .contains('wof_number', orderSlug);
+      .ilike('wof_number', `${prefix}%`);
     const seq = String((count || 0) + 1).padStart(5, '0');
-    return `AT/${year}/WOF/${slug}/${orderSlug}/${seq}`;
+    return `${prefix}${seq}`;
   }
 }
 
@@ -435,47 +447,81 @@ export default function CreateWarpingOrderForm() {
             {loadingOrders ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted-current)' }}><Loader size={16} className="spin" /> Loading orders…</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '340px', overflowY: 'auto', paddingRight: '4px' }}>
-                {orders.map(ord => {
-                  const specs = ord.technical_specs || {};
-                  const selected = selectedOrder?.id === ord.id;
-                  return (
-                    <div
-                      key={ord.id}
-                      onClick={() => setSelectedOrder(ord)}
-                      style={{
-                        border: `2px solid ${selected ? '#800000' : 'var(--border-current)'}`,
-                        borderRadius: '10px', padding: '1rem 1.25rem',
-                        cursor: 'pointer',
-                        backgroundColor: selected ? 'rgba(128,0,0,0.05)' : 'transparent',
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div>
-                          <div style={{ fontWeight: '800', fontSize: '0.95rem', color: selected ? '#800000' : 'var(--text-current)' }}>{ord.order_number}</div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>{ord.design_no} / {ord.design_name}</div>
-                        </div>
-                        {selected && <Check size={18} color="#800000" />}
+              <div>
+                <select
+                  value={selectedOrder?.id || ''}
+                  onChange={e => {
+                    const selectedId = e.target.value;
+                    const ord = orders.find(o => o.id === selectedId);
+                    setSelectedOrder(ord || null);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    border: '2px solid var(--border-current)',
+                    borderRadius: '10px',
+                    fontSize: '0.875rem',
+                    background: 'var(--surface-current)',
+                    color: 'var(--text-current)',
+                    cursor: 'pointer',
+                    fontWeight: '700',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <option value="">— Select Order —</option>
+                  {orders.map(ord => {
+                    const specs = ord.technical_specs || {};
+                    const label = `Order: ${ord.order_number} | Design: ${ord.design_no} - ${ord.design_name} | Qty: ${Number(ord.total_quantity).toLocaleString()} Mtrs | Prod Qty: ${specs.production_quantity ? Number(specs.production_quantity).toLocaleString() : '—'} Mtrs | Const: ${specs.order_reed || '—'}/${specs.order_pick || '—'}`;
+                    return (
+                      <option key={ord.id} value={ord.id}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+
+                {selectedOrder && (
+                  <div style={{
+                    marginTop: '1.5rem',
+                    padding: '1.25rem',
+                    borderRadius: '12px',
+                    border: '1px solid #e8b4b4',
+                    backgroundColor: 'rgba(128,0,0,0.02)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border-current)', paddingBottom: '0.5rem' }}>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Selected Order</div>
+                        <div style={{ fontWeight: '900', fontSize: '1.1rem', color: '#800000', marginTop: '2px' }}>{selectedOrder.order_number}</div>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginTop: '0.75rem' }}>
-                        <div>
-                          <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', fontWeight: '700' }}>Order Qty</div>
-                          <div style={{ fontSize: '0.8rem', fontWeight: '700' }}>{Number(ord.total_quantity).toLocaleString()} Mtrs</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', fontWeight: '700' }}>Production Qty</div>
-                          <div style={{ fontSize: '0.8rem', fontWeight: '700' }}>{specs.production_quantity ? `${Number(specs.production_quantity).toLocaleString()} Mtrs` : '—'}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', fontWeight: '700' }}>Construction</div>
-                          <div style={{ fontSize: '0.8rem', fontWeight: '700' }}>{specs.order_reed || '—'} / {specs.order_pick || '—'}</div>
-                        </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Design</div>
+                        <div style={{ fontWeight: '800', fontSize: '0.9rem', color: 'var(--text-current)', marginTop: '2px' }}>{selectedOrder.design_no} / {selectedOrder.design_name}</div>
                       </div>
                     </div>
-                  );
-                })}
-                {orders.length === 0 && <p style={{ color: 'var(--text-muted-current)', textAlign: 'center', padding: '2rem' }}>No active orders found.</p>}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', fontSize: '0.825rem' }}>
+                      <div>
+                        <span style={{ display: 'block', color: 'var(--text-muted-current)', fontSize: '0.65rem', fontWeight: '750' }}>ORDER QTY</span>
+                        <strong style={{ color: 'var(--text-current)', fontSize: '0.85rem' }}>{Number(selectedOrder.total_quantity).toLocaleString()} Mtrs</strong>
+                      </div>
+                      <div>
+                        <span style={{ display: 'block', color: 'var(--text-muted-current)', fontSize: '0.65rem', fontWeight: '750' }}>PRODUCTION QTY</span>
+                        <strong style={{ color: 'var(--text-current)', fontSize: '0.85rem' }}>
+                          {selectedOrder.technical_specs?.production_quantity ? `${Number(selectedOrder.technical_specs.production_quantity).toLocaleString()} Mtrs` : '—'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span style={{ display: 'block', color: 'var(--text-muted-current)', fontSize: '0.65rem', fontWeight: '750' }}>CONSTRUCTION</span>
+                        <strong style={{ color: 'var(--text-current)', fontSize: '0.85rem' }}>
+                          {selectedOrder.technical_specs?.order_reed || '—'} / {selectedOrder.technical_specs?.order_pick || '—'}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -605,6 +651,10 @@ export default function CreateWarpingOrderForm() {
                   <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>
                     Order total qty: <strong>{Number(selectedOrder.total_quantity).toLocaleString()} Mtrs</strong>
                     {selectedOrder.technical_specs?.production_quantity ? ` | Production qty: ${Number(selectedOrder.technical_specs.production_quantity).toLocaleString()} Mtrs` : ''}
+                    {' | Total Qty Allotted for Warping: '}
+                    <strong>
+                      {existingWofs.reduce((sum, w) => sum + parseFloat(w.qty || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Mtrs
+                    </strong>
                   </p>
                 )}
               </div>

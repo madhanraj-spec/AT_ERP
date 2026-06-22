@@ -1,0 +1,1 @@
+"                      )}\n                    </React.Fragment>\n                  );\n                })}\n              </tbody>\n            </table>\n          </div>\n        )}\n      </div>\n    </div>\n  );\n}\n\nfunction TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR, onViewDYRR }) {"

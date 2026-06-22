@@ -298,10 +298,19 @@ export default function StockInventory() {
       const orders = ordersRes.data || [];
       const gydi = gydiRes.data || [];
       const dyri = dyriRes.data || [];
-      const dydi = dydiRes.data || [];
       const counts = countsRes.data || [];
       const wofs = wofsRes.data || [];
       const weavings = weavingsRes.data || [];
+
+      // Filter out orphaned deliveries
+      const activeFormIds = new Set([
+        ...wofs.map(w => w.id),
+        ...weavings.map(w => w.id)
+      ]);
+
+      const dydi = (dydiRes.data || []).filter(item => 
+        !item.production_form_id || activeFormIds.has(item.production_form_id)
+      );
 
       setYarnCounts(counts);
 

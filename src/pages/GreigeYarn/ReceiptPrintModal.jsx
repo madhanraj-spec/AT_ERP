@@ -99,10 +99,20 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
             </div>
           ) : (
             <>
-              <div style={{ textAlign: 'center', marginBottom: '2rem', borderBottom: '2px solid #000', paddingBottom: '1rem' }}>
-                <img src="/logo.png" alt="Ashok Textiles" style={{ maxHeight: '80px', marginBottom: '0.5rem' }} onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
-                <h1 style={{ margin: '0 0 0.5rem 0', fontSize: '1.8rem', fontWeight: 'bold', textTransform: 'uppercase', display: 'none' }}>Ashok Textiles</h1>
-                <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'normal' }}>Greige Yarn Material Receipt</h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '2px solid #000', paddingBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                  <img src="/logo.png" alt="Ashok Textiles" style={{ maxHeight: '64px', objectFit: 'contain' }} onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
+                  <div style={{ display: 'none' }}>
+                    <h1 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Ashok Textiles</h1>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '2rem', fontWeight: '900', letterSpacing: '1px', margin: 0, color: '#1a1a1a', lineHeight: '1.1' }}>ASHOK TEXTILES</div>
+                    <div style={{ fontSize: '0.8rem', color: '#7f1d1d', fontWeight: '750', marginTop: '0.25rem', letterSpacing: '1px', textTransform: 'uppercase' }}>Greige Yarn Material Receipt</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', color: '#7f1d1d' }}>MATERIAL RECEIPT</h2>
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem' }}>

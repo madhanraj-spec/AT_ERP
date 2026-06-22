@@ -51,6 +51,12 @@ export default function MastersDashboard() {
       description: 'Manage warping beams',
       icon: '🎯',
       path: '/masters/beams'
+    },
+    {
+      title: 'Workers',
+      description: 'Manage staff and department assignments',
+      icon: '👥',
+      path: '/masters/workers'
     }
   ];
 

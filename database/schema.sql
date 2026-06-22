@@ -65,11 +65,10 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
--- Merchandisers can see their own orders, Admins can see all.
+-- Allow authenticated users to read orders
 DROP POLICY IF EXISTS "Merchandisers see own orders" ON orders;
-CREATE POLICY "Merchandisers see own orders" ON orders FOR SELECT USING (
-  auth.uid() = merchandiser_id OR 
-  (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
+CREATE POLICY "Allow authenticated users to read orders" ON orders FOR SELECT USING (
+  auth.role() = 'authenticated'
 );
 DROP POLICY IF EXISTS "Merchandisers can insert own orders" ON orders;
 CREATE POLICY "Merchandisers can insert own orders" ON orders FOR INSERT WITH CHECK (auth.uid() = merchandiser_id);

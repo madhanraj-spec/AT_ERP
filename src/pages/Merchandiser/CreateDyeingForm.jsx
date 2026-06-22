@@ -77,13 +77,18 @@ export default function CreateDyeingForm() {
   const fetchMasterData = async () => {
     setFetching(true);
     try {
+      let ordersQuery = supabase
+        .from('orders')
+        .select('*, master_brands(brand_name)')
+        .in('status', ['active', 'draft'])
+        .order('created_at', { ascending: false });
+
+      if (profile?.role !== 'admin') {
+        ordersQuery = ordersQuery.eq('merchandiser_id', profile.id);
+      }
+
       const [ordersRes, partnersRes, countsRes, dofsRes] = await Promise.all([
-        supabase
-          .from('orders')
-          .select('*, master_brands(brand_name)')
-          .eq('merchandiser_id', profile.id)
-          .in('status', ['active', 'draft'])
-          .order('created_at', { ascending: false }),
+        ordersQuery,
         supabase.from('master_partners').select('*').eq('partner_type', 'Dyeing Unit'),
         supabase.from('master_yarn_counts').select('*'),
         // Fetch all existing DOFs (not rejected) to check for colour conflicts
@@ -289,10 +294,12 @@ export default function CreateDyeingForm() {
         status: 'pending',
       };
 
-      const { error } = await supabase.from('dyeing_order_forms').insert([payload]);
+      const { data: newDof, error } = await supabase.from('dyeing_order_forms').insert([payload]).select('id').single();
       if (error) throw error;
 
-      alert(`Dyeing Order Form Created!\nDOF No: ${dofNumber}\nStatus: Pending Admin Approval.`);
+      // Note: WhatsApp notification is triggered automatically by the database webhook trigger on INSERT.
+
+      alert(`✅ Dyeing Order Form Created!\nDOF No: ${dofNumber}\nStatus: Pending Admin Approval.\n\n📲 Admin has been notified via WhatsApp.`);
       navigate(`${basePath}/dyeing-forms`);
     } catch (err) {
       console.error(err);

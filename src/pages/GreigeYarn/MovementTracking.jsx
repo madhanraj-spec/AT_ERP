@@ -582,7 +582,7 @@ export default function MovementTracking() {
   }, [groupedDeliveries, outGydrNos, outDates, outPartners, outDofs, outCounts]);
 
   return (
-    <div style={{ width: '100%', padding: '1rem' }} className="fade-in">
+    <div style={{ width: '100%', maxWidth: '100%', margin: '0', padding: '0 0.25rem' }} className="fade-in">
 
       {/* Header */}
       <div style={{ marginBottom: '1.5rem' }}>
@@ -781,30 +781,54 @@ export default function MovementTracking() {
         )}
 
         {/* Table */}
-        <div className="table-container" style={{ border: 'none', borderRadius: '0' }}>
+        <div style={{ width: '100%', overflowX: 'hidden' }}>
           {loading ? (
             <div style={{ padding: '3rem', textAlign: 'center' }}><Loader size={24} className="spin" /></div>
           ) : (
-            <table className="table" style={{ fontSize: '0.85rem', width: '100%' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
               <thead>
-                <tr>
+                <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}>
                   {activeTab === 'input_mill' && (<>
-                    <th>Receipt No</th><th>Date & Time</th><th>Invoice No</th><th>Invoice Date</th>
-                    <th>Mill Name</th><th>Count</th><th>Bags</th><th>Cones</th>
-                    <th>Wt/Bag (kg)</th><th>Wt/Cone (kg)</th>
-                    <th style={{ color: '#16a34a', textAlign: 'center' }}>Total (kg)</th>
-                    <th>Rate/KG (₹)</th><th>Location</th><th style={{ textAlign: 'right' }}>Action</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Receipt No</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Date & Time</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Inv No</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Inv Date</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Mill Name</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Count</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Bags</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Cones</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Wt/Bag</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Wt/Cone</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', borderBottom: '1px solid var(--border-current)', textAlign: 'right', color: '#16a34a' }}>Total (kg)</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Rate/Kg</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Location</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Status</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Action</th>
                   </>)}
                   {activeTab === 'input_prod' && (<>
-                    <th>Receipt No</th><th>Date & Time</th><th>Order Form No</th><th>Count</th>
-                    <th>Bags</th><th>Cones</th><th>Wt/Bag (kg)</th><th>Wt/Cone (kg)</th>
-                    <th style={{ color: '#16a34a', textAlign: 'center' }}>Total (kg)</th>
-                    <th>Location</th><th style={{ textAlign: 'right' }}>Action</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Receipt No</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Date & Time</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Order Form No</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Count</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Bags</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Cones</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Wt/Bag</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Wt/Cone</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', borderBottom: '1px solid var(--border-current)', textAlign: 'right', color: '#16a34a' }}>Total (kg)</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Location</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Status</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Action</th>
                   </>)}
                   {activeTab === 'output' && (<>
-                    <th>GYDR Number</th><th>Date & Time</th><th>Partner / Unit</th><th>DOF #</th>
-                    <th>Count</th><th style={{ color: '#dc2626', textAlign: 'right' }}>Qty Issued (kg)</th>
-                    <th>Location</th><th style={{ textAlign: 'center' }}>Details</th><th style={{ textAlign: 'center' }}>Receipt</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>GYDR Number</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Date & Time</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Partner / Unit</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>DOF #</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Count</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', borderBottom: '1px solid var(--border-current)', textAlign: 'right', color: '#dc2626' }}>Qty Issued (kg)</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Location</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'center' }}>Details</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'center' }}>Receipt</th>
                   </>)}
                 </tr>
               </thead>
@@ -812,130 +836,272 @@ export default function MovementTracking() {
                 {/* ── Spinning Mill Input ── */}
                 {activeTab === 'input_mill' && (
                   groupedSpinningReceipts.length === 0
-                    ? <tr><td colSpan={14} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>No incoming mill receipts found</td></tr>
+                    ? <tr><td colSpan={15} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>No incoming mill receipts found</td></tr>
                     : groupedSpinningReceipts.map(group => {
-                        return group.items.map((item, idx) => (
-                          <tr key={`${group.receipt_no}-${idx}`} style={{ borderBottom: idx === group.items.length - 1 ? '1px solid var(--border-current)' : 'none' }}>
-                            {idx === 0 && (
-                              <>
-                                <td rowSpan={group.items.length} style={{ fontWeight: 'bold', verticalAlign: 'middle' }}>{group.receipt_no}</td>
-                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{new Date(group.created_at).toLocaleString()}</td>
-                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{group.invoice_no || '-'}</td>
-                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{group.invoice_date || '-'}</td>
-                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{group.partner_name}</td>
-                              </>
-                            )}
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.yarn_label}</td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.bag_count}</td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.cone_count}</td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.bag_weight}</td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.cone_weight}</td>
-                            <td style={{ fontWeight: 'bold', color: '#16a34a', textAlign: 'center', borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.total_weight}</td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>₹{item.rate_per_kg}</td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.location_name}</td>
-                            {idx === 0 && (
-                              <td rowSpan={group.items.length} style={{ textAlign: 'right', verticalAlign: 'middle' }}>
-                                <button onClick={() => setSelectedReceipt(group.rawReceipts[0])} style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0 }}>View</button>
-                              </td>
-                            )}
-                          </tr>
-                        ));
+                        const statusVal = group.rawReceipts[0]?.finance_approval_status || 'pending';
+                        const isApproved = statusVal === 'approved';
+                        const rowSpan = group.items.length;
+
+                        return group.items.map((item, idx) => {
+                          const isFirst = idx === 0;
+                          const isLast = idx === group.items.length - 1;
+                          const tdPad = { padding: '0.35rem 0.25rem', fontSize: '0.72rem', verticalAlign: 'middle' };
+                          const groupBorder = '2px solid var(--color-primary)';
+                          const itemBorder = isLast ? groupBorder : '1px dashed var(--border-current)';
+                          return (
+                            <tr key={`${group.receipt_no}-${idx}`} style={{ backgroundColor: 'transparent' }}>
+                              {isFirst && (
+                                <>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, fontWeight: 'bold', whiteSpace: 'nowrap', borderBottom: groupBorder }}>{group.receipt_no}</td>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, whiteSpace: 'nowrap', borderBottom: groupBorder }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                      <span style={{ fontWeight: '600' }}>
+                                        {new Date(group.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                      </span>
+                                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)' }}>
+                                        {new Date(group.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, whiteSpace: 'nowrap', borderBottom: groupBorder }}>{group.invoice_no || '-'}</td>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, whiteSpace: 'nowrap', borderBottom: groupBorder }}>
+                                    {group.invoice_date ? new Date(group.invoice_date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '-'}
+                                  </td>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, minWidth: '120px', whiteSpace: 'normal', fontWeight: '500', borderBottom: groupBorder }} title={group.partner_name}>{group.partner_name}</td>
+                                </>
+                              )}
+                              <td style={{ ...tdPad, minWidth: '100px', whiteSpace: 'normal', borderBottom: itemBorder }}>{item.yarn_label}</td>
+                              <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{item.bag_count}</td>
+                              <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{item.cone_count}</td>
+                              <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{Number(item.bag_weight || 0).toFixed(1)}</td>
+                              <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{Number(item.cone_weight || 0).toFixed(2)}</td>
+                              <td style={{ ...tdPad, fontWeight: 'bold', color: '#16a34a', textAlign: 'right', borderBottom: itemBorder }}>{Number(item.total_weight || 0).toFixed(1)}</td>
+                              <td style={{ ...tdPad, textAlign: 'right', whiteSpace: 'nowrap', borderBottom: itemBorder }}>₹{Number(item.rate_per_kg || 0).toFixed(0)}</td>
+                              <td style={{ ...tdPad, minWidth: '85px', whiteSpace: 'normal', borderBottom: itemBorder }} title={item.location_name}>{item.location_name}</td>
+                              {isFirst && (
+                                <>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, borderBottom: groupBorder }}>
+                                    <span style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      backgroundColor: isApproved ? '#dcfce7' : '#fef3c7',
+                                      color: isApproved ? '#166534' : '#92400e',
+                                      padding: '2px 6px',
+                                      borderRadius: '3px',
+                                      fontSize: '0.65rem',
+                                      fontWeight: '700',
+                                      whiteSpace: 'nowrap',
+                                    }}>
+                                      {isApproved ? '✓ APPROVED' : '⏳ PENDING'}
+                                    </span>
+                                  </td>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, textAlign: 'right', borderBottom: groupBorder }}>
+                                    <button 
+                                      onClick={() => setSelectedReceipt(group.rawReceipts[0])} 
+                                      style={{
+                                        backgroundColor: '#e0f2fe',
+                                        color: '#0369a1',
+                                        border: '1px solid #bae6fd',
+                                        padding: '3px 6px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.7rem',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '2px'
+                                      }}
+                                    >
+                                      View
+                                    </button>
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                          );
+                        });
                       })
                 )}
 
                 {/* ── Production Input ── */}
                 {activeTab === 'input_prod' && (
                   groupedProductionReceipts.length === 0
-                    ? <tr><td colSpan={11} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>No incoming production receipts found</td></tr>
+                    ? <tr><td colSpan={12} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>No incoming production receipts found</td></tr>
                     : groupedProductionReceipts.map(group => {
-                        return group.items.map((item, idx) => (
-                          <tr key={`${group.receipt_no}-${idx}`} style={{ borderBottom: idx === group.items.length - 1 ? '1px solid var(--border-current)' : 'none' }}>
-                            {idx === 0 && (
-                              <>
-                                <td rowSpan={group.items.length} style={{ fontWeight: 'bold', verticalAlign: 'middle' }}>{group.receipt_no}</td>
-                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{new Date(group.created_at).toLocaleString()}</td>
-                                <td rowSpan={group.items.length} style={{ verticalAlign: 'middle' }}>{group.order_form_no}</td>
-                              </>
-                            )}
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>
-                              <div>{item.yarn_label}</div>
-                              {(item.colour || item.yarn_type || item.order_no) && (
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
-                                  {[item.yarn_type, item.colour, item.order_no].filter(Boolean).join(' • ')}
-                                </div>
+                        const statusVal = group.rawReceipts[0]?.finance_approval_status || 'pending';
+                        const isApproved = statusVal === 'approved';
+                        const rowSpan = group.items.length;
+
+                        return group.items.map((item, idx) => {
+                          const isFirst = idx === 0;
+                          const isLast = idx === group.items.length - 1;
+                          const tdPad = { padding: '0.35rem 0.25rem', fontSize: '0.72rem', verticalAlign: 'middle' };
+                          const groupBorder = '2px solid var(--color-primary)';
+                          const itemBorder = isLast ? groupBorder : '1px dashed var(--border-current)';
+                          return (
+                            <tr key={`${group.receipt_no}-${idx}`} style={{ backgroundColor: 'transparent' }}>
+                              {isFirst && (
+                                <>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, fontWeight: 'bold', whiteSpace: 'nowrap', borderBottom: groupBorder }}>{group.receipt_no}</td>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, whiteSpace: 'nowrap', borderBottom: groupBorder }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                      <span style={{ fontWeight: '600' }}>
+                                        {new Date(group.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                      </span>
+                                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)' }}>
+                                        {new Date(group.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, whiteSpace: 'nowrap', borderBottom: groupBorder }}>{group.order_form_no}</td>
+                                </>
                               )}
-                            </td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.bag_count}</td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.cone_count}</td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.bag_weight}</td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.cone_weight}</td>
-                            <td style={{ fontWeight: 'bold', color: '#16a34a', textAlign: 'center', borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.total_weight}</td>
-                            <td style={{ borderBottom: idx === group.items.length - 1 ? '' : '1px dashed var(--border-current)' }}>{item.location_name}</td>
-                            {idx === 0 && (
-                              <td rowSpan={group.items.length} style={{ textAlign: 'right', verticalAlign: 'middle' }}>
-                                <button onClick={() => setSelectedReceipt(group.rawReceipts[0])} style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0 }}>View</button>
+                              <td style={{ ...tdPad, minWidth: '100px', whiteSpace: 'normal', borderBottom: itemBorder }}>
+                                <div>{item.yarn_label}</div>
+                                {(item.colour || item.yarn_type || item.order_no) && (
+                                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
+                                    {[item.yarn_type, item.colour, item.order_no].filter(Boolean).join(' • ')}
+                                  </div>
+                                )}
                               </td>
-                            )}
-                          </tr>
-                        ));
+                              <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{item.bag_count}</td>
+                              <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{item.cone_count}</td>
+                              <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{Number(item.bag_weight || 0).toFixed(1)}</td>
+                              <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{Number(item.cone_weight || 0).toFixed(2)}</td>
+                              <td style={{ ...tdPad, fontWeight: 'bold', color: '#16a34a', textAlign: 'right', borderBottom: itemBorder }}>{Number(item.total_weight || 0).toFixed(1)}</td>
+                              <td style={{ ...tdPad, minWidth: '85px', whiteSpace: 'normal', borderBottom: itemBorder }} title={item.location_name}>{item.location_name}</td>
+                              {isFirst && (
+                                <>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, borderBottom: groupBorder }}>
+                                    <span style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      backgroundColor: isApproved ? '#dcfce7' : '#fef3c7',
+                                      color: isApproved ? '#166534' : '#92400e',
+                                      padding: '2px 6px',
+                                      borderRadius: '3px',
+                                      fontSize: '0.65rem',
+                                      fontWeight: '700',
+                                      whiteSpace: 'nowrap',
+                                    }}>
+                                      {isApproved ? '✓ APPROVED' : '⏳ PENDING'}
+                                    </span>
+                                  </td>
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, textAlign: 'right', borderBottom: groupBorder }}>
+                                    <button 
+                                      onClick={() => setSelectedReceipt(group.rawReceipts[0])} 
+                                      style={{
+                                        backgroundColor: '#e0f2fe',
+                                        color: '#0369a1',
+                                        border: '1px solid #bae6fd',
+                                        padding: '3px 6px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.7rem',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '2px'
+                                      }}
+                                    >
+                                      View
+                                    </button>
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                          );
+                        });
                       })
                 )}
 
                 {/* ── GYDR Output ── */}
                 {activeTab === 'output' && (
                   filteredGroupedDeliveries.length === 0
-                    ? <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>No greige yarn deliveries logged yet.</td></tr>
-                    : filteredGroupedDeliveries.map(row => {
+                    ? <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>No greige yarn deliveries logged yet.</td></tr>
+                    : filteredGroupedDeliveries.map((row, idx) => {
                         const expandKey = `${row.receiptId}-${row.countId}`;
                         const isExpanded = !!expandedOutputs[expandKey];
+                        const nextRow = filteredGroupedDeliveries[idx + 1];
+                        const isLastOfGydr = !nextRow || nextRow.gydr_number !== row.gydr_number;
+                        const groupBorder = '2px solid var(--color-primary)';
+                        const itemBorder = isLastOfGydr ? groupBorder : '1px dashed var(--border-current)';
+                        const tdPad = { padding: '0.35rem 0.25rem', fontSize: '0.72rem', verticalAlign: 'middle' };
                         
                         return (
                           <React.Fragment key={expandKey}>
-                            <tr style={{ backgroundColor: isExpanded ? 'rgba(var(--color-primary-rgb, 128,0,0), 0.02)' : undefined, borderBottom: '1px solid var(--border-current)' }}>
-                              <td style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{row.gydr_number}</td>
-                              <td>{new Date(row.created_at).toLocaleString()}</td>
-                              <td>{row.partner_name}</td>
-                              <td>{row.dof_number}</td>
-                              <td style={{ fontWeight: '600' }}>{row.yarn_label}</td>
-                              <td style={{ fontWeight: 'bold', color: '#dc2626', textAlign: 'right' }}>{row.total_qty.toFixed(2)}</td>
-                              <td>{row.locations_str}</td>
-                              <td style={{ textAlign: 'center' }}>
+                            <tr style={{ backgroundColor: isExpanded ? 'rgba(var(--color-primary-rgb, 128,0,0), 0.02)' : undefined }}>
+                              <td style={{ ...tdPad, fontWeight: 'bold', color: 'var(--color-primary)', whiteSpace: 'nowrap', borderBottom: itemBorder }}>{row.gydr_number}</td>
+                              <td style={{ ...tdPad, whiteSpace: 'nowrap', borderBottom: itemBorder }}>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <span style={{ fontWeight: '600' }}>
+                                    {new Date(row.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                  </span>
+                                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)' }}>
+                                    {new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              </td>
+                              <td style={{ ...tdPad, minWidth: '120px', whiteSpace: 'normal', borderBottom: itemBorder }} title={row.partner_name}>{row.partner_name}</td>
+                              <td style={{ ...tdPad, whiteSpace: 'nowrap', borderBottom: itemBorder }}>{row.dof_number}</td>
+                              <td style={{ ...tdPad, minWidth: '100px', whiteSpace: 'normal', fontWeight: '600', borderBottom: itemBorder }}>{row.yarn_label}</td>
+                              <td style={{ ...tdPad, fontWeight: 'bold', color: '#dc2626', textAlign: 'right', borderBottom: itemBorder }}>{row.total_qty.toFixed(1)}</td>
+                              <td style={{ ...tdPad, minWidth: '85px', whiteSpace: 'normal', borderBottom: itemBorder }} title={row.locations_str}>{row.locations_str}</td>
+                              <td style={{ ...tdPad, textAlign: 'center', borderBottom: itemBorder }}>
                                 {row.items.length > 0 ? (
                                   <button
                                     onClick={() => toggleExpandOutput(expandKey)}
-                                    className="btn btn-secondary"
-                                    style={{ padding: '0.2rem 0.6rem', fontSize: '0.75rem', fontWeight: '700' }}
+                                    style={{
+                                      backgroundColor: '#f1f5f9',
+                                      border: '1px solid var(--border-current)',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '0.7rem',
+                                      fontWeight: '600',
+                                      cursor: 'pointer'
+                                    }}
                                   >
-                                    {isExpanded ? 'Hide Details' : 'Show Details'} ({row.items.length})
+                                    {isExpanded ? 'Hide' : 'Show'} ({row.items.length})
                                   </button>
                                 ) : '-'}
                               </td>
-                              <td style={{ textAlign: 'center' }}>
+                              <td style={{ ...tdPad, textAlign: 'center', borderBottom: itemBorder }}>
                                 <button
                                   onClick={() => setSelectedGYDR(row.receiptObj)}
-                                  style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '600', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
+                                  style={{
+                                    backgroundColor: '#e0f2fe',
+                                    color: '#0369a1',
+                                    border: '1px solid #bae6fd',
+                                    padding: '3px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.7rem',
+                                    fontWeight: '600',
+                                    cursor: 'pointer'
+                                  }}
                                 >
-                                  View Receipt
+                                  Receipt
                                 </button>
                               </td>
                             </tr>
                             
                             {isExpanded && row.items.length > 0 && (
                               <tr>
-                                <td colSpan={9} style={{ padding: '0.5rem 1.5rem', backgroundColor: '#fcfaf9' }}>
+                                <td colSpan={9} style={{ padding: '0.5rem 1rem', backgroundColor: '#fcfaf9', borderBottom: itemBorder }}>
                                   <div style={{
                                     padding: '0.5rem 1rem',
                                     border: '1px solid var(--border-current)',
                                     borderRadius: 'var(--radius-md)',
                                     backgroundColor: 'var(--surface-current)'
                                   }}>
-                                    <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
+                                    <table style={{ width: '100%', fontSize: '0.72rem', borderCollapse: 'collapse' }}>
                                       <thead>
                                         <tr style={{ borderBottom: '1px solid var(--border-current)', color: 'var(--text-muted-current)', textAlign: 'left' }}>
-                                          <th style={{ padding: '6px 8px' }}>Order & Design</th>
-                                          <th style={{ padding: '6px 8px' }}>Colour</th>
-                                          <th style={{ padding: '6px 8px' }}>Issued From Location</th>
-                                          <th style={{ padding: '6px 8px', textAlign: 'right' }}>Qty Issued (kg)</th>
+                                          <th style={{ padding: '6px 8px', fontSize: '0.7rem' }}>Order & Design</th>
+                                          <th style={{ padding: '6px 8px', fontSize: '0.7rem' }}>Colour</th>
+                                          <th style={{ padding: '6px 8px', fontSize: '0.7rem' }}>Issued From Location</th>
+                                          <th style={{ padding: '6px 8px', textAlign: 'right', fontSize: '0.7rem' }}>Qty Issued (kg)</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -944,7 +1110,7 @@ export default function MovementTracking() {
                                             <td style={{ padding: '6px 8px' }}>{item.orders ? `${item.orders.order_number} (${item.orders.design_no} / ${item.orders.design_name})` : '-'}</td>
                                             <td style={{ padding: '6px 8px', fontWeight: '700', color: 'var(--color-primary)' }}>{item.colour}</td>
                                             <td style={{ padding: '6px 8px' }}>{item.master_locations?.location_name || '-'}</td>
-                                            <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700' }}>{parseFloat(item.quantity_kg).toFixed(2)} kg</td>
+                                            <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700' }}>{parseFloat(item.quantity_kg).toFixed(1)} kg</td>
                                           </tr>
                                         ))}
                                       </tbody>

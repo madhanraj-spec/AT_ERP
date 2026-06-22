@@ -4,9 +4,11 @@ import {
   ArrowLeft, Layers, ChevronLeft, ChevronRight,
   ChevronDown, ChevronUp, Loader, Calendar,
   Package, Zap, AlertCircle, Clock, X, Play,
-  CheckCircle
+  CheckCircle, Printer, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import PrintableWOFDC from './PrintableWOFDC';
+import PrintableSOFDC from './PrintableSOFDC';
 
 import DYDRDetail from '../../components/DYDRDetail';
 
@@ -59,6 +61,64 @@ function hasExceededPlannedEnd(wof) {
   return todayStr > plannedEndStr;
 }
 
+function allocateLanes(items) {
+  if (!items || items.length === 0) {
+    return { itemLanes: {}, totalLanes: 1 };
+  }
+
+  // Sort items by start_date ascending
+  const sorted = [...items].sort((a, b) => {
+    const aStart = a.start_date || '';
+    const bStart = b.start_date || '';
+    if (aStart !== bStart) {
+      return aStart.localeCompare(bStart);
+    }
+    const aEnd = a.end_date || '';
+    const bEnd = b.end_date || '';
+    return aEnd.localeCompare(bEnd);
+  });
+
+  const lanes = []; // Array of arrays: lanes[laneIndex] = [item1, item2, ...]
+  const itemLanes = {}; // Map of item.id -> laneIndex
+
+  sorted.forEach(item => {
+    const itemStart = item.start_date || '';
+    const itemEnd = item.end_date || '';
+    
+    // Find the first lane where this item does not overlap with any item in that lane
+    let assignedLane = -1;
+    for (let i = 0; i < lanes.length; i++) {
+      let overlaps = false;
+      for (const placed of lanes[i]) {
+        const pStart = placed.start_date || '';
+        const pEnd = placed.end_date || '';
+        // Overlap condition: intervals [itemStart, itemEnd] and [pStart, pEnd] overlap
+        if (itemStart <= pEnd && itemEnd >= pStart) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (!overlaps) {
+        assignedLane = i;
+        break;
+      }
+    }
+
+    if (assignedLane === -1) {
+      lanes.push([item]);
+      itemLanes[item.id] = lanes.length - 1;
+    } else {
+      lanes[assignedLane].push(item);
+      itemLanes[item.id] = assignedLane;
+    }
+  });
+
+  return {
+    itemLanes,
+    totalLanes: Math.max(lanes.length, 1)
+  };
+}
+
 function getStatusColor(status) {
   switch (status) {
     case 'created': return { bg: '#fef9c3', border: '#eab308', text: '#854d0e', label: 'Created' };
@@ -74,12 +134,11 @@ function getWofStatusBadge(wof) {
   const sc = getStatusColor(wof.status);
 
   if (wof.status === 'completed') {
-    const actualEndStr = wof.process_completed_at
-      ? getLocalDateString(wof.process_completed_at)
-      : (getLocalDateString(wof.updated_at) || todayStr);
-
-    if (wof.end_date && actualEndStr > wof.end_date) {
-      return { label: 'Late Completed', bg: '#fee2e2', border: '#fca5a5', text: '#b91c1c' };
+    if (wof.process_completed_at) {
+        const actualEndStr = getLocalDateString(wof.process_completed_at);
+        if (wof.end_date && actualEndStr > wof.end_date) {
+            return { label: 'Late Completed', bg: '#fee2e2', border: '#fca5a5', text: '#b91c1c' };
+        }
     }
     return { label: 'Completed', bg: '#dcfce7', border: '#22c55e', text: '#166534' };
   }
@@ -323,8 +382,6 @@ export default function WarpingSizing() {
 
   // Primary tab: 'warping' | 'sizing'
   const [primaryTab, setPrimaryTab] = useState('warping');
-  // Warping sub-tab: 'in_house' | 'job_work'
-  const [warpingSubTab, setWarpingSubTab] = useState('in_house');
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1rem' }} className="fade-in">
@@ -395,43 +452,7 @@ export default function WarpingSizing() {
       </div>
 
       {/* ── Tab Content ── */}
-      {primaryTab === 'warping' && (
-        <div>
-          {/* Warping Sub-tabs */}
-          <div style={{
-            display: 'flex', gap: '0.5rem', marginBottom: '1.5rem'
-          }}>
-            {[
-              { id: 'in_house', label: 'In-House', icon: '🏭' },
-              { id: 'job_work', label: 'Job Work', icon: '🤝' },
-            ].map(sub => (
-              <button
-                key={sub.id}
-                onClick={() => setWarpingSubTab(sub.id)}
-                style={{
-                  padding: '0.6rem 1.5rem',
-                  borderRadius: '8px',
-                  border: warpingSubTab === sub.id ? '2px solid #800000' : '2px solid var(--border-current)',
-                  background: warpingSubTab === sub.id ? 'rgba(128,0,0,0.05)' : 'var(--surface-current)',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem',
-                  fontWeight: '700',
-                  color: warpingSubTab === sub.id ? '#800000' : 'var(--text-muted-current)',
-                  display: 'flex', alignItems: 'center', gap: '0.4rem',
-                  transition: 'all 0.2s ease',
-                  boxShadow: warpingSubTab === sub.id ? '0 2px 8px rgba(128,0,0,0.1)' : 'none'
-                }}
-              >
-                <span>{sub.icon}</span>
-                {sub.label}
-              </button>
-            ))}
-          </div>
-
-          {warpingSubTab === 'in_house' && <InHouseGantt />}
-          {warpingSubTab === 'job_work' && <JobWorkTable />}
-        </div>
-      )}
+      {primaryTab === 'warping' && <InHouseGantt />}
 
       {primaryTab === 'sizing' && <SizingTab />}
     </div>
@@ -778,23 +799,42 @@ function InHouseGantt() {
                       </div>
 
                       {/* Aggregated Gantt bars for the machine row */}
-                      <div style={{ display: 'flex', position: 'relative', flex: 1 }}>
-                        {days.map((d, i) => (
-                          <div key={i} style={{
-                            width: `${DAY_COL_WIDTH}px`, minWidth: `${DAY_COL_WIDTH}px`,
-                            borderRight: '1px solid #f5f5f5',
-                            backgroundColor: isToday(d) ? 'rgba(128,0,0,0.03)' : d.getDay() === 0 ? '#fefafa' : 'transparent'
-                          }} />
-                        ))}
-                        {/* Overlay bars for each WOF */}
-                        {machineWofs.map(wof => {
-                          const bar = calcBarPosition(wof, days);
-                          if (!bar) return null;
-                          return (
-                            <GanttBar key={wof.id} wof={wof} bar={bar} compact onWofClick={handleWofClick} />
-                          );
-                        })}
-                      </div>
+                      {(() => {
+                        const { itemLanes, totalLanes } = allocateLanes(machineWofs);
+                        const LANE_HEIGHT = 28;
+                        const ROW_PADDING = 12;
+                        const rowHeight = totalLanes * LANE_HEIGHT + ROW_PADDING;
+
+                        return (
+                          <div style={{ display: 'flex', position: 'relative', flex: 1 }}>
+                            {days.map((d, i) => (
+                              <div key={i} style={{
+                                width: `${DAY_COL_WIDTH}px`, minWidth: `${DAY_COL_WIDTH}px`,
+                                borderRight: '1px solid #f5f5f5',
+                                backgroundColor: isToday(d) ? 'rgba(128,0,0,0.03)' : d.getDay() === 0 ? '#fefafa' : 'transparent',
+                                height: `${rowHeight}px`
+                              }} />
+                            ))}
+                            {/* Overlay bars for each WOF */}
+                            {machineWofs.map(wof => {
+                              const bar = calcBarPosition(wof, days);
+                              if (!bar) return null;
+                              const laneIdx = itemLanes[wof.id] || 0;
+                              return (
+                                <GanttBar
+                                  key={wof.id}
+                                  wof={{ ...wof, wof_number: wof.beam_name ? `${wof.wof_number} (${wof.beam_name})` : wof.wof_number }}
+                                  bar={bar}
+                                  compact
+                                  onWofClick={handleWofClick}
+                                  topOffset={`${6 + laneIdx * LANE_HEIGHT}px`}
+                                  customHeight={`${LANE_HEIGHT - 6}px`}
+                                />
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Expanded WOF Rows */}
@@ -865,9 +905,9 @@ function InHouseGantt() {
 
                               // 1. Planned Bar
                               const plannedBar = calcBarPositionForDates(wof.start_date, wof.end_date, days);
-                              const pBg = exceeded ? '#fecaca' : '#fef9c3';
-                              const pBorder = exceeded ? '#ef4444' : '#eab308';
-                              const pText = exceeded ? '#991b1b' : '#854d0e';
+                              const pBg = '#fef9c3';
+                              const pBorder = '#eab308';
+                              const pText = '#854d0e';
 
                               // 2. Actual Bar
                               const showActual = !!wof.process_started_at || wof.status === 'on_process' || wof.status === 'completed';
@@ -883,9 +923,33 @@ function InHouseGantt() {
                                   : todayStr;
 
                                 actualBar = calcBarPositionForDates(actualStartStr, actualEndStr, days);
-                                aBg = exceeded ? '#fecaca' : '#dbeafe';
-                                aBorder = exceeded ? '#ef4444' : '#3b82f6';
-                                aText = exceeded ? '#991b1b' : '#1d4ed8';
+                                
+                                if (wof.status === 'on_process') {
+                                  if (exceeded) {
+                                    aBg = '#fee2e2';
+                                    aBorder = '#ef4444';
+                                    aText = '#b91c1c';
+                                  } else {
+                                    aBg = '#dbeafe';
+                                    aBorder = '#3b82f6';
+                                    aText = '#1d4ed8';
+                                  }
+                                } else if (wof.status === 'completed') {
+                                  if (exceeded) {
+                                    aBg = '#fee2e2';
+                                    aBorder = '#ef4444';
+                                    aText = '#b91c1c';
+                                  } else {
+                                    aBg = '#dcfce7';
+                                    aBorder = '#22c55e';
+                                    aText = '#166534';
+                                  }
+                                } else {
+                                  const statusColor = getStatusColor(wof.status);
+                                  aBg = statusColor.bg;
+                                  aBorder = statusColor.border;
+                                  aText = statusColor.text;
+                                }
                               }
 
                               return (
@@ -1001,6 +1065,7 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
 
   // Start Process form fields
   const [warperName, setWarperName] = useState('');
+  const [warpingWorkers, setWarpingWorkers] = useState([]);
   const [selectedBeamId, setSelectedBeamId] = useState('');
   const [processDate, setProcessDate] = useState(() => {
     const now = new Date();
@@ -1012,8 +1077,62 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
     return now.toISOString().slice(0, 16); // yyyy-MM-ddTHH:mm
   });
 
+  const [completeSplits, setCompleteSplits] = useState([]);
+  const [yarnReturns, setYarnReturns] = useState([]);
+  const [showWofdcReceipt, setShowWofdcReceipt] = useState(false);
+
+  useEffect(() => {
+    if (showCompleteForm && wofDetail) {
+      // Initialize splits
+      const initialSplits = (wofDetail.warp_splits && wofDetail.warp_splits.length > 0)
+        ? wofDetail.warp_splits.map(s => ({
+            warp_no: s.warp_no,
+            qty: s.qty !== undefined ? s.qty : wofDetail.qty,
+            beam_id: s.beam_id || wofDetail.beam_id || '',
+            beam_name: s.beam_name || wofDetail.beam_name || '',
+            start_date: s.start_date || wofDetail.start_date || '',
+            end_date: s.end_date || wofDetail.end_date || ''
+          }))
+        : [{
+            warp_no: `${wofDetail.wof_number}/1`,
+            qty: wofDetail.qty,
+            beam_id: wofDetail.beam_id || '',
+            beam_name: wofDetail.beam_name || '',
+            start_date: wofDetail.start_date || '',
+            end_date: wofDetail.end_date || ''
+          }];
+      setCompleteSplits(initialSplits);
+
+      // Initialize yarn returns by grouping deliveryItems by count, colour, and lot number
+      const initialReturns = [];
+      const seen = new Set();
+      deliveryItems.forEach(item => {
+        const key = `${item.yarn_count_id}_${item.colour}_${item.lot_number || '—'}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const countVal = item.yarn_count ? `${item.yarn_count.count_value} ${item.yarn_count.material || ''} ${item.yarn_count.product_type || ''}`.trim() : item.yarn_count_id || '—';
+          
+          const totalReceived = deliveryItems
+            .filter(d => d.yarn_count_id === item.yarn_count_id && d.colour === item.colour && (d.lot_number || '—') === (item.lot_number || '—'))
+            .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+
+          initialReturns.push({
+            yarn_count_id: item.yarn_count_id,
+            count_display: countVal,
+            colour: item.colour,
+            lot_number: item.lot_number || '—',
+            quantity_received: totalReceived,
+            quantity_returned: 0
+          });
+        }
+      });
+      setYarnReturns(initialReturns);
+    }
+  }, [showCompleteForm, wofDetail, deliveryItems]);
+
   useEffect(() => {
     fetchDetails();
+    setShowWofdcReceipt(false);
   }, [wof.id]);
 
   const fetchDetails = async () => {
@@ -1057,6 +1176,27 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
         .select('*')
         .order('beam_name');
       setBeams(beamData || []);
+
+      // 5. Fetch warping workers
+      try {
+        const { data: deptData } = await supabase
+          .from('master_departments')
+          .select('id')
+          .ilike('department_name', '%warping%');
+          
+        const warpingDeptIds = (deptData || []).map(d => d.id);
+        
+        if (warpingDeptIds.length > 0) {
+          const { data: workersData } = await supabase
+            .from('master_workers')
+            .select('*')
+            .in('department_id', warpingDeptIds)
+            .order('worker_name', { ascending: true });
+          setWarpingWorkers(workersData || []);
+        }
+      } catch (err) {
+        console.error('Error fetching warping workers:', err);
+      }
     } catch (err) {
       console.error('Error fetching WOF detail:', err);
     } finally {
@@ -1134,19 +1274,92 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
   };
 
   const handleCompleteProcess = async () => {
+    // 1. Validation
+    for (let i = 0; i < completeSplits.length; i++) {
+      const split = completeSplits[i];
+      if (!split.beam_id) {
+        alert(`Please select a Beam Number for Split ${split.warp_no}`);
+        return;
+      }
+      const parsedQty = parseFloat(split.qty);
+      if (isNaN(parsedQty) || parsedQty <= 0) {
+        alert(`Please enter a valid Quantity for Split ${split.warp_no}`);
+        return;
+      }
+    }
+
+    for (let i = 0; i < yarnReturns.length; i++) {
+      const ret = yarnReturns[i];
+      const retQty = parseFloat(ret.quantity_returned || 0);
+      if (isNaN(retQty) || retQty < 0) {
+        alert(`Please enter a valid return quantity for Colour ${ret.colour}, Lot ${ret.lot_number}`);
+        return;
+      }
+      if (retQty > ret.quantity_received) {
+        alert(`Return quantity (${retQty} kg) cannot exceed received quantity (${ret.quantity_received} kg) for Colour ${ret.colour}, Lot ${ret.lot_number}`);
+        return;
+      }
+    }
+
     setSaving(true);
     try {
+      const wofdcNumber = wofDetail.wof_number.replace('/WOF/', '/WOFDC/') + '/1';
+
+      const updatedSplits = completeSplits.map(s => {
+        const beam = beams.find(b => b.id === s.beam_id);
+        return {
+          ...s,
+          qty: parseFloat(s.qty),
+          beam_name: beam ? beam.beam_name : s.beam_name
+        };
+      });
+
+      // Update Warping Order Form
       const { error } = await supabase
         .from('warping_order_forms')
         .update({
           status: 'completed',
           process_completed_at: new Date(completeDate).toISOString(),
+          warp_splits: updatedSplits,
+          yarn_returns: yarnReturns,
+          wofdc_number: wofdcNumber,
           updated_at: new Date().toISOString()
         })
         .eq('id', wof.id);
 
       if (error) throw error;
+
+      // Update corresponding Sizing Order Forms
+      const { data: siblingSofs, error: sofFetchError } = await supabase
+        .from('sizing_order_forms')
+        .select('id, sof_number')
+        .eq('wof_id', wof.id);
+
+      if (sofFetchError) throw sofFetchError;
+
+      if (siblingSofs && siblingSofs.length > 0) {
+        const sortedSiblings = [...siblingSofs].sort((a, b) => a.sof_number.localeCompare(b.sof_number));
+        for (let i = 0; i < sortedSiblings.length; i++) {
+          const splitData = updatedSplits[i];
+          if (splitData) {
+            const { error: sofUpdateErr } = await supabase
+              .from('sizing_order_forms')
+              .update({
+                qty: parseFloat(splitData.qty),
+                beam_id: splitData.beam_id || null,
+                beam_name: splitData.beam_name || null,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', sortedSiblings[i].id);
+            if (sofUpdateErr) throw sofUpdateErr;
+          }
+        }
+      }
+
+      await fetchDetails();
       onStatusChanged();
+      setShowCompleteForm(false);
+      setShowWofdcReceipt(true);
     } catch (err) {
       console.error('Error completing process:', err);
       alert('Failed to complete process: ' + err.message);
@@ -1305,6 +1518,58 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
 
             </div>
 
+            {/* ── Forwarded Details & Split Configuration ── */}
+            {detail.forwarded_to && (
+              <div style={{
+                marginBottom: '1.5rem',
+                padding: '1.25rem',
+                backgroundColor: 'rgba(14,165,233,0.02)',
+                border: '1px solid rgba(14,165,233,0.2)',
+                borderRadius: '12px'
+              }}>
+                <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', fontWeight: '800', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  ✈️ Forwarding & Split Configuration
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                  <InfoField label="Forwarded Process" value={detail.forwarded_to.toUpperCase()} highlight />
+                  {detail.forwarded_to === 'sizing' && (
+                    <InfoField label="Sizing Type" value={detail.sizing_type === 'in_house' ? 'In-House' : 'Job Work'} />
+                  )}
+                  <InfoField label="Number of Splits" value={detail.warp_splits_count} />
+                </div>
+
+                <div style={{ border: '1px solid var(--border-current)', borderRadius: '10px', overflow: 'hidden', backgroundColor: '#fff' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#f0f9ff', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                        {['Warp / SOF Number', 'Quantity (Mtrs)', 'Start Date', 'End Date'].map(h => (
+                          <th key={h} style={{ padding: '0.55rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(detail.warp_splits || []).map((split, sIdx) => (
+                        <tr key={sIdx} style={{ borderBottom: sIdx < (detail.warp_splits.length - 1) ? '1px solid var(--border-current)' : 'none' }}>
+                          <td style={{ padding: '0.55rem 0.75rem', fontWeight: '700', fontFamily: 'monospace', color: '#0ea5e9' }}>
+                            {split.warp_no}
+                          </td>
+                          <td style={{ padding: '0.55rem 0.75rem', fontWeight: '600' }}>
+                            {Number(split.qty).toLocaleString()}
+                          </td>
+                          <td style={{ padding: '0.55rem 0.75rem' }}>
+                            {split.start_date ? new Date(split.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                          </td>
+                          <td style={{ padding: '0.55rem 0.75rem' }}>
+                            {split.end_date ? new Date(split.end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* ── Colour / Count Allotment Table ── */}
             <div style={{ marginBottom: '1.5rem' }}>
               <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', fontWeight: '800', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -1420,11 +1685,9 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
                         <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
                           Warper Name *
                         </label>
-                        <input
-                          type="text"
+                        <select
                           value={warperName}
                           onChange={e => setWarperName(e.target.value)}
-                          placeholder="Enter warper name"
                           style={{
                             width: '100%',
                             padding: '0.6rem 0.75rem',
@@ -1434,9 +1697,16 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
                             fontWeight: '600',
                             outline: 'none',
                             transition: 'border-color 0.15s',
-                            boxSizing: 'border-box'
+                            boxSizing: 'border-box',
+                            backgroundColor: '#fff',
+                            cursor: 'pointer'
                           }}
-                        />
+                        >
+                          <option value="">Select warper...</option>
+                          {warpingWorkers.map(w => (
+                            <option key={w.id} value={w.worker_name}>{w.worker_name}</option>
+                          ))}
+                        </select>
                       </div>
 
                       {/* Beam Number */}
@@ -1595,8 +1865,8 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
                       Complete Process
                     </h3>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '1rem', maxWidth: '300px' }}>
-                      {/* Date and Time */}
+                    {/* Date and Time */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '1.25rem', maxWidth: '300px' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
                           Completion Date & Time *
@@ -1617,6 +1887,143 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
                           }}
                         />
                       </div>
+                    </div>
+
+                    {/* Warp Splits Configuration */}
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#800000', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Warp Split Configurations
+                      </h4>
+                      <div style={{ border: '1px solid var(--border-current)', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#fff' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                          <thead>
+                            <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Warp Split</th>
+                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Beam Number *</th>
+                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Actual Quantity (Mtrs) *</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {completeSplits.map((split, index) => (
+                              <tr key={index} style={{ borderBottom: index < (completeSplits.length - 1) ? '1px solid var(--border-current)' : 'none' }}>
+                                <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', fontFamily: 'monospace', color: '#800000' }}>
+                                  {split.warp_no}
+                                </td>
+                                <td style={{ padding: '0.5rem 0.75rem' }}>
+                                  <select
+                                    value={split.beam_id}
+                                    onChange={e => {
+                                      const updated = [...completeSplits];
+                                      updated[index].beam_id = e.target.value;
+                                      setCompleteSplits(updated);
+                                    }}
+                                    style={{
+                                      padding: '0.4rem 0.5rem',
+                                      borderRadius: '6px',
+                                      border: '1.5px solid var(--border-current)',
+                                      fontSize: '0.78rem',
+                                      width: '100%',
+                                      outline: 'none'
+                                    }}
+                                  >
+                                    <option value="">Select Beam</option>
+                                    {beams.map(b => (
+                                      <option key={b.id} value={b.id}>{b.beam_name}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td style={{ padding: '0.5rem 0.75rem' }}>
+                                  <input
+                                    type="number"
+                                    value={split.qty}
+                                    onChange={e => {
+                                      const updated = [...completeSplits];
+                                      updated[index].qty = e.target.value;
+                                      setCompleteSplits(updated);
+                                    }}
+                                    style={{
+                                      padding: '0.4rem 0.5rem',
+                                      borderRadius: '6px',
+                                      border: '1.5px solid var(--border-current)',
+                                      fontSize: '0.78rem',
+                                      width: '100%',
+                                      boxSizing: 'border-box',
+                                      outline: 'none'
+                                    }}
+                                    placeholder="Enter Quantity"
+                                  />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Dyed Yarn Return Details */}
+                    <div style={{ marginBottom: '1.5rem' }}>
+                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#800000', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Dyed Yarn Return Details (Excess Returns)
+                      </h4>
+                      {yarnReturns.length === 0 ? (
+                        <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted-current)', border: '1px dashed var(--border-current)', borderRadius: '8px', backgroundColor: '#fff' }}>
+                          No dyed yarn received for this process.
+                        </div>
+                      ) : (
+                        <div style={{ border: '1px solid var(--border-current)', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#fff' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                            <thead>
+                              <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Colour</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Count</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Lot Number</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Received (kg)</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', width: '130px' }}>Return Qty (kg)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {yarnReturns.map((item, idx) => (
+                                <tr key={idx} style={{ borderBottom: idx < (yarnReturns.length - 1) ? '1px solid var(--border-current)' : 'none' }}>
+                                  <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>
+                                    {item.colour}
+                                  </td>
+                                  <td style={{ padding: '0.5rem 0.75rem' }}>
+                                    {item.count_display}
+                                  </td>
+                                  <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace' }}>
+                                    {item.lot_number}
+                                  </td>
+                                  <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '600' }}>
+                                    {Number(item.quantity_received).toFixed(2)}
+                                  </td>
+                                  <td style={{ padding: '0.5rem 0.75rem' }}>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={item.quantity_returned}
+                                      onChange={e => {
+                                        const updated = [...yarnReturns];
+                                        updated[idx].quantity_returned = e.target.value;
+                                        setYarnReturns(updated);
+                                      }}
+                                      style={{
+                                        padding: '0.4rem 0.5rem',
+                                        borderRadius: '6px',
+                                        border: '1.5px solid var(--border-current)',
+                                        fontSize: '0.78rem',
+                                        width: '100%',
+                                        boxSizing: 'border-box',
+                                        outline: 'none'
+                                      }}
+                                      placeholder="0.00"
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
@@ -1741,6 +2148,16 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
               </div>
             )}
 
+            {/* Show Printable WOFDC Delivery Receipt if completed */}
+            {detail.status === 'completed' && (
+              <PrintableWOFDC 
+                wof={detail} 
+                order={detail.order} 
+                splits={detail.warp_splits || []} 
+                yarnReturns={detail.yarn_returns || []} 
+              />
+            )}
+
           </div>
         )}
       </div>
@@ -1825,6 +2242,7 @@ function calcBarPosition(wof, days) {
 function JobWorkTable() {
   const [wofs, setWofs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedWof, setSelectedWof] = useState(null);
 
   useEffect(() => {
     fetchJobWorkWofs();
@@ -1899,7 +2317,16 @@ function JobWorkTable() {
             {wofs.map(wof => {
               const sc = getStatusColor(wof.status);
               return (
-                <tr key={wof.id} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: '#fff' }}>
+                <tr
+                  key={wof.id}
+                  onClick={() => setSelectedWof(wof)}
+                  style={{
+                    borderBottom: '1px solid var(--border-current)',
+                    backgroundColor: '#fff',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s'
+                  }}
+                >
                   <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: '#800000', fontFamily: 'monospace' }}>
                     {wof.wof_number}
                   </td>
@@ -1938,76 +2365,1381 @@ function JobWorkTable() {
           </tbody>
         </table>
       </div>
+
+      {selectedWof && (
+        <WofDetailModal
+          wof={selectedWof}
+          onClose={() => setSelectedWof(null)}
+          onStatusChanged={() => {
+            setSelectedWof(null);
+            fetchJobWorkWofs();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-// ─── Sizing Tab (Premium Placeholder) ────────────────────────────────────────
+// ─── Sizing Tab helpers ──────────────────────────────────────────────────────
 
-function SizingTab() {
+function getSofStatusBadge(sof) {
+  const todayStr = getLocalDateString(new Date());
+  const sc = getStatusColor(sof.status);
+
+  if (sof.status === 'completed') {
+    const actualEndStr = sof.process_completed_at
+      ? getLocalDateString(sof.process_completed_at)
+      : (getLocalDateString(sof.updated_at) || todayStr);
+    if (sof.end_date && actualEndStr > sof.end_date) {
+      return { label: 'Late Completed', bg: '#fee2e2', border: '#fca5a5', text: '#b91c1c' };
+    }
+    return { label: 'Completed', bg: '#dcfce7', border: '#22c55e', text: '#166534' };
+  }
+
+  if (sof.status === 'on_process') {
+    if (sof.end_date && todayStr > sof.end_date) {
+      return { label: 'Running Late', bg: '#fee2e2', border: '#fca5a5', text: '#b91c1c' };
+    }
+    return { label: 'On Process', bg: '#dbeafe', border: '#3b82f6', text: '#1d4ed8' };
+  }
+
+  if (sof.status === 'created') {
+    if (sof.end_date && todayStr > sof.end_date) {
+      return { label: 'Late', bg: '#fee2e2', border: '#fca5a5', text: '#b91c1c' };
+    }
+    return { label: 'Created', bg: '#fef9c3', border: '#eab308', text: '#854d0e' };
+  }
+
+  return sc;
+}
+
+function SofDetailModal({ sof, onClose, onStatusChanged }) {
+  const [loading, setLoading] = useState(true);
+  const [sofDetail, setSofDetail] = useState(null);
+  const [sizerName, setSizerName] = useState('');
+  const [sizingWorkers, setSizingWorkers] = useState([]);
+  const [processDate, setProcessDate] = useState(() => {
+    const tzoffset = (new Date()).getTimezoneOffset() * 60000;
+    const localISOTime = (new Date(Date.now() - tzoffset)).toISOString().slice(0, 16);
+    return localISOTime;
+  });
+  const [saving, setSaving] = useState(false);
+  const [showCompleteForm, setShowCompleteForm] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [completeDate, setCompleteDate] = useState(() => {
+    const tzoffset = (new Date()).getTimezoneOffset() * 60000;
+    return (new Date(Date.now() - tzoffset)).toISOString().slice(0, 16);
+  });
+
+  useEffect(() => {
+    fetchDetails();
+  }, [sof.id]);
+
+  const fetchDetails = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('sizing_order_forms')
+        .select(`
+          *,
+          order:orders(id, order_number, design_no, design_name, total_quantity),
+          machine:master_machines!sizing_order_forms_machine_id_fkey(machine_name),
+          partner:master_partners!sizing_order_forms_partner_id_fkey(partner_name),
+          wof:warping_order_forms(wof_number, warp_splits_count)
+        `)
+        .eq('id', sof.id)
+        .single();
+      if (error) throw error;
+      setSofDetail(data);
+
+      // Fetch sizing workers
+      try {
+        const { data: deptData } = await supabase
+          .from('master_departments')
+          .select('id')
+          .ilike('department_name', '%sizing%');
+          
+        const sizingDeptIds = (deptData || []).map(d => d.id);
+        
+        if (sizingDeptIds.length > 0) {
+          const { data: workersData } = await supabase
+            .from('master_workers')
+            .select('*')
+            .in('department_id', sizingDeptIds)
+            .order('worker_name', { ascending: true });
+          setSizingWorkers(workersData || []);
+        }
+      } catch (err) {
+        console.error('Error fetching sizing workers:', err);
+      }
+    } catch (err) {
+      console.error('Error fetching SOF details:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartProcess = async () => {
+    if (!sizerName.trim()) {
+      alert('Please enter the Sizer Name');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('sizing_order_forms')
+        .update({
+          status: 'on_process',
+          sizer_name: sizerName.trim(),
+          process_started_at: new Date(processDate).toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sof.id);
+
+      if (error) throw error;
+      await fetchDetails();
+      onStatusChanged();
+    } catch (err) {
+      console.error('Error starting sizing process:', err);
+      alert('Failed to start process: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCompleteProcess = async () => {
+    if (!completeDate) {
+      alert('Please enter the completion date and time');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('sizing_order_forms')
+        .update({
+          status: 'completed',
+          process_completed_at: new Date(completeDate).toISOString(),
+          sofdc_number: sof.sof_number.replace('/SOF/', '/SOFDC/') + '/1',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sof.id);
+
+      if (error) throw error;
+      await fetchDetails();
+      onStatusChanged();
+      setShowCompleteForm(false);
+    } catch (err) {
+      console.error('Error completing sizing process:', err);
+      alert('Failed to complete process: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStopProcess = async () => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('sizing_order_forms')
+        .update({
+          status: 'stopped',
+          sofdc_number: sof.sof_number.replace('/SOF/', '/SOFDC/') + '/1',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sof.id);
+
+      if (error) throw error;
+      await fetchDetails();
+      onStatusChanged();
+      setShowStopConfirm(false);
+    } catch (err) {
+      console.error('Error stopping sizing process:', err);
+      alert('Failed to stop process: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 100,
+        backgroundColor: 'rgba(15,23,42,0.3)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }}>
+        <div style={{ backgroundColor: '#fff', padding: '2rem', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: '600' }}>
+          <Loader className="spin" size={18} /> Loading details...
+        </div>
+      </div>
+    );
+  }
+
+  if (!sofDetail) return null;
+
+  const sc = getSofStatusBadge(sofDetail);
+
   return (
     <div style={{
-      padding: '4rem 2rem',
-      textAlign: 'center',
-      backgroundColor: 'var(--surface-current)',
-      border: '1px solid var(--border-current)',
-      borderRadius: '16px',
-      position: 'relative',
-      overflow: 'hidden'
-    }}>
-      {/* Decorative gradient */}
+      position: 'fixed', inset: 0, zIndex: 100,
+      backgroundColor: 'rgba(15,23,42,0.3)', backdropFilter: 'blur(4px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '1rem'
+    }} onClick={onClose}>
       <div style={{
-        position: 'absolute', top: 0, right: 0,
-        width: '200px', height: '200px',
-        borderRadius: '0 16px 0 200px',
-        background: 'rgba(14,165,233,0.06)',
-        pointerEvents: 'none'
-      }} />
-      <div style={{
-        position: 'absolute', bottom: 0, left: 0,
-        width: '150px', height: '150px',
-        borderRadius: '0 150px 0 16px',
-        background: 'rgba(14,165,233,0.04)',
-        pointerEvents: 'none'
-      }} />
-
-      <div style={{
-        width: '72px', height: '72px',
+        backgroundColor: '#fff',
         borderRadius: '16px',
-        background: 'linear-gradient(135deg, rgba(14,165,233,0.12), rgba(14,165,233,0.04))',
-        border: '1.5px solid rgba(14,165,233,0.2)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        margin: '0 auto 1.5rem'
-      }}>
-        <Package size={34} color="#0ea5e9" />
+        width: '100%',
+        maxWidth: '860px',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+        border: '1px solid var(--border-current)',
+        padding: '1.5rem'
+      }} onClick={e => e.stopPropagation()}>
+        
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+          <div>
+            <h2 style={{ fontSize: '1.1rem', fontWeight: '900', color: '#800000', margin: 0, fontFamily: 'monospace' }}>
+              {sofDetail.sof_number} {sofDetail.beam_name ? `(Beam: ${sofDetail.beam_name})` : ''}
+            </h2>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted-current)', marginTop: '2px', fontWeight: '600' }}>
+              Sizing Order Form Details
+            </div>
+          </div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted-current)' }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Info Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+          <InfoField label="Status" value={
+            <span style={{
+              backgroundColor: sc.bg, color: sc.text,
+              border: `1px solid ${sc.border}`,
+              padding: '2px 8px', borderRadius: '12px',
+              fontSize: '0.68rem', fontWeight: '800'
+            }}>
+              {sc.label}
+            </span>
+          } />
+          <InfoField label="Sizing Type" value={sofDetail.sizing_type === 'in_house' ? 'In-House' : 'Job Work'} />
+          <InfoField label="Warping Reference (WOF)" value={<span style={{ fontFamily: 'monospace', fontWeight: '700' }}>{sofDetail.wof?.wof_number || '—'}</span>} />
+          <InfoField label="Order Number" value={<span style={{ fontFamily: 'monospace', fontWeight: '700' }}>{sofDetail.order?.order_number || '—'}</span>} />
+          <InfoField label="Design Number" value={sofDetail.order?.design_no || '—'} />
+          <InfoField label="Design Name" value={sofDetail.order?.design_name || '—'} />
+          <InfoField label="Quantity (Mtrs)" value={Number(sofDetail.qty).toLocaleString()} highlight />
+          <InfoField label="Timeline" value={`${sofDetail.start_date || '—'} to ${sofDetail.end_date || '—'}`} />
+          {sofDetail.sizing_type === 'in_house' ? (
+            <InfoField label="Machine" value={sofDetail.machine_name || '—'} />
+          ) : (
+            <InfoField label="Partner" value={sofDetail.partner_name || '—'} />
+          )}
+          <InfoField label="Beam Number" value={<span style={{ fontWeight: '700' }}>{sofDetail.beam_name || '—'}</span>} />
+        </div>
+
+        {/* Weaving Forwarding Section */}
+        {sofDetail.forwarded_to === 'weaving' && (
+          <div style={{
+            borderTop: '1px solid var(--border-current)',
+            paddingTop: '1.25rem',
+            marginTop: '1rem',
+            marginBottom: '1.25rem'
+          }}>
+            <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', fontWeight: '800', color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <span>→</span> Forwarded to Weaving
+            </h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem', marginBottom: '1rem', fontSize: '0.8rem' }}>
+              <InfoField label="Weaving Type" value={sofDetail.weaving_type === 'in_house' ? 'In-House Weaving' : 'Job Work Weaving'} />
+              <InfoField
+                label={sofDetail.weaving_type === 'in_house' ? 'Weaving Loom' : 'Weaving Partner'}
+                value={sofDetail.weaving_type === 'in_house' ? (sofDetail.weaving_machine_name || '—') : (sofDetail.weaving_partner_name || '—')}
+              />
+            </div>
+
+            {sofDetail.weaving_splits && sofDetail.weaving_splits.length > 0 && (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
+                  Weaving Splits ({sofDetail.weaving_splits_count})
+                </label>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem', textAlign: 'left', border: '1px solid var(--border-current)', borderRadius: '8px', overflow: 'hidden' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border-current)' }}>
+                      <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>Split Number</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>Qty (Mtrs)</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>Schedule</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sofDetail.weaving_splits.map((ws, idx) => (
+                      <tr key={idx} style={{ borderBottom: idx !== sofDetail.weaving_splits.length - 1 ? '1px solid var(--border-current)' : 'none' }}>
+                        <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace', fontWeight: '700' }}>{ws.split_no}</td>
+                        <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>{Number(ws.qty).toLocaleString()} m</td>
+                        <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted-current)' }}>
+                          {ws.start_date ? new Date(ws.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'} to{' '}
+                          {ws.end_date ? new Date(ws.end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Start Process Actions Section ── */}
+        {sofDetail.status === 'created' && (
+          <div style={{
+            borderTop: '1px solid var(--border-current)',
+            paddingTop: '1.25rem',
+            marginTop: '1rem',
+            marginBottom: '1rem'
+          }}>
+            <div style={{
+              padding: '1.25rem',
+              backgroundColor: '#fafafa',
+              borderRadius: '12px',
+              border: '1px solid var(--border-current)'
+            }}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Play size={16} />
+                Start Sizing Process
+              </h3>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                {/* Sizer Name */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
+                    Sizer Name *
+                  </label>
+                  <select
+                    value={sizerName}
+                    onChange={e => setSizerName(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.6rem 0.75rem',
+                      border: '1.5px solid var(--border-current)',
+                      borderRadius: '8px',
+                      fontSize: '0.85rem',
+                      fontWeight: '600',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      backgroundColor: '#fff',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="">Select sizer...</option>
+                    {sizingWorkers.map(w => (
+                      <option key={w.id} value={w.worker_name}>{w.worker_name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Start Date and Time */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
+                    Actual Start Date & Time *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={processDate}
+                    onChange={e => setProcessDate(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.6rem 0.75rem',
+                      border: '1.5px solid var(--border-current)',
+                      borderRadius: '8px',
+                      fontSize: '0.85rem',
+                      fontWeight: '600',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={onClose}
+                  disabled={saving}
+                  style={{
+                    padding: '0.6rem 1.25rem',
+                    border: '1.5px solid var(--border-current)',
+                    borderRadius: '8px',
+                    backgroundColor: '#fff',
+                    cursor: 'pointer',
+                    fontSize: '0.82rem',
+                    fontWeight: '600',
+                    color: 'var(--text-muted-current)'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleStartProcess}
+                  disabled={saving}
+                  style={{
+                    padding: '0.6rem 1.5rem',
+                    border: 'none',
+                    borderRadius: '8px',
+                    backgroundColor: '#800000',
+                    color: '#fff',
+                    cursor: saving ? 'wait' : 'pointer',
+                    fontSize: '0.82rem',
+                    fontWeight: '700',
+                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                    boxShadow: '0 3px 10px rgba(128,0,0,0.2)',
+                    opacity: saving ? 0.7 : 1
+                  }}
+                >
+                  {saving ? <Loader size={14} className="spin" /> : <Play size={14} />}
+                  {saving ? 'Starting...' : 'Confirm & Start'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Show sizer info if already on process or completed */}
+        {(sofDetail.status === 'on_process' || sofDetail.status === 'completed') && sofDetail.sizer_name && (
+          <div style={{
+            borderTop: '1px solid var(--border-current)',
+            paddingTop: '1rem',
+            display: 'flex', alignItems: 'center', gap: '1rem',
+            fontSize: '0.82rem', color: 'var(--text-current)',
+            flexWrap: 'wrap',
+            marginTop: '1rem',
+            marginBottom: '1rem'
+          }}>
+            <div style={{
+              padding: '0.5rem 1rem',
+              backgroundColor: sofDetail.status === 'completed' ? '#dcfce7' : '#dbeafe',
+              border: sofDetail.status === 'completed' ? '1px solid #86efac' : '1px solid #93c5fd',
+              borderRadius: '8px',
+              display: 'flex', alignItems: 'center', gap: '0.4rem'
+            }}>
+              {sofDetail.status === 'completed' ? <CheckCircle size={14} color="#166534" /> : <Play size={14} color="#1d4ed8" />}
+              <span style={{ fontWeight: '700', color: sofDetail.status === 'completed' ? '#166534' : '#1d4ed8' }}>
+                {sofDetail.status === 'completed' ? 'Sizing Completed' : 'Sizing Started'}
+              </span>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Sizer:</span>{' '}
+              <strong>{sofDetail.sizer_name}</strong>
+            </div>
+            {sofDetail.process_started_at && (
+              <div>
+                <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Started:</span>{' '}
+                <strong>{new Date(sofDetail.process_started_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong>
+              </div>
+            )}
+            {sofDetail.process_completed_at && (
+              <div>
+                <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Completed:</span>{' '}
+                <strong>{new Date(sofDetail.process_completed_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Sizing process is on_process - show Complete / Stop actions */}
+        {sofDetail.status === 'on_process' && (
+          <div style={{
+            borderTop: '1px solid var(--border-current)',
+            paddingTop: '1.25rem',
+            marginTop: '1rem',
+            marginBottom: '1rem'
+          }}>
+            {!showCompleteForm && !showStopConfirm ? (
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  onClick={() => setShowCompleteForm(true)}
+                  style={{
+                    flex: 1,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                    padding: '0.65rem 1.25rem',
+                    backgroundColor: '#166534',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '0.82rem',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    boxShadow: '0 4px 10px rgba(22,101,52,0.15)'
+                  }}
+                >
+                  <CheckCircle size={15} />
+                  Complete Process
+                </button>
+                <button
+                  onClick={() => setShowStopConfirm(true)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                    padding: '0.65rem 1.25rem',
+                    backgroundColor: '#fff',
+                    color: '#c2410c',
+                    border: '1.5px solid #fdba74',
+                    borderRadius: '8px',
+                    fontSize: '0.82rem',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <AlertTriangle size={15} />
+                  Stop Process
+                </button>
+              </div>
+            ) : showCompleteForm ? (
+              <div style={{
+                padding: '1.25rem',
+                backgroundColor: '#f6fdf9',
+                borderRadius: '12px',
+                border: '1px solid #bbf7d0'
+              }}>
+                <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#166534', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <CheckCircle size={16} />
+                  Complete Sizing Process
+                </h3>
+
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
+                    Actual Completion Date & Time *
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={completeDate}
+                    onChange={e => setCompleteDate(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.6rem 0.75rem',
+                      border: '1.5px solid #bbf7d0',
+                      borderRadius: '8px',
+                      fontSize: '0.85rem',
+                      fontWeight: '600',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setShowCompleteForm(false)}
+                    disabled={saving}
+                    style={{
+                      padding: '0.6rem 1.25rem',
+                      border: '1.5px solid #bbf7d0',
+                      borderRadius: '8px',
+                      backgroundColor: '#fff',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: '600',
+                      color: '#166534'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCompleteProcess}
+                    disabled={saving}
+                    style={{
+                      padding: '0.6rem 1.5rem',
+                      border: 'none',
+                      borderRadius: '8px',
+                      backgroundColor: '#166534',
+                      color: '#fff',
+                      cursor: saving ? 'wait' : 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: '700',
+                      display: 'flex', alignItems: 'center', gap: '0.4rem',
+                      boxShadow: '0 3px 10px rgba(22,101,52,0.2)',
+                      opacity: saving ? 0.7 : 1
+                    }}
+                  >
+                    {saving ? <Loader size={14} className="spin" /> : <CheckCircle size={14} />}
+                    {saving ? 'Completing...' : 'Confirm & Complete'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{
+                padding: '1.25rem',
+                backgroundColor: '#fff7ed',
+                borderRadius: '12px',
+                border: '1px solid #fed7aa'
+              }}>
+                <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <AlertTriangle size={16} />
+                  Stop Sizing Process
+                </h3>
+
+                <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.82rem', color: '#9a3412', fontWeight: '500', lineHeight: '1.5' }}>
+                  Are you sure you want to stop this sizing process? This will change the status of this form to <strong>Stopped</strong>.
+                </p>
+
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setShowStopConfirm(false)}
+                    disabled={saving}
+                    style={{
+                      padding: '0.6rem 1.25rem',
+                      border: '1.5px solid #fed7aa',
+                      borderRadius: '8px',
+                      backgroundColor: '#fff',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: '600',
+                      color: '#c2410c'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleStopProcess}
+                    disabled={saving}
+                    style={{
+                      padding: '0.6rem 1.5rem',
+                      border: 'none',
+                      borderRadius: '8px',
+                      backgroundColor: '#ea580c',
+                      color: '#fff',
+                      cursor: saving ? 'wait' : 'pointer',
+                      fontSize: '0.82rem',
+                      fontWeight: '700',
+                      display: 'flex', alignItems: 'center', gap: '0.4rem',
+                      boxShadow: '0 3px 10px rgba(234,88,12,0.2)',
+                      opacity: saving ? 0.7 : 1
+                    }}
+                  >
+                    {saving ? <Loader size={14} className="spin" /> : <AlertTriangle size={14} />}
+                    {saving ? 'Stopping...' : 'Yes, Stop Process'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(sofDetail.status === 'completed' || sofDetail.status === 'stopped') && (
+          <PrintableSOFDC 
+            sof={sofDetail} 
+            order={sofDetail.order} 
+            machineName={sofDetail.machine?.machine_name || sofDetail.machine_name} 
+            partnerName={sofDetail.partner?.partner_name || sofDetail.partner_name}
+          />
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-current)', paddingTop: '1rem' }}>
+          <button onClick={onClose} style={{
+            padding: '0.5rem 1.5rem',
+            backgroundColor: '#800000',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '0.82rem',
+            fontWeight: '700',
+            cursor: 'pointer'
+          }}>
+            Close
+          </button>
+        </div>
       </div>
+    </div>
+  );
+}
 
-      <h2 style={{
-        margin: '0 0 0.75rem 0', fontSize: '1.35rem',
-        fontWeight: '800', color: 'var(--text-current)'
-      }}>
-        Sizing Module
-      </h2>
-      <p style={{
-        margin: '0 auto', maxWidth: '460px',
-        color: 'var(--text-muted-current)',
-        fontSize: '0.9rem', lineHeight: '1.6'
-      }}>
-        Manage sizing processes for warp beams — track starch recipes, machine allocations, and beam handover records. This module is currently being developed and will be available soon.
-      </p>
+// ─── Sizing Tab ──────────────────────────────────────────────────────────────
 
+function SizingTab() {
+  return <InHouseSizingGantt />;
+}
+
+function InHouseSizingGantt() {
+  const [machines, setMachines] = useState([]);
+  const [sofs, setSofs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedSof, setSelectedSof] = useState(null);
+  const [expandedMachines, setExpandedMachines] = useState({});
+
+  // Date window: starts 3 days before today
+  const [windowStart, setWindowStart] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 3);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+
+  const days = useMemo(() => getDaysArray(windowStart, TOTAL_DAYS), [windowStart]);
+
+  const monthGroups = useMemo(() => {
+    const groups = [];
+    let current = null;
+    days.forEach(d => {
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      if (!current || current.key !== key) {
+        current = { key, label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`, count: 1 };
+        groups.push(current);
+      } else {
+        current.count++;
+      }
+    });
+    return groups;
+  }, [days]);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Fetch sizing department machines (in-house)
+      const { data: deptData } = await supabase
+        .from('master_departments')
+        .select('id')
+        .ilike('department_name', '%sizing%');
+
+      const sizingDeptIds = (deptData || []).map(d => d.id);
+
+      let machineData = [];
+      if (sizingDeptIds.length > 0) {
+        const { data } = await supabase
+          .from('master_machines')
+          .select('*, master_departments(department_name)')
+          .in('department_id', sizingDeptIds)
+          .eq('scope', 'in_house')
+          .order('machine_name');
+        machineData = data || [];
+      }
+
+      // Fallback
+      if (machineData.length === 0) {
+        const { data } = await supabase
+          .from('master_machines')
+          .select('*, master_departments(department_name)')
+          .eq('scope', 'in_house')
+          .order('machine_name');
+        machineData = data || [];
+      }
+
+      setMachines(machineData);
+
+      // Fetch all in-house SOFs
+      const { data: sofData } = await supabase
+        .from('sizing_order_forms')
+        .select(`
+          *,
+          order:orders(order_number, design_no, design_name)
+        `)
+        .eq('sizing_type', 'in_house')
+        .order('start_date', { ascending: true });
+
+      setSofs(sofData || []);
+    } catch (err) {
+      console.error('Error fetching Gantt data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sofsByMachine = useMemo(() => {
+    const map = {};
+    sofs.forEach(s => {
+      if (!s.machine_id) return;
+      if (!map[s.machine_id]) map[s.machine_id] = [];
+      map[s.machine_id].push(s);
+    });
+    return map;
+  }, [sofs]);
+
+  const slideWindow = (direction) => {
+    setWindowStart(prev => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() + (direction * 7));
+      return d;
+    });
+  };
+
+  const goToToday = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 3);
+    d.setHours(0, 0, 0, 0);
+    setWindowStart(d);
+  };
+
+  const toggleMachine = (machineId) => {
+    setExpandedMachines(prev => ({ ...prev, [machineId]: !prev[machineId] }));
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem', color: 'var(--text-muted-current)', alignItems: 'center', gap: '0.75rem' }}>
+        <Loader size={22} className="spin" /> Loading Gantt chart...
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Date Navigation Controls */}
       <div style={{
-        display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
-        marginTop: '2rem', padding: '0.5rem 1.25rem',
-        borderRadius: '20px',
-        backgroundColor: 'rgba(14,165,233,0.08)',
-        border: '1px solid rgba(14,165,233,0.2)',
-        color: '#0284c7',
-        fontSize: '0.78rem', fontWeight: '700'
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: '1rem', padding: '0.75rem 1rem',
+        backgroundColor: 'var(--surface-current)',
+        border: '1px solid var(--border-current)',
+        borderRadius: '10px'
       }}>
-        <Clock size={14} />
-        Coming Soon
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Calendar size={16} color="#800000" />
+          <span style={{ fontWeight: '700', fontSize: '0.9rem', color: 'var(--text-current)' }}>
+            {MONTH_NAMES[windowStart.getMonth()]} {windowStart.getDate()} – {(() => {
+              const end = new Date(windowStart);
+              end.setDate(end.getDate() + TOTAL_DAYS - 1);
+              return `${MONTH_NAMES[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
+            })()}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button
+            onClick={() => slideWindow(-1)}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px', borderRadius: '8px',
+              border: '1px solid var(--border-current)', background: 'var(--surface-current)',
+              cursor: 'pointer', color: 'var(--text-current)',
+              transition: 'all 0.15s'
+            }}
+            title="Previous 7 days"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            onClick={goToToday}
+            style={{
+              padding: '0.35rem 0.85rem', borderRadius: '8px',
+              border: '1px solid #800000', background: 'rgba(128,0,0,0.06)',
+              cursor: 'pointer', fontSize: '0.78rem', fontWeight: '700',
+              color: '#800000', transition: 'all 0.15s'
+            }}
+          >
+            Today
+          </button>
+          <button
+            onClick={() => slideWindow(1)}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px', borderRadius: '8px',
+              border: '1px solid var(--border-current)', background: 'var(--surface-current)',
+              cursor: 'pointer', color: 'var(--text-current)',
+              transition: 'all 0.15s'
+            }}
+            title="Next 7 days"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
+
+      {/* Legend */}
+      <div style={{
+        display: 'flex', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap',
+        fontSize: '0.72rem', fontWeight: '700'
+      }}>
+        {['created', 'on_process', 'completed', 'stopped'].map(s => {
+          const c = getStatusColor(s);
+          return (
+            <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <div style={{ width: '14px', height: '14px', borderRadius: '3px', backgroundColor: c.bg, border: `1.5px solid ${c.border}` }} />
+              <span style={{ color: c.text }}>{c.label}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Gantt Chart Container */}
+      <div style={{
+        border: '1px solid var(--border-current)',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        backgroundColor: '#fff'
+      }}>
+        <div style={{ overflowX: 'auto' }}>
+          <div style={{ minWidth: `${LABEL_COL_WIDTH + (DAY_COL_WIDTH * TOTAL_DAYS)}px` }}>
+
+            {/* ── Header: Month Row ── */}
+            <div style={{
+              display: 'flex',
+              borderBottom: '1px solid var(--border-current)',
+              backgroundColor: '#800000'
+            }}>
+              <div style={{
+                width: `${LABEL_COL_WIDTH}px`, minWidth: `${LABEL_COL_WIDTH}px`,
+                padding: '0.5rem 1rem', fontWeight: '800',
+                fontSize: '0.72rem', textTransform: 'uppercase',
+                color: 'rgba(255,255,255,0.9)',
+                display: 'flex', alignItems: 'center', gap: '0.4rem',
+                borderRight: '1px solid rgba(255,255,255,0.15)'
+              }}>
+                ⚙️ Sizing Machine
+              </div>
+              {monthGroups.map((mg, i) => (
+                <div key={i} style={{
+                  width: `${mg.count * DAY_COL_WIDTH}px`,
+                  minWidth: `${mg.count * DAY_COL_WIDTH}px`,
+                  padding: '0.5rem 0.5rem',
+                  fontWeight: '800', fontSize: '0.7rem',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  color: 'rgba(255,255,255,0.9)',
+                  textAlign: 'center',
+                  borderRight: '1px solid rgba(255,255,255,0.1)'
+                }}>
+                  {mg.label}
+                </div>
+              ))}
+            </div>
+
+            {/* ── Header: Day Row ── */}
+            <div style={{
+              display: 'flex',
+              borderBottom: '2px solid var(--border-current)',
+              backgroundColor: '#faf7f7'
+            }}>
+              <div style={{
+                width: `${LABEL_COL_WIDTH}px`, minWidth: `${LABEL_COL_WIDTH}px`,
+                borderRight: '1px solid var(--border-current)'
+              }} />
+              {days.map((d, i) => {
+                const today = isToday(d);
+                const isSunday = d.getDay() === 0;
+                return (
+                  <div key={i} style={{
+                    width: `${DAY_COL_WIDTH}px`, minWidth: `${DAY_COL_WIDTH}px`,
+                    textAlign: 'center', padding: '0.4rem 0',
+                    fontSize: '0.62rem', fontWeight: '700',
+                    borderRight: '1px solid #f0f0f0',
+                    backgroundColor: today ? 'rgba(128,0,0,0.08)' : isSunday ? '#fef2f2' : 'transparent',
+                    color: today ? '#800000' : isSunday ? '#dc2626' : 'var(--text-muted-current)'
+                  }}>
+                    <div style={{ fontSize: '0.58rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      {DAY_NAMES[d.getDay()]}
+                    </div>
+                    <div style={{ fontWeight: '800', fontSize: '0.78rem', marginTop: '1px' }}>
+                      {d.getDate()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ── Machine Rows ── */}
+            {machines.length === 0 ? (
+              <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted-current)', fontSize: '0.875rem' }}>
+                <AlertCircle size={24} style={{ margin: '0 auto 0.75rem', display: 'block', opacity: 0.5 }} />
+                No in-house sizing machines found. Please add machines in the Masters section and assign them to a Sizing department.
+              </div>
+            ) : (
+              machines.map(machine => {
+                const isExpanded = expandedMachines[machine.id];
+                const machineSofs = sofsByMachine[machine.id] || [];
+                const deptName = machine.master_departments?.department_name || '';
+
+                return (
+                  <div key={machine.id}>
+                    {/* Machine Header Row */}
+                    <div
+                      onClick={() => toggleMachine(machine.id)}
+                      style={{
+                        display: 'flex',
+                        borderBottom: '1px solid var(--border-current)',
+                        cursor: 'pointer',
+                        backgroundColor: isExpanded ? 'rgba(128,0,0,0.02)' : '#fafafa',
+                        transition: 'background-color 0.15s'
+                      }}
+                    >
+                      {/* Machine label */}
+                      <div style={{
+                        width: `${LABEL_COL_WIDTH}px`, minWidth: `${LABEL_COL_WIDTH}px`,
+                        padding: '0.65rem 1rem',
+                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+                        borderRight: '1px solid var(--border-current)',
+                        fontWeight: '700', fontSize: '0.82rem',
+                        color: 'var(--text-current)'
+                      }}>
+                        {isExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} style={{ transform: 'rotate(90deg)' }} />}
+                        <span>⚙️</span>
+                        <div style={{ flex: 1 }}>
+                          <div>{machine.machine_name}</div>
+                          {deptName && (
+                            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '600', marginTop: '1px' }}>
+                              {deptName}
+                            </div>
+                          )}
+                        </div>
+                        <span style={{
+                          backgroundColor: machineSofs.length > 0 ? 'rgba(128,0,0,0.1)' : '#f1f5f9',
+                          color: machineSofs.length > 0 ? '#800000' : '#94a3b8',
+                          padding: '2px 8px', borderRadius: '12px',
+                          fontSize: '0.65rem', fontWeight: '800'
+                        }}>
+                          {machineSofs.length} SOF{machineSofs.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+
+                      {/* Aggregated Gantt bars for the machine row */}
+                      {(() => {
+                        const { itemLanes, totalLanes } = allocateLanes(machineSofs);
+                        const LANE_HEIGHT = 28;
+                        const ROW_PADDING = 12;
+                        const rowHeight = totalLanes * LANE_HEIGHT + ROW_PADDING;
+
+                        return (
+                          <div style={{ display: 'flex', position: 'relative', flex: 1 }}>
+                            {days.map((d, i) => (
+                              <div key={i} style={{
+                                width: `${DAY_COL_WIDTH}px`, minWidth: `${DAY_COL_WIDTH}px`,
+                                borderRight: '1px solid #f5f5f5',
+                                backgroundColor: isToday(d) ? 'rgba(128,0,0,0.03)' : d.getDay() === 0 ? '#fefafa' : 'transparent',
+                                height: `${rowHeight}px`
+                              }} />
+                            ))}
+                            {/* Overlay bars for each SOF */}
+                            {machineSofs.map(sof => {
+                              const bar = calcBarPosition(sof, days);
+                              if (!bar) return null;
+                              const laneIdx = itemLanes[sof.id] || 0;
+                              return (
+                                <GanttBar
+                                  key={sof.id}
+                                  wof={{ ...sof, wof_number: sof.beam_name ? `${sof.sof_number} (${sof.beam_name})` : sof.sof_number }}
+                                  bar={bar}
+                                  compact
+                                  onWofClick={(s) => setSelectedSof(s)}
+                                  topOffset={`${6 + laneIdx * LANE_HEIGHT}px`}
+                                  customHeight={`${LANE_HEIGHT - 6}px`}
+                                />
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Expanded SOF Rows */}
+                    {isExpanded && machineSofs.map(sof => {
+                      const sc = getSofStatusBadge(sof);
+                      const todayStr = getLocalDateString(new Date());
+
+                      return (
+                        <div key={sof.id} style={{
+                          display: 'flex',
+                          borderBottom: '1px solid #f3f3f3',
+                          backgroundColor: '#fff',
+                          cursor: 'pointer',
+                          transition: 'background-color 0.15s',
+                          minHeight: '60px'
+                        }}
+                        onClick={() => setSelectedSof(sof)}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(128,0,0,0.01)'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
+                        >
+                          {/* SOF detail label */}
+                          <div
+                            onClick={(e) => { e.stopPropagation(); setSelectedSof(sof); }}
+                            style={{
+                            width: `${LABEL_COL_WIDTH}px`, minWidth: `${LABEL_COL_WIDTH}px`,
+                            padding: '0.55rem 1rem 0.55rem 2.25rem',
+                            borderRight: '1px solid var(--border-current)',
+                            borderLeft: '3px solid #800000',
+                            fontSize: '0.75rem'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.2rem' }}>
+                              <span style={{
+                                fontWeight: '800', color: '#800000',
+                                fontFamily: 'monospace', fontSize: '0.72rem'
+                              }}>
+                                {sof.sof_number} {sof.beam_name ? `(${sof.beam_name})` : ''}
+                              </span>
+                              <span style={{
+                                backgroundColor: sc.bg, color: sc.text,
+                                border: `1px solid ${sc.border}`,
+                                padding: '1px 6px', borderRadius: '10px',
+                                fontSize: '0.55rem', fontWeight: '700'
+                              }}>
+                                {sc.label}
+                              </span>
+                            </div>
+                            <div style={{ color: 'var(--text-muted-current)', fontSize: '0.68rem', lineHeight: '1.45' }}>
+                              <span style={{ fontWeight: '600' }}>Order:</span> {sof.order?.order_number || '—'}
+                              {' · '}
+                              <span style={{ fontWeight: '600' }}>Design:</span> {sof.order?.design_no || '—'}
+                              {sof.order?.design_name ? ` / ${sof.order.design_name}` : ''}
+                            </div>
+                            <div style={{ color: '#800000', fontWeight: '700', fontSize: '0.68rem', marginTop: '1px' }}>
+                              Qty: {sof.qty ? `${Number(sof.qty).toLocaleString()} m` : '—'}
+                            </div>
+                          </div>
+
+                          {/* SOF Gantt bar */}
+                          <div style={{ display: 'flex', position: 'relative', flex: 1, minHeight: '60px' }}>
+                            {days.map((d, i) => (
+                              <div key={i} style={{
+                                width: `${DAY_COL_WIDTH}px`, minWidth: `${DAY_COL_WIDTH}px`,
+                                borderRight: '1px solid #fafafa',
+                                backgroundColor: isToday(d) ? 'rgba(128,0,0,0.03)' : d.getDay() === 0 ? '#fefcfc' : 'transparent'
+                              }} />
+                            ))}
+                            {(() => {
+                              const actualEndStr = sof.status === 'completed'
+                                ? (getLocalDateString(sof.process_completed_at) || getLocalDateString(sof.updated_at) || todayStr)
+                                : todayStr;
+                              const exceeded = sof.end_date && actualEndStr > sof.end_date;
+
+                              // 1. Planned Bar
+                              const plannedBar = calcBarPositionForDates(sof.start_date, sof.end_date, days);
+                              const pBg = '#fef9c3';
+                              const pBorder = '#eab308';
+                              const pText = '#854d0e';
+
+                              // 2. Actual Bar
+                              const showActual = !!sof.process_started_at || sof.status === 'on_process' || sof.status === 'completed';
+                              let actualBar = null;
+                              let aBg = '';
+                              let aBorder = '';
+                              let aText = '';
+
+                              if (showActual) {
+                                const actualStartStr = getLocalDateString(sof.process_started_at) || sof.start_date || todayStr;
+                                actualBar = calcBarPositionForDates(actualStartStr, actualEndStr, days);
+                                
+                                if (sof.status === 'on_process') {
+                                  if (exceeded) {
+                                    aBg = '#fee2e2';
+                                    aBorder = '#ef4444';
+                                    aText = '#b91c1c';
+                                  } else {
+                                    aBg = '#dbeafe';
+                                    aBorder = '#3b82f6';
+                                    aText = '#1d4ed8';
+                                  }
+                                } else if (sof.status === 'completed') {
+                                  if (exceeded) {
+                                    aBg = '#fee2e2';
+                                    aBorder = '#ef4444';
+                                    aText = '#b91c1c';
+                                  } else {
+                                    aBg = '#dcfce7';
+                                    aBorder = '#22c55e';
+                                    aText = '#166534';
+                                  }
+                                } else {
+                                  const statusColor = getStatusColor(sof.status);
+                                  aBg = statusColor.bg;
+                                  aBorder = statusColor.border;
+                                  aText = statusColor.text;
+                                }
+                              }
+
+                              return (
+                                <>
+                                  {plannedBar && (
+                                    <GanttBar
+                                      key={`${sof.id}-planned`}
+                                      wof={{ ...sof, wof_number: sof.sof_number }}
+                                      bar={plannedBar}
+                                      onWofClick={(s) => setSelectedSof(s)}
+                                      customBg={pBg}
+                                      customBorder={pBorder}
+                                      customTextColor={pText}
+                                      customLabel={sof.beam_name ? `${sof.sof_number} (Plan) (${sof.beam_name})` : `${sof.sof_number} (Plan)`}
+                                      topOffset="6px"
+                                      customHeight="20px"
+                                      tooltipType="planned"
+                                    />
+                                  )}
+                                  {showActual && actualBar && (
+                                    <GanttBar
+                                      key={`${sof.id}-actual`}
+                                      wof={{ ...sof, wof_number: sof.sof_number }}
+                                      bar={actualBar}
+                                      onWofClick={(s) => setSelectedSof(s)}
+                                      customBg={aBg}
+                                      customBorder={aBorder}
+                                      customTextColor={aText}
+                                      customLabel={sof.beam_name ? `${sof.sof_number} (Actual) (${sof.beam_name})` : `${sof.sof_number} (Actual)`}
+                                      topOffset="32px"
+                                      customHeight="20px"
+                                      tooltipType="actual"
+                                    />
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* SOF Details Modal */}
+      {selectedSof && (
+        <SofDetailModal
+          sof={selectedSof}
+          onClose={() => setSelectedSof(null)}
+          onStatusChanged={() => {
+            fetchData();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function JobWorkSizingTable() {
+  const [sofs, setSofs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedSof, setSelectedSof] = useState(null);
+
+  useEffect(() => {
+    fetchJobWorkSofs();
+  }, []);
+
+  const fetchJobWorkSofs = async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from('sizing_order_forms')
+        .select(`
+          *,
+          order:orders(order_number, design_no, design_name),
+          wof:warping_order_forms(wof_number)
+        `)
+        .eq('sizing_type', 'job_work')
+        .order('created_at', { ascending: false });
+      setSofs(data || []);
+    } catch (err) {
+      console.error('Error fetching job work SOFs:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem', color: 'var(--text-muted-current)', alignItems: 'center', gap: '0.5rem' }}>
+        <Loader size={20} className="spin" /> Loading job work orders...
+      </div>
+    );
+  }
+
+  if (sofs.length === 0) {
+    return (
+      <div style={{
+        textAlign: 'center', padding: '4rem',
+        backgroundColor: 'var(--surface-current)',
+        border: '1px solid var(--border-current)',
+        borderRadius: '12px', color: 'var(--text-muted-current)'
+      }}>
+        <Package size={40} style={{ margin: '0 auto 1rem', display: 'block', opacity: 0.3 }} />
+        <p style={{ margin: 0, fontWeight: '600' }}>No job work sizing orders found.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      border: '1px solid var(--border-current)',
+      borderRadius: '12px', overflow: 'hidden'
+    }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+          <thead>
+            <tr style={{
+              backgroundColor: '#800000',
+              color: 'rgba(255,255,255,0.92)'
+            }}>
+              {['SOF Number', 'Warping Ref', 'Order Number', 'Design', 'Partner', 'Qty (m)', 'Start Date', 'End Date', 'Status'].map(h => (
+                <th key={h} style={{
+                  padding: '0.75rem 1rem', fontWeight: '800',
+                  fontSize: '0.65rem', textTransform: 'uppercase',
+                  letterSpacing: '0.05em', textAlign: 'left'
+                }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sofs.map(sof => {
+              const sc = getSofStatusBadge(sof);
+              return (
+                <tr key={sof.id} onClick={() => setSelectedSof(sof)} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: '#fff', cursor: 'pointer', transition: 'background-color 0.15s' }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(128,0,0,0.02)'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
+                >
+                  <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: '#800000', fontFamily: 'monospace' }}>
+                    {sof.sof_number} {sof.beam_name ? `(${sof.beam_name})` : ''}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                    {sof.wof?.wof_number || '—'}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem', fontWeight: '600' }}>
+                    {sof.order?.order_number || '—'}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    {sof.order?.design_no || '—'}{sof.order?.design_name ? ` / ${sof.order.design_name}` : ''}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem', fontWeight: '600', color: '#059669' }}>
+                    {sof.partner_name || '—'}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem', fontWeight: '700' }}>
+                    {sof.qty ? Number(sof.qty).toLocaleString() : '—'}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    {sof.start_date ? new Date(sof.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    {sof.end_date ? new Date(sof.end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <span style={{
+                      backgroundColor: sc.bg, color: sc.text,
+                      border: `1px solid ${sc.border}`,
+                      padding: '2px 10px', borderRadius: '20px',
+                      fontSize: '0.65rem', fontWeight: '700',
+                      textTransform: 'uppercase'
+                    }}>
+                      {sc.label}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* SOF Details Modal */}
+      {selectedSof && (
+        <SofDetailModal
+          sof={selectedSof}
+          onClose={() => setSelectedSof(null)}
+          onStatusChanged={() => {
+            fetchJobWorkSofs();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppLayout from './components/layout/AppLayout';
 import Login from './pages/Login';
@@ -16,10 +16,15 @@ import DeliveriesList from './pages/GreigeYarn/DeliveriesList';
 import DeliverYarn from './pages/GreigeYarn/DeliverYarn';
 import NewDelivery from './pages/GreigeYarn/NewDelivery';
 import AdminApprovals from './pages/Admin/Approvals';
+import AdminFinances from './pages/Admin/Finances';
 import ProductionBoard from './pages/Production/Board';
 import WarpingOrderForms from './pages/Production/WarpingOrderForms';
 import CreateWarpingOrderForm from './pages/Production/CreateWarpingOrderForm';
+import SizingOrderForms from './pages/Production/SizingOrderForms';
 import WarpingSizing from './pages/Production/WarpingSizing';
+import WeavingOrderForms from './pages/Production/WeavingOrderForms';
+import FabricInput from './pages/Production/FabricInput';
+import FabricCut from './pages/Production/FabricCut'; // Import the new FabricCut component
 import MastersDashboard from './pages/Masters/Dashboard';
 import MasterDetail from './pages/Masters/MasterDetail';
 import DyeingFormsList from './pages/Merchandiser/DyeingFormsList';
@@ -31,6 +36,11 @@ import DeliverDyedYarn from './pages/DyedYarn/DeliverYarn';
 import DyedYarnMovement from './pages/DyedYarn/MovementLog';
 import DyedYarnOrders from './pages/DyedYarn/OrderStock';
 import StockInventory from './pages/DyedYarn/StockInventory';
+import FourPointInspection from './pages/Inspection/FourPointInspection';
+import UnwashedInspection from './pages/Inspection/UnwashedInspection';
+import WashedInspection from './pages/Inspection/WashedInspection';
+import InspectionReport from './pages/Inspection/InspectionReport';
+import ProcessingModule from './pages/Processing/ProcessingModule';
 import { Loader } from 'lucide-react';
 
 function AppRoutes() {
@@ -51,11 +61,17 @@ function AppRoutes() {
         <AppLayout user={profile}>
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard user={profile} />} />
+            <Route path="/dashboard" element={
+              profile?.role === 'merchandiser' ?
+                <Navigate to="/merchandiser/orders" replace /> :
+                profile?.role === 'yarn' ?
+                  <Navigate to="/greige-yarn" replace /> :
+                  <Dashboard user={profile} />
+            } />
 
             {/* Merchandiser Routes */}
             <Route path="/merchandiser">
-              <Route index element={<MerchandiserDashboard />} />
+              <Route index element={<Navigate to="/merchandiser/orders" replace />} />
               <Route path="orders" element={<OrdersManagement />} />
               <Route path="create-order" element={<CreateOrder />} />
               <Route path="edit-order/:id" element={<CreateOrder />} />
@@ -73,6 +89,7 @@ function AppRoutes() {
               <Route path="create-dyeing-form" element={<CreateDyeingForm />} />
               <Route path="dyeing-forms/:id" element={<DyeingFormView />} />
               <Route path="approvals" element={<AdminApprovals />} />
+              <Route path="finances" element={<AdminFinances />} />
             </Route>
 
             {/* Inventory Routes */}
@@ -100,16 +117,25 @@ function AppRoutes() {
               <Route index element={<ProductionBoard />} />
               <Route path="warping-forms" element={<WarpingOrderForms />} />
               <Route path="warping-forms/new" element={<CreateWarpingOrderForm />} />
+              <Route path="sizing-forms" element={<SizingOrderForms />} />
+              <Route path="weaving-forms" element={<WeavingOrderForms />} />
+              <Route path="fabric-input" element={<FabricInput />} />
+              <Route path="fabric-movement" element={<FabricInput defaultView="fabric_movement" />} />
+              <Route path="fabric-cut" element={<FabricCut />} /> {/* New route for Fabric Cut */}
             </Route>
             <Route path="/warping-sizing">
               <Route index element={<WarpingSizing />} />
             </Route>
             <Route path="/weaving">
-              <Route index element={<PlaceholderPage title="Weaving" />} />
+              <Route index element={<WeavingOrderForms />} />
             </Route>
             <Route path="/inspection">
-              <Route index element={<PlaceholderPage title="Inspection / QC" />} />
+              <Route path="four-point" element={<FourPointInspection />} />
+              <Route path="unwashed" element={<UnwashedInspection />} />
+              <Route path="washed" element={<WashedInspection />} />
+              <Route path="report" element={<InspectionReport />} />
             </Route>
+            <Route path="/processing" element={<ProcessingModule />} />
             {/* Masters Routing */}
             <Route path="/masters">
               <Route index element={<MastersDashboard />} />

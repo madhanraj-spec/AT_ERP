@@ -23,8 +23,8 @@ const supabaseUrl = env.VITE_SUPABASE_URL;
 const supabaseKey = env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-async function inspect() {
-  const { error: signInErr } = await supabase.auth.signInWithPassword({
+async function test() {
+  const { data: authData, error: signInErr } = await supabase.auth.signInWithPassword({
     email: 'tharun@at.com',
     password: 'admin123'
   });
@@ -34,19 +34,36 @@ async function inspect() {
     return;
   }
 
-  // Fetch DOF record
-  const { data: dofs } = await supabase
+  // Find the latest pending dyeing order form
+  const { data: dof, error: dofErr } = await supabase
     .from('dyeing_order_forms')
     .select('*')
-    .eq('dof_number', 'AT/2026/DOF/00001');
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (dofErr || !dof) {
+    console.log('No pending Dyeing Order Form found in the database.');
+    return;
+  }
+
+  console.log(`Found pending DOF: ${dof.dof_number}`);
   
-  if (dofs && dofs.length > 0) {
-    const dof = dofs[0];
-    console.log('--- DOF/00001 info ---');
-    console.log('Order IDs:', dof.order_ids);
-    console.log('Yarn Allocations:', JSON.stringify(dof.yarn_allocations, null, 2));
-    console.log('Summary:', JSON.stringify(dof.summary, null, 2));
+  // Inject origin for PDF generation
+  dof.origin = 'https://at-erp.vercel.app';
+
+  console.log('Invoking send-whatsapp for real pending DOF:', dof.dof_number);
+  const { data, error } = await supabase.functions.invoke('send-whatsapp', {
+    body: { record: dof }
+  });
+
+  if (error) {
+    console.error('Function execution error:', error.message);
+  } else {
+    console.log('Success response:');
+    console.dir(data, { depth: null });
   }
 }
 
-inspect();
+test();

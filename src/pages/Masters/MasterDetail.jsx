@@ -11,7 +11,8 @@ const MASTER_CONFIG = {
   'departments': { title: 'Departments', table: 'master_departments', icon: '🏢' },
   'machines': { title: 'Machines', table: 'master_machines', icon: '⚙️' },
   'locations': { title: 'Locations', table: 'master_locations', icon: '📍' },
-  'beams': { title: 'Beams', table: 'master_beams', icon: '🎯' }
+  'beams': { title: 'Beams', table: 'master_beams', icon: '🎯' },
+  'workers': { title: 'Workers', table: 'master_workers', icon: '👥' }
 };
 
 export default function MasterDetail() {
@@ -36,7 +37,7 @@ export default function MasterDetail() {
       return;
     }
     fetchData();
-    if (type === 'machines') {
+    if (type === 'machines' || type === 'workers') {
       fetchDependencies();
     }
   }, [type]);
@@ -46,6 +47,8 @@ export default function MasterDetail() {
     let selectQuery = '*';
     if (type === 'machines') {
       selectQuery = '*, master_departments(department_name), master_partners(partner_name)';
+    } else if (type === 'workers') {
+      selectQuery = '*, master_departments(department_name)';
     }
     const { data, error } = await supabase
       .from(config.table)
@@ -178,7 +181,9 @@ export default function MasterDetail() {
               <label className="input-label">Allot to Department</label>
               <select name="department_id" className="input-field" value={formData.department_id || ''} onChange={handleInputChange} required>
                 <option value="">Select Department...</option>
-                {departments.map(d => <option key={d.id} value={d.id}>{d.department_name}</option>)}
+                {departments
+                  .filter(d => ['WARPING', 'SIZING', 'WEAVING'].includes(d.department_name.toUpperCase()))
+                  .map(d => <option key={d.id} value={d.id}>{d.department_name}</option>)}
               </select>
             </div>
             <div className="input-group" style={{ flexDirection: 'row', gap: '1rem', alignItems: 'center', margin: '1rem 0' }}>
@@ -236,6 +241,24 @@ export default function MasterDetail() {
             </div>
           </>
         );
+      case 'workers':
+        return (
+          <>
+            <div className="input-group">
+              <label className="input-label">Worker Name</label>
+              <input type="text" name="worker_name" className="input-field" value={formData.worker_name || ''} onChange={handleInputChange} required />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Assign to Department</label>
+              <select name="department_id" className="input-field" value={formData.department_id || ''} onChange={handleInputChange} required>
+                <option value="">Select Department...</option>
+                {departments
+                  .filter(d => ['YARN', 'WARPING', 'SIZING', 'WEAVING', 'INSPECTION'].includes(d.department_name.toUpperCase()))
+                  .map(d => <option key={d.id} value={d.id}>{d.department_name}</option>)}
+              </select>
+            </div>
+          </>
+        );
       default: return null;
     }
   };
@@ -261,6 +284,10 @@ export default function MasterDetail() {
         if (item.owner) parts.push(`Owner: ${item.owner}`);
         if (item.weight) parts.push(`${Number(item.weight).toFixed(2)} kg`);
         return parts.join(' — ');
+      }
+      case 'workers': {
+        const deptName = item.master_departments?.department_name || 'N/A';
+        return `${item.worker_name} — [Dept: ${deptName}]`;
       }
       default: return JSON.stringify(item);
     }

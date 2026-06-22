@@ -215,7 +215,7 @@ export default function DyedYarnMovement() {
           .select('*, dyeing_unit:master_partners(partner_name), items:dyed_yarn_receipt_items(*, orders(*), master_yarn_counts(*), master_locations(*))')
           .order('created_at', { ascending: false });
         if (error) throw error;
-        setRecords(data || []);
+        setRecords((data || []).filter(r => (r.items || []).length > 0));
       } else {
         const { data, error } = await supabase
           .from('dyed_yarn_deliveries')
@@ -590,7 +590,7 @@ export default function DyedYarnMovement() {
                             const weaving = weavingsMap.get(firstItem.production_form_id);
                             if (weaving) {
                               formNo = weaving.weaving_number;
-                              machineName = '—';
+                              machineName = weaving.machine_name || '';
                             }
                           }
                           return (
