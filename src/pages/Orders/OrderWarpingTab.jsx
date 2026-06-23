@@ -18,15 +18,18 @@ function getLocalDateString(dateInput) {
 
 function getWofStatusBadge(wof) {
   const todayStr = getLocalDateString(new Date());
+  const isFinished = wof.status === 'completed' || (wof.status === 'stopped' && !!wof.wofdc_number);
 
-  if (wof.status === 'completed') {
+  if (isFinished) {
     const actualEndStr = wof.process_completed_at
       ? getLocalDateString(wof.process_completed_at)
       : (getLocalDateString(wof.updated_at) || todayStr);
     if (wof.end_date && actualEndStr > wof.end_date) {
-      return { label: 'Completed Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
+      return { label: wof.status === 'completed' ? 'Completed Late' : 'Stopped Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
-    return { label: 'Completed', bg: '#dcfce7', color: '#166534', border: '#86efac' };
+    return wof.status === 'completed'
+      ? { label: 'Completed', bg: '#dcfce7', color: '#166534', border: '#86efac' }
+      : { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
   }
   if (wof.status === 'stopped') {
     return { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
@@ -77,13 +80,33 @@ function OrderWarpingTab({ order }) {
 
   const overallWarpSummary = React.useMemo(() => {
     const summary = {};
+    const warpReqs = (order.yarn_requirements || []).filter(y => y.type === 'warp');
 
-    const ensureKey = (countId, color) => {
+    const findWarpKey = (countId, color) => {
+      const cleanColor = String(color || '').trim().toLowerCase();
+      const match = warpReqs.find(yr => {
+        const yrCountId = yr.countId || yr.count_id || '';
+        const yrColor = yr.color || yr.colour || '';
+        return String(yrCountId) === String(countId) && 
+               String(yrColor).trim().toLowerCase() === cleanColor;
+      });
+      if (match) {
+        const matchCountId = match.countId || match.count_id || '';
+        const matchColor = match.color || match.colour || '';
+        return `${matchCountId}-${matchColor}`;
+      }
+      return null;
+    };
+
+    // 1. Initialize with order's warp requirements
+    warpReqs.forEach(yr => {
+      const countId = yr.countId || yr.count_id || '';
+      const color = yr.color || yr.colour || '';
       const key = `${countId}-${color}`;
       if (!summary[key]) {
         summary[key] = {
           countId,
-          countValue: '',
+          countValue: yr.countValue || '',
           colour: color,
           required: 0,
           received: 0,
@@ -91,17 +114,7 @@ function OrderWarpingTab({ order }) {
           returned: 0
         };
       }
-      return key;
-    };
-
-    // 1. Initialize with order's warp requirements
-    const warpReqs = (order.yarn_requirements || []).filter(y => y.type === 'warp');
-    warpReqs.forEach(yr => {
-      const countId = yr.countId || yr.count_id || '';
-      const color = yr.color || yr.colour || '';
-      const key = ensureKey(countId, color);
-      summary[key].required = parseFloat(yr.kg || 0);
-      summary[key].countValue = yr.countValue || '';
+      summary[key].required += parseFloat(yr.kg || 0);
     });
 
     // 2. Add dyed receipts matching warp colours/counts (exclude excess/production returns)
@@ -111,8 +124,10 @@ function OrderWarpingTab({ order }) {
 
       const countId = item.yarn_count_id || '';
       const color = item.colour || '';
-      const key = ensureKey(countId, color);
-      summary[key].received += parseFloat(item.quantity_kg || 0);
+      const key = findWarpKey(countId, color);
+      if (key) {
+        summary[key].received += parseFloat(item.quantity_kg || 0);
+      }
     });
 
     // 3. Add dyed deliveries matching count/colour
@@ -120,8 +135,10 @@ function OrderWarpingTab({ order }) {
       if (item.process_type === 'warping' || item.yarn_type === 'warp') {
         const countId = item.yarn_count_id || '';
         const color = item.colour || '';
-        const key = ensureKey(countId, color);
-        summary[key].delivered += parseFloat(item.quantity_kg || 0);
+        const key = findWarpKey(countId, color);
+        if (key) {
+          summary[key].delivered += parseFloat(item.quantity_kg || 0);
+        }
       }
     });
 
@@ -131,8 +148,10 @@ function OrderWarpingTab({ order }) {
       if (isExcess && item.yarn_type === 'warp') {
         const countId = item.yarn_count_id || '';
         const color = item.colour || '';
-        const key = ensureKey(countId, color);
-        summary[key].returned += parseFloat(item.quantity_kg || 0);
+        const key = findWarpKey(countId, color);
+        if (key) {
+          summary[key].returned += parseFloat(item.quantity_kg || 0);
+        }
       }
     });
 

@@ -1084,6 +1084,76 @@
       "norm_label": "run()"
     },
     {
+      "label": "check_machines.js",
+      "file_type": "code",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_check_machines",
+      "community": 220,
+      "norm_label": "check_machines.js"
+    },
+    {
+      "label": "fs",
+      "file_type": "code",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_check_machines_fs",
+      "community": 220,
+      "norm_label": "fs"
+    },
+    {
+      "label": "dotenv",
+      "file_type": "code",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L2",
+      "_origin": "ast",
+      "id": "scratch_check_machines_dotenv",
+      "community": 220,
+      "norm_label": "dotenv"
+    },
+    {
+      "label": "pkg",
+      "file_type": "code",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L20",
+      "_origin": "ast",
+      "id": "scratch_check_machines_pkg",
+      "community": 220,
+      "norm_label": "pkg"
+    },
+    {
+      "label": "{ createClient }",
+      "file_type": "code",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L23",
+      "_origin": "ast",
+      "id": "scratch_check_machines_createclient",
+      "community": 220,
+      "norm_label": "{ createclient }"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L24",
+      "_origin": "ast",
+      "id": "scratch_check_machines_supabase",
+      "community": 220,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "check()",
+      "file_type": "code",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L26",
+      "_origin": "ast",
+      "id": "scratch_check_machines_check",
+      "community": 220,
+      "norm_label": "check()"
+    },
+    {
       "label": "check_order_status.js",
       "file_type": "code",
       "source_file": "scratch/check_order_status.js",
@@ -1504,6 +1574,66 @@
       "norm_label": "checkweavingrolls()"
     },
     {
+      "label": "check_wofs.js",
+      "file_type": "code",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_check_wofs",
+      "community": 354,
+      "norm_label": "check_wofs.js"
+    },
+    {
+      "label": "envPath",
+      "file_type": "code",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_check_wofs_envpath",
+      "community": 354,
+      "norm_label": "envpath"
+    },
+    {
+      "label": "envContent",
+      "file_type": "code",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "scratch_check_wofs_envcontent",
+      "community": 354,
+      "norm_label": "envcontent"
+    },
+    {
+      "label": "env",
+      "file_type": "code",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "scratch_check_wofs_env",
+      "community": 354,
+      "norm_label": "env"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "scratch_check_wofs_supabase",
+      "community": 354,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L18",
+      "_origin": "ast",
+      "id": "scratch_check_wofs_run",
+      "community": 354,
+      "norm_label": "run()"
+    },
+    {
       "label": "check_wvof.js",
       "file_type": "code",
       "source_file": "scratch/check_wvof.js",
@@ -1621,6 +1751,186 @@
       "_origin": "ast",
       "id": "scratch_clear_db_run",
       "community": 218,
+      "norm_label": "run()"
+    },
+    {
+      "label": "clear_transactions_only.js",
+      "file_type": "code",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_clear_transactions_only",
+      "community": 371,
+      "norm_label": "clear_transactions_only.js"
+    },
+    {
+      "label": "envPath",
+      "file_type": "code",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_clear_transactions_only_envpath",
+      "community": 371,
+      "norm_label": "envpath"
+    },
+    {
+      "label": "envContent",
+      "file_type": "code",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "scratch_clear_transactions_only_envcontent",
+      "community": 371,
+      "norm_label": "envcontent"
+    },
+    {
+      "label": "env",
+      "file_type": "code",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "scratch_clear_transactions_only_env",
+      "community": 371,
+      "norm_label": "env"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "scratch_clear_transactions_only_supabase",
+      "community": 371,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L18",
+      "_origin": "ast",
+      "id": "scratch_clear_transactions_only_run",
+      "community": 371,
+      "norm_label": "run()"
+    },
+    {
+      "label": "clear_with_key.js",
+      "file_type": "code",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_clear_with_key",
+      "community": 386,
+      "norm_label": "clear_with_key.js"
+    },
+    {
+      "label": "envPath",
+      "file_type": "code",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_clear_with_key_envpath",
+      "community": 386,
+      "norm_label": "envpath"
+    },
+    {
+      "label": "envContent",
+      "file_type": "code",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "scratch_clear_with_key_envcontent",
+      "community": 386,
+      "norm_label": "envcontent"
+    },
+    {
+      "label": "env",
+      "file_type": "code",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "scratch_clear_with_key_env",
+      "community": 386,
+      "norm_label": "env"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L24",
+      "_origin": "ast",
+      "id": "scratch_clear_with_key_supabase",
+      "community": 386,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L28",
+      "_origin": "ast",
+      "id": "scratch_clear_with_key_run",
+      "community": 386,
+      "norm_label": "run()"
+    },
+    {
+      "label": "count_all_rows.js",
+      "file_type": "code",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_count_all_rows",
+      "community": 387,
+      "norm_label": "count_all_rows.js"
+    },
+    {
+      "label": "envPath",
+      "file_type": "code",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_count_all_rows_envpath",
+      "community": 387,
+      "norm_label": "envpath"
+    },
+    {
+      "label": "envContent",
+      "file_type": "code",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "scratch_count_all_rows_envcontent",
+      "community": 387,
+      "norm_label": "envcontent"
+    },
+    {
+      "label": "env",
+      "file_type": "code",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "scratch_count_all_rows_env",
+      "community": 387,
+      "norm_label": "env"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "scratch_count_all_rows_supabase",
+      "community": 387,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L18",
+      "_origin": "ast",
+      "id": "scratch_count_all_rows_run",
+      "community": 387,
       "norm_label": "run()"
     },
     {
@@ -2004,6 +2314,126 @@
       "norm_label": "run()"
     },
     {
+      "label": "inspect_db_functions.js",
+      "file_type": "code",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_inspect_db_functions",
+      "community": 388,
+      "norm_label": "inspect_db_functions.js"
+    },
+    {
+      "label": "envPath",
+      "file_type": "code",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_inspect_db_functions_envpath",
+      "community": 388,
+      "norm_label": "envpath"
+    },
+    {
+      "label": "envContent",
+      "file_type": "code",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "scratch_inspect_db_functions_envcontent",
+      "community": 388,
+      "norm_label": "envcontent"
+    },
+    {
+      "label": "env",
+      "file_type": "code",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "scratch_inspect_db_functions_env",
+      "community": 388,
+      "norm_label": "env"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "scratch_inspect_db_functions_supabase",
+      "community": 388,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L18",
+      "_origin": "ast",
+      "id": "scratch_inspect_db_functions_run",
+      "community": 388,
+      "norm_label": "run()"
+    },
+    {
+      "label": "inspect_dyed_delivery_400.js",
+      "file_type": "code",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_inspect_dyed_delivery_400",
+      "community": 269,
+      "norm_label": "inspect_dyed_delivery_400.js"
+    },
+    {
+      "label": "envPath",
+      "file_type": "code",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_inspect_dyed_delivery_400_envpath",
+      "community": 269,
+      "norm_label": "envpath"
+    },
+    {
+      "label": "envContent",
+      "file_type": "code",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "scratch_inspect_dyed_delivery_400_envcontent",
+      "community": 269,
+      "norm_label": "envcontent"
+    },
+    {
+      "label": "env",
+      "file_type": "code",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "scratch_inspect_dyed_delivery_400_env",
+      "community": 269,
+      "norm_label": "env"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "scratch_inspect_dyed_delivery_400_supabase",
+      "community": 269,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "inspectQuery()",
+      "file_type": "code",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L18",
+      "_origin": "ast",
+      "id": "scratch_inspect_dyed_delivery_400_inspectquery",
+      "community": 269,
+      "norm_label": "inspectquery()"
+    },
+    {
       "label": "inspect_dyed_yarn_receipts.js",
       "file_type": "code",
       "source_file": "scratch/inspect_dyed_yarn_receipts.js",
@@ -2304,6 +2734,116 @@
       "norm_label": "check()"
     },
     {
+      "label": "inspect_schema.js",
+      "file_type": "code",
+      "source_file": "scratch/inspect_schema.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_inspect_schema",
+      "community": 396,
+      "norm_label": "inspect_schema.js"
+    },
+    {
+      "label": "__filename",
+      "file_type": "code",
+      "source_file": "scratch/inspect_schema.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_inspect_schema_filename",
+      "community": 396,
+      "norm_label": "__filename"
+    },
+    {
+      "label": "__dirname",
+      "file_type": "code",
+      "source_file": "scratch/inspect_schema.js",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "scratch_inspect_schema_dirname",
+      "community": 396,
+      "norm_label": "__dirname"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/inspect_schema.js",
+      "source_location": "L14",
+      "_origin": "ast",
+      "id": "scratch_inspect_schema_supabase",
+      "community": 396,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scratch/inspect_schema.js",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "scratch_inspect_schema_run",
+      "community": 396,
+      "norm_label": "run()"
+    },
+    {
+      "label": "inspect_search_result.js",
+      "file_type": "code",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_inspect_search_result",
+      "community": 242,
+      "norm_label": "inspect_search_result.js"
+    },
+    {
+      "label": "envPath",
+      "file_type": "code",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "scratch_inspect_search_result_envpath",
+      "community": 242,
+      "norm_label": "envpath"
+    },
+    {
+      "label": "envContent",
+      "file_type": "code",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_inspect_search_result_envcontent",
+      "community": 242,
+      "norm_label": "envcontent"
+    },
+    {
+      "label": "env",
+      "file_type": "code",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "scratch_inspect_search_result_env",
+      "community": 242,
+      "norm_label": "env"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L15",
+      "_origin": "ast",
+      "id": "scratch_inspect_search_result_supabase",
+      "community": 242,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L17",
+      "_origin": "ast",
+      "id": "scratch_inspect_search_result_run",
+      "community": 242,
+      "norm_label": "run()"
+    },
+    {
       "label": "inspect_tables.js",
       "file_type": "code",
       "source_file": "scratch/inspect_tables.js",
@@ -2361,6 +2901,66 @@
       "_origin": "ast",
       "id": "scratch_inspect_tables_run",
       "community": 238,
+      "norm_label": "run()"
+    },
+    {
+      "label": "inspect_weaving_allotments.js",
+      "file_type": "code",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_inspect_weaving_allotments",
+      "community": 372,
+      "norm_label": "inspect_weaving_allotments.js"
+    },
+    {
+      "label": "envPath",
+      "file_type": "code",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "scratch_inspect_weaving_allotments_envpath",
+      "community": 372,
+      "norm_label": "envpath"
+    },
+    {
+      "label": "envContent",
+      "file_type": "code",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_inspect_weaving_allotments_envcontent",
+      "community": 372,
+      "norm_label": "envcontent"
+    },
+    {
+      "label": "env",
+      "file_type": "code",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "scratch_inspect_weaving_allotments_env",
+      "community": 372,
+      "norm_label": "env"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L15",
+      "_origin": "ast",
+      "id": "scratch_inspect_weaving_allotments_supabase",
+      "community": 372,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L17",
+      "_origin": "ast",
+      "id": "scratch_inspect_weaving_allotments_run",
+      "community": 372,
       "norm_label": "run()"
     },
     {
@@ -2492,6 +3092,76 @@
       "id": "scratch_inspect_yarn_main",
       "community": 198,
       "norm_label": "main()"
+    },
+    {
+      "label": "inspect_yarn_usage.js",
+      "file_type": "code",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_inspect_yarn_usage",
+      "community": 391,
+      "norm_label": "inspect_yarn_usage.js"
+    },
+    {
+      "label": "{ createClient }",
+      "file_type": "code",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_inspect_yarn_usage_createclient",
+      "community": 391,
+      "norm_label": "{ createclient }"
+    },
+    {
+      "label": "dotenv",
+      "file_type": "code",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L2",
+      "_origin": "ast",
+      "id": "scratch_inspect_yarn_usage_dotenv",
+      "community": 391,
+      "norm_label": "dotenv"
+    },
+    {
+      "label": "path",
+      "file_type": "code",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "scratch_inspect_yarn_usage_path",
+      "community": 391,
+      "norm_label": "path"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "scratch_inspect_yarn_usage_supabase",
+      "community": 391,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "inspect()",
+      "file_type": "code",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L12",
+      "_origin": "ast",
+      "id": "scratch_inspect_yarn_usage_inspect",
+      "community": 391,
+      "norm_label": "inspect()"
+    },
+    {
+      "label": "print_env.js",
+      "file_type": "code",
+      "source_file": "scratch/print_env.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_print_env",
+      "community": 401,
+      "norm_label": "print_env.js"
     },
     {
       "label": "print_order_fields.js",
@@ -2752,6 +3422,66 @@
       "id": "scratch_recovered_board_productionhub",
       "community": 378,
       "norm_label": "productionhub()"
+    },
+    {
+      "label": "test_columns.js",
+      "file_type": "code",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_test_columns",
+      "community": 395,
+      "norm_label": "test_columns.js"
+    },
+    {
+      "label": "__filename",
+      "file_type": "code",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_test_columns_filename",
+      "community": 395,
+      "norm_label": "__filename"
+    },
+    {
+      "label": "__dirname",
+      "file_type": "code",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "scratch_test_columns_dirname",
+      "community": 395,
+      "norm_label": "__dirname"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L14",
+      "_origin": "ast",
+      "id": "scratch_test_columns_supabase",
+      "community": 395,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "checkColumn()",
+      "file_type": "code",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "scratch_test_columns_checkcolumn",
+      "community": 395,
+      "norm_label": "checkcolumn()"
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L31",
+      "_origin": "ast",
+      "id": "scratch_test_columns_run",
+      "community": 395,
+      "norm_label": "run()"
     },
     {
       "label": "test_inventory.js",
@@ -3060,7 +3790,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "src_app",
-      "community": 195,
+      "community": 0,
       "norm_label": "app.jsx"
     },
     {
@@ -3070,7 +3800,7 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "src_app_approutes",
-      "community": 195,
+      "community": 0,
       "norm_label": "approutes()"
     },
     {
@@ -3080,7 +3810,7 @@
       "source_location": "L159",
       "_origin": "ast",
       "id": "src_app_placeholderpage",
-      "community": 195,
+      "community": 0,
       "norm_label": "placeholderpage()"
     },
     {
@@ -3090,7 +3820,7 @@
       "source_location": "L169",
       "_origin": "ast",
       "id": "src_app_app",
-      "community": 195,
+      "community": 0,
       "norm_label": "app()"
     },
     {
@@ -3120,7 +3850,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "layout_applayout",
-      "community": 195,
+      "community": 0,
       "norm_label": "applayout.jsx"
     },
     {
@@ -3130,7 +3860,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "layout_applayout_applayout",
-      "community": 195,
+      "community": 0,
       "norm_label": "applayout()"
     },
     {
@@ -3270,7 +4000,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "src_main",
-      "community": 195,
+      "community": 0,
       "norm_label": "main.jsx"
     },
     {
@@ -3280,7 +4010,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "admin_approvals",
-      "community": 0,
+      "community": 195,
       "norm_label": "approvals.jsx"
     },
     {
@@ -3290,7 +4020,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "admin_approvals_adminapprovals",
-      "community": 0,
+      "community": 195,
       "norm_label": "adminapprovals()"
     },
     {
@@ -3300,7 +4030,7 @@
       "source_location": "L186",
       "_origin": "ast",
       "id": "admin_approvals_dyeingformapprovals",
-      "community": 0,
+      "community": 195,
       "norm_label": "dyeingformapprovals()"
     },
     {
@@ -3310,7 +4040,7 @@
       "source_location": "L550",
       "_origin": "ast",
       "id": "admin_approvals_productionformapprovals",
-      "community": 0,
+      "community": 195,
       "norm_label": "productionformapprovals()"
     },
     {
@@ -3320,7 +4050,7 @@
       "source_location": "L593",
       "_origin": "ast",
       "id": "admin_approvals_productionsubtabplaceholder",
-      "community": 0,
+      "community": 195,
       "norm_label": "productionsubtabplaceholder()"
     },
     {
@@ -3330,7 +4060,7 @@
       "source_location": "L604",
       "_origin": "ast",
       "id": "admin_approvals_greigeapprovals",
-      "community": 0,
+      "community": 195,
       "norm_label": "greigeapprovals()"
     },
     {
@@ -3340,7 +4070,7 @@
       "source_location": "L1032",
       "_origin": "ast",
       "id": "admin_approvals_approvalsmodalwrapper",
-      "community": 0,
+      "community": 195,
       "norm_label": "approvalsmodalwrapper()"
     },
     {
@@ -3350,7 +4080,7 @@
       "source_location": "L1048",
       "_origin": "ast",
       "id": "admin_approvals_approvalsgydrdetailmodal",
-      "community": 0,
+      "community": 195,
       "norm_label": "approvalsgydrdetailmodal()"
     },
     {
@@ -3360,7 +4090,7 @@
       "source_location": "L1102",
       "_origin": "ast",
       "id": "admin_approvals_approvalsdyrrdetailmodal",
-      "community": 0,
+      "community": 195,
       "norm_label": "approvalsdyrrdetailmodal()"
     },
     {
@@ -3370,7 +4100,7 @@
       "source_location": "L1156",
       "_origin": "ast",
       "id": "admin_approvals_dyeingfinanceapprovals",
-      "community": 0,
+      "community": 195,
       "norm_label": "dyeingfinanceapprovals()"
     },
     {
@@ -3380,7 +4110,7 @@
       "source_location": "L2033",
       "_origin": "ast",
       "id": "admin_approvals_warpingbillapprovals",
-      "community": 0,
+      "community": 195,
       "norm_label": "warpingbillapprovals()"
     },
     {
@@ -3390,7 +4120,7 @@
       "source_location": "L3124",
       "_origin": "ast",
       "id": "admin_approvals_sizingbillapprovals",
-      "community": 0,
+      "community": 195,
       "norm_label": "sizingbillapprovals()"
     },
     {
@@ -3400,7 +4130,7 @@
       "source_location": "L4086",
       "_origin": "ast",
       "id": "admin_approvals_weavingbillapprovals",
-      "community": 0,
+      "community": 195,
       "norm_label": "weavingbillapprovals()"
     },
     {
@@ -3410,7 +4140,7 @@
       "source_location": "L5183",
       "_origin": "ast",
       "id": "admin_approvals_processingbillapprovals",
-      "community": 0,
+      "community": 195,
       "norm_label": "processingbillapprovals()"
     },
     {
@@ -3540,7 +4270,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "pages_dashboard",
-      "community": 195,
+      "community": 0,
       "norm_label": "dashboard.jsx"
     },
     {
@@ -3550,7 +4280,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "pages_dashboard_dashboard",
-      "community": 195,
+      "community": 0,
       "norm_label": "dashboard()"
     },
     {
@@ -3607,7 +4337,7 @@
       "label": "DYDRReceiptModal()",
       "file_type": "code",
       "source_file": "src/pages/DyedYarn/DeliverYarn.jsx",
-      "source_location": "L1722",
+      "source_location": "L1864",
       "_origin": "ast",
       "id": "dyedyarn_deliveryarn_dydrreceiptmodal",
       "community": 3,
@@ -3690,7 +4420,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "dyedyarn_dyedreceiptprintmodal",
-      "community": 220,
+      "community": 9,
       "norm_label": "dyedreceiptprintmodal.jsx"
     },
     {
@@ -3700,7 +4430,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "dyedyarn_dyedreceiptprintmodal_dyedreceiptprintmodal",
-      "community": 220,
+      "community": 9,
       "norm_label": "dyedreceiptprintmodal()"
     },
     {
@@ -3710,7 +4440,7 @@
       "source_location": "L206",
       "_origin": "ast",
       "id": "dyedyarn_dyedreceiptprintmodal_infoboxstyle",
-      "community": 220,
+      "community": 9,
       "norm_label": "infoboxstyle"
     },
     {
@@ -3720,7 +4450,7 @@
       "source_location": "L216",
       "_origin": "ast",
       "id": "dyedyarn_dyedreceiptprintmodal_infolabelstyle",
-      "community": 220,
+      "community": 9,
       "norm_label": "infolabelstyle"
     },
     {
@@ -3730,7 +4460,7 @@
       "source_location": "L224",
       "_origin": "ast",
       "id": "dyedyarn_dyedreceiptprintmodal_datalinestyle",
-      "community": 220,
+      "community": 9,
       "norm_label": "datalinestyle"
     },
     {
@@ -3740,7 +4470,7 @@
       "source_location": "L230",
       "_origin": "ast",
       "id": "dyedyarn_dyedreceiptprintmodal_thstyle",
-      "community": 220,
+      "community": 9,
       "norm_label": "thstyle"
     },
     {
@@ -3750,7 +4480,7 @@
       "source_location": "L239",
       "_origin": "ast",
       "id": "dyedyarn_dyedreceiptprintmodal_tdstyle",
-      "community": 220,
+      "community": 9,
       "norm_label": "tdstyle"
     },
     {
@@ -3760,7 +4490,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "dyedyarn_movementlog",
-      "community": 220,
+      "community": 0,
       "norm_label": "movementlog.jsx"
     },
     {
@@ -3770,7 +4500,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "dyedyarn_movementlog_multiselectdropdown",
-      "community": 220,
+      "community": 0,
       "norm_label": "multiselectdropdown()"
     },
     {
@@ -3780,7 +4510,7 @@
       "source_location": "L161",
       "_origin": "ast",
       "id": "dyedyarn_movementlog_dyedyarnmovement",
-      "community": 220,
+      "community": 0,
       "norm_label": "dyedyarnmovement()"
     },
     {
@@ -4257,7 +4987,7 @@
       "label": "GYDRReceiptModal()",
       "file_type": "code",
       "source_file": "src/pages/GreigeYarn/DeliverYarn.jsx",
-      "source_location": "L1054",
+      "source_location": "L1320",
       "_origin": "ast",
       "id": "greigeyarn_deliveryarn_gydrreceiptmodal",
       "community": 0,
@@ -4580,7 +5310,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "inspection_unwashedinspection",
-      "community": 195,
+      "community": 0,
       "norm_label": "unwashedinspection.jsx"
     },
     {
@@ -4590,7 +5320,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "inspection_unwashedinspection_unwashedinspection",
-      "community": 195,
+      "community": 0,
       "norm_label": "unwashedinspection()"
     },
     {
@@ -4600,7 +5330,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "inspection_washedinspection",
-      "community": 195,
+      "community": 0,
       "norm_label": "washedinspection.jsx"
     },
     {
@@ -4610,7 +5340,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "inspection_washedinspection_washedinspection",
-      "community": 195,
+      "community": 0,
       "norm_label": "washedinspection()"
     },
     {
@@ -4720,7 +5450,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "merchandiser_createorder",
-      "community": 195,
+      "community": 0,
       "norm_label": "createorder.jsx"
     },
     {
@@ -4730,7 +5460,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "merchandiser_createorder_weave_types",
-      "community": 195,
+      "community": 0,
       "norm_label": "weave_types"
     },
     {
@@ -4740,7 +5470,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "merchandiser_createorder_order_categories",
-      "community": 195,
+      "community": 0,
       "norm_label": "order_categories"
     },
     {
@@ -4750,7 +5480,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "merchandiser_createorder_compressimage",
-      "community": 195,
+      "community": 0,
       "norm_label": "compressimage()"
     },
     {
@@ -4760,7 +5490,7 @@
       "source_location": "L69",
       "_origin": "ast",
       "id": "merchandiser_createorder_createorder",
-      "community": 195,
+      "community": 0,
       "norm_label": "createorder()"
     },
     {
@@ -4987,7 +5717,7 @@
       "label": "getSingleSofStatusLabel()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L201",
+      "source_location": "L203",
       "_origin": "ast",
       "id": "orders_management_getsinglesofstatuslabel",
       "community": 7,
@@ -4997,7 +5727,7 @@
       "label": "getSingleWvofStatusLabel()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L225",
+      "source_location": "L229",
       "_origin": "ast",
       "id": "orders_management_getsinglewvofstatuslabel",
       "community": 7,
@@ -5007,7 +5737,7 @@
       "label": "getSinglePofStatusLabel()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L264",
+      "source_location": "L268",
       "_origin": "ast",
       "id": "orders_management_getsinglepofstatuslabel",
       "community": 7,
@@ -5017,7 +5747,7 @@
       "label": "getStatusThemeColor()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L273",
+      "source_location": "L277",
       "_origin": "ast",
       "id": "orders_management_getstatusthemecolor",
       "community": 7,
@@ -5027,7 +5757,7 @@
       "label": "getAggregatedStatusSummary()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L317",
+      "source_location": "L321",
       "_origin": "ast",
       "id": "orders_management_getaggregatedstatussummary",
       "community": 7,
@@ -5037,7 +5767,7 @@
       "label": "ProcessSummaryBadge()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L360",
+      "source_location": "L364",
       "_origin": "ast",
       "id": "orders_management_processsummarybadge",
       "community": 7,
@@ -5047,17 +5777,17 @@
       "label": "OrderCard()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L391",
+      "source_location": "L395",
       "_origin": "ast",
       "id": "orders_management_ordercard",
-      "community": 1,
+      "community": 7,
       "norm_label": "ordercard()"
     },
     {
       "label": "TabOrderInfo()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L859",
+      "source_location": "L863",
       "_origin": "ast",
       "id": "orders_management_taborderinfo",
       "community": 7,
@@ -5067,7 +5797,7 @@
       "label": "DetailItem()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L935",
+      "source_location": "L939",
       "_origin": "ast",
       "id": "orders_management_detailitem",
       "community": 7,
@@ -5077,7 +5807,7 @@
       "label": "TabInspection()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L944",
+      "source_location": "L948",
       "_origin": "ast",
       "id": "orders_management_tabinspection",
       "community": 7,
@@ -5087,7 +5817,7 @@
       "label": "TabDyeing()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L1309",
+      "source_location": "L1313",
       "_origin": "ast",
       "id": "orders_management_tabdyeing",
       "community": 7,
@@ -5097,7 +5827,7 @@
       "label": "TabProcessing()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L1709",
+      "source_location": "L1713",
       "_origin": "ast",
       "id": "orders_management_tabprocessing",
       "community": 7,
@@ -5107,7 +5837,7 @@
       "label": "TabUnderDevelopment()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L2285",
+      "source_location": "L2289",
       "_origin": "ast",
       "id": "orders_management_tabunderdevelopment",
       "community": 7,
@@ -5117,17 +5847,17 @@
       "label": "OrdersManagement()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L2295",
+      "source_location": "L2299",
       "_origin": "ast",
       "id": "orders_management_ordersmanagement",
-      "community": 7,
+      "community": 0,
       "norm_label": "ordersmanagement()"
     },
     {
       "label": "ModalWrapper()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L3188",
+      "source_location": "L3192",
       "_origin": "ast",
       "id": "orders_management_modalwrapper",
       "community": 7,
@@ -5137,7 +5867,7 @@
       "label": "DOFModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L3204",
+      "source_location": "L3208",
       "_origin": "ast",
       "id": "orders_management_dofmodal",
       "community": 7,
@@ -5147,7 +5877,7 @@
       "label": "GYDRModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L3267",
+      "source_location": "L3271",
       "_origin": "ast",
       "id": "orders_management_gydrmodal",
       "community": 7,
@@ -5157,7 +5887,7 @@
       "label": "DYRRModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L3335",
+      "source_location": "L3339",
       "_origin": "ast",
       "id": "orders_management_dyrrmodal",
       "community": 7,
@@ -5167,7 +5897,7 @@
       "label": "DYDRModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L3408",
+      "source_location": "L3412",
       "_origin": "ast",
       "id": "orders_management_dydrmodal",
       "community": 7,
@@ -5177,17 +5907,17 @@
       "label": "POFModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L3479",
+      "source_location": "L3483",
       "_origin": "ast",
       "id": "orders_management_pofmodal",
-      "community": 7,
+      "community": 0,
       "norm_label": "pofmodal()"
     },
     {
       "label": "POFRRModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L3666",
+      "source_location": "L3670",
       "_origin": "ast",
       "id": "orders_management_pofrrmodal",
       "community": 7,
@@ -5200,7 +5930,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "orders_ordersizingtab",
-      "community": 273,
+      "community": 4,
       "norm_label": "ordersizingtab.jsx"
     },
     {
@@ -5210,7 +5940,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "orders_ordersizingtab_getlocaldatestring",
-      "community": 273,
+      "community": 4,
       "norm_label": "getlocaldatestring()"
     },
     {
@@ -5220,17 +5950,17 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "orders_ordersizingtab_getsofstatusbadge",
-      "community": 273,
+      "community": 4,
       "norm_label": "getsofstatusbadge()"
     },
     {
       "label": "OrderSizingTab()",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderSizingTab.jsx",
-      "source_location": "L48",
+      "source_location": "L51",
       "_origin": "ast",
       "id": "orders_ordersizingtab_ordersizingtab",
-      "community": 273,
+      "community": 4,
       "norm_label": "ordersizingtab()"
     },
     {
@@ -5267,7 +5997,7 @@
       "label": "getYarnStatusBadge()",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderWarpingTab.jsx",
-      "source_location": "L50",
+      "source_location": "L53",
       "_origin": "ast",
       "id": "orders_orderwarpingtab_getyarnstatusbadge",
       "community": 3,
@@ -5277,7 +6007,7 @@
       "label": "OrderWarpingTab()",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderWarpingTab.jsx",
-      "source_location": "L66",
+      "source_location": "L69",
       "_origin": "ast",
       "id": "orders_orderwarpingtab_orderwarpingtab",
       "community": 3,
@@ -5377,7 +6107,7 @@
       "label": "thStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L517",
+      "source_location": "L490",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_thstyle",
       "community": 206,
@@ -5387,7 +6117,7 @@
       "label": "numericThStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L526",
+      "source_location": "L499",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_numericthstyle",
       "community": 206,
@@ -5397,7 +6127,7 @@
       "label": "tdStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L531",
+      "source_location": "L504",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_tdstyle",
       "community": 206,
@@ -5407,27 +6137,17 @@
       "label": "numericTdStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L537",
+      "source_location": "L510",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_numerictdstyle",
       "community": 206,
       "norm_label": "numerictdstyle"
     },
     {
-      "label": "disabledTdStyle",
-      "file_type": "code",
-      "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L543",
-      "_origin": "ast",
-      "id": "orders_orderyarnusagetab_disabledtdstyle",
-      "community": 206,
-      "norm_label": "disabledtdstyle"
-    },
-    {
       "label": "receiptColStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L552",
+      "source_location": "L517",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_receiptcolstyle",
       "community": 206,
@@ -5437,7 +6157,7 @@
       "label": "receiptHeaderStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L562",
+      "source_location": "L527",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_receiptheaderstyle",
       "community": 206,
@@ -5447,7 +6167,7 @@
       "label": "receiptCardStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L573",
+      "source_location": "L538",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_receiptcardstyle",
       "community": 206,
@@ -5457,7 +6177,7 @@
       "label": "viewButtonStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L584",
+      "source_location": "L549",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_viewbuttonstyle",
       "community": 206,
@@ -5467,7 +6187,7 @@
       "label": "emptyTextStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L598",
+      "source_location": "L563",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_emptytextstyle",
       "community": 206,
@@ -5480,7 +6200,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "processing_processingmodule",
-      "community": 263,
+      "community": 4,
       "norm_label": "processingmodule.jsx"
     },
     {
@@ -5490,7 +6210,7 @@
       "source_location": "L39",
       "_origin": "ast",
       "id": "processing_processingmodule_isgreigerollmatch",
-      "community": 263,
+      "community": 4,
       "norm_label": "isgreigerollmatch()"
     },
     {
@@ -5500,7 +6220,7 @@
       "source_location": "L50",
       "_origin": "ast",
       "id": "processing_processingmodule_process_options",
-      "community": 263,
+      "community": 4,
       "norm_label": "process_options"
     },
     {
@@ -5510,7 +6230,7 @@
       "source_location": "L79",
       "_origin": "ast",
       "id": "processing_processingmodule_processedrollsmultiselectdropdown",
-      "community": 263,
+      "community": 4,
       "norm_label": "processedrollsmultiselectdropdown()"
     },
     {
@@ -5520,7 +6240,7 @@
       "source_location": "L220",
       "_origin": "ast",
       "id": "processing_processingmodule_processingmodule",
-      "community": 263,
+      "community": 4,
       "norm_label": "processingmodule()"
     },
     {
@@ -5530,7 +6250,7 @@
       "source_location": "L8009",
       "_origin": "ast",
       "id": "processing_processingmodule_chevronrighticon",
-      "community": 263,
+      "community": 4,
       "norm_label": "chevronrighticon()"
     },
     {
@@ -5540,7 +6260,7 @@
       "source_location": "L8020",
       "_origin": "ast",
       "id": "processing_processingmodule_processedrollreceivedtooltip",
-      "community": 263,
+      "community": 4,
       "norm_label": "processedrollreceivedtooltip()"
     },
     {
@@ -5550,7 +6270,7 @@
       "source_location": "L8101",
       "_origin": "ast",
       "id": "processing_processingmodule_processedrollwashedtooltip",
-      "community": 263,
+      "community": 4,
       "norm_label": "processedrollwashedtooltip()"
     },
     {
@@ -5560,7 +6280,7 @@
       "source_location": "L8202",
       "_origin": "ast",
       "id": "processing_processingmodule_processedrolldispatchedtooltip",
-      "community": 263,
+      "community": 4,
       "norm_label": "processedrolldispatchedtooltip()"
     },
     {
@@ -5570,7 +6290,7 @@
       "source_location": "L8287",
       "_origin": "ast",
       "id": "processing_processingmodule_processedrollrewashtooltip",
-      "community": 263,
+      "community": 4,
       "norm_label": "processedrollrewashtooltip()"
     },
     {
@@ -5727,7 +6447,7 @@
       "label": "AllBillsFinancesTab()",
       "file_type": "code",
       "source_file": "src/pages/Production/Board.jsx",
-      "source_location": "L6094",
+      "source_location": "L6096",
       "_origin": "ast",
       "id": "production_board_allbillsfinancestab",
       "community": 3,
@@ -5737,7 +6457,7 @@
       "label": "printFinanceBill()",
       "file_type": "code",
       "source_file": "src/pages/Production/Board.jsx",
-      "source_location": "L6546",
+      "source_location": "L6548",
       "_origin": "ast",
       "id": "production_board_printfinancebill",
       "community": 3,
@@ -5747,7 +6467,7 @@
       "label": "getLocalDateOnly()",
       "file_type": "code",
       "source_file": "src/pages/Production/Board.jsx",
-      "source_location": "L6853",
+      "source_location": "L6855",
       "_origin": "ast",
       "id": "production_board_getlocaldateonly",
       "community": 3,
@@ -5757,7 +6477,7 @@
       "label": "getUnifiedProductionDates()",
       "file_type": "code",
       "source_file": "src/pages/Production/Board.jsx",
-      "source_location": "L6863",
+      "source_location": "L6865",
       "_origin": "ast",
       "id": "production_board_getunifiedproductiondates",
       "community": 3,
@@ -6137,7 +6857,7 @@
       "label": "FabricInput()",
       "file_type": "code",
       "source_file": "src/pages/Production/FabricInput.jsx",
-      "source_location": "L1011",
+      "source_location": "L1021",
       "_origin": "ast",
       "id": "production_fabricinput_fabricinput",
       "community": 215,
@@ -6150,7 +6870,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "production_printablesof",
-      "community": 371,
+      "community": 368,
       "norm_label": "printablesof.jsx"
     },
     {
@@ -6160,7 +6880,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "production_printablesof_getlocaldatestring",
-      "community": 371,
+      "community": 368,
       "norm_label": "getlocaldatestring()"
     },
     {
@@ -6170,7 +6890,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "production_printablesof_getsofstatusbadge",
-      "community": 371,
+      "community": 368,
       "norm_label": "getsofstatusbadge()"
     },
     {
@@ -6180,7 +6900,7 @@
       "source_location": "L47",
       "_origin": "ast",
       "id": "production_printablesof_printablesof",
-      "community": 371,
+      "community": 368,
       "norm_label": "printablesof()"
     },
     {
@@ -6190,7 +6910,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "production_printablesofdc",
-      "community": 273,
+      "community": 1,
       "norm_label": "printablesofdc.jsx"
     },
     {
@@ -6200,7 +6920,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "production_printablesofdc_getlocaldatestring",
-      "community": 273,
+      "community": 1,
       "norm_label": "getlocaldatestring()"
     },
     {
@@ -6210,7 +6930,7 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "production_printablesofdc_getsofstatusbadge",
-      "community": 273,
+      "community": 1,
       "norm_label": "getsofstatusbadge()"
     },
     {
@@ -6220,7 +6940,7 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "production_printablesofdc_printablesofdc",
-      "community": 273,
+      "community": 1,
       "norm_label": "printablesofdc()"
     },
     {
@@ -6270,7 +6990,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "production_printablewofdc",
-      "community": 5,
+      "community": 3,
       "norm_label": "printablewofdc.jsx"
     },
     {
@@ -6280,7 +7000,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "production_printablewofdc_printablewofdc",
-      "community": 5,
+      "community": 3,
       "norm_label": "printablewofdc()"
     },
     {
@@ -6377,7 +7097,7 @@
       "label": "STATUS_OPTIONS",
       "file_type": "code",
       "source_file": "src/pages/Production/SizingOrderForms.jsx",
-      "source_location": "L47",
+      "source_location": "L50",
       "_origin": "ast",
       "id": "production_sizingorderforms_status_options",
       "community": 380,
@@ -6387,7 +7107,7 @@
       "label": "SizingOrderForms()",
       "file_type": "code",
       "source_file": "src/pages/Production/SizingOrderForms.jsx",
-      "source_location": "L49",
+      "source_location": "L52",
       "_origin": "ast",
       "id": "production_sizingorderforms_sizingorderforms",
       "community": 380,
@@ -6397,11 +7117,31 @@
       "label": "MultiSelectDropdown()",
       "file_type": "code",
       "source_file": "src/pages/Production/SizingOrderForms.jsx",
-      "source_location": "L1974",
+      "source_location": "L2046",
       "_origin": "ast",
       "id": "production_sizingorderforms_multiselectdropdown",
       "community": 380,
       "norm_label": "multiselectdropdown()"
+    },
+    {
+      "label": "SofStopWizardModal()",
+      "file_type": "code",
+      "source_file": "src/pages/Production/SizingOrderForms.jsx",
+      "source_location": "L2156",
+      "_origin": "ast",
+      "id": "production_sizingorderforms_sofstopwizardmodal",
+      "community": 380,
+      "norm_label": "sofstopwizardmodal()"
+    },
+    {
+      "label": "SofReallocateModal()",
+      "file_type": "code",
+      "source_file": "src/pages/Production/SizingOrderForms.jsx",
+      "source_location": "L3226",
+      "_origin": "ast",
+      "id": "production_sizingorderforms_sofreallocatemodal",
+      "community": 380,
+      "norm_label": "sofreallocatemodal()"
     },
     {
       "label": "WarpingOrderForms.jsx",
@@ -6410,7 +7150,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "production_warpingorderforms",
-      "community": 380,
+      "community": 3,
       "norm_label": "warpingorderforms.jsx"
     },
     {
@@ -6420,7 +7160,7 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "production_warpingorderforms_getlocaldatestring",
-      "community": 380,
+      "community": 3,
       "norm_label": "getlocaldatestring()"
     },
     {
@@ -6430,57 +7170,57 @@
       "source_location": "L24",
       "_origin": "ast",
       "id": "production_warpingorderforms_getwofstatusbadge",
-      "community": 380,
+      "community": 3,
       "norm_label": "getwofstatusbadge()"
     },
     {
       "label": "getYarnStatusBadge()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingOrderForms.jsx",
-      "source_location": "L57",
+      "source_location": "L59",
       "_origin": "ast",
       "id": "production_warpingorderforms_getyarnstatusbadge",
-      "community": 380,
+      "community": 3,
       "norm_label": "getyarnstatusbadge()"
     },
     {
       "label": "STATUS_OPTIONS",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingOrderForms.jsx",
-      "source_location": "L73",
+      "source_location": "L75",
       "_origin": "ast",
       "id": "production_warpingorderforms_status_options",
-      "community": 380,
+      "community": 3,
       "norm_label": "status_options"
     },
     {
       "label": "WarpingOrderForms()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingOrderForms.jsx",
-      "source_location": "L75",
+      "source_location": "L77",
       "_origin": "ast",
       "id": "production_warpingorderforms_warpingorderforms",
-      "community": 380,
+      "community": 3,
       "norm_label": "warpingorderforms()"
     },
     {
       "label": "StatusUpdater()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingOrderForms.jsx",
-      "source_location": "L3371",
+      "source_location": "L4276",
       "_origin": "ast",
       "id": "production_warpingorderforms_statusupdater",
-      "community": 380,
+      "community": 3,
       "norm_label": "statusupdater()"
     },
     {
       "label": "MultiSelectDropdown()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingOrderForms.jsx",
-      "source_location": "L3413",
+      "source_location": "L4318",
       "_origin": "ast",
       "id": "production_warpingorderforms_multiselectdropdown",
-      "community": 380,
+      "community": 3,
       "norm_label": "multiselectdropdown()"
     },
     {
@@ -6547,7 +7287,7 @@
       "label": "allocateLanes()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L64",
+      "source_location": "L65",
       "_origin": "ast",
       "id": "production_warpingsizing_allocatelanes",
       "community": 1,
@@ -6557,7 +7297,7 @@
       "label": "getStatusColor()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L122",
+      "source_location": "L123",
       "_origin": "ast",
       "id": "production_warpingsizing_getstatuscolor",
       "community": 1,
@@ -6567,7 +7307,7 @@
       "label": "getWofStatusBadge()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L132",
+      "source_location": "L133",
       "_origin": "ast",
       "id": "production_warpingsizing_getwofstatusbadge",
       "community": 1,
@@ -6577,7 +7317,7 @@
       "label": "DAY_NAMES",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L164",
+      "source_location": "L169",
       "_origin": "ast",
       "id": "production_warpingsizing_day_names",
       "community": 1,
@@ -6587,7 +7327,7 @@
       "label": "MONTH_NAMES",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L165",
+      "source_location": "L170",
       "_origin": "ast",
       "id": "production_warpingsizing_month_names",
       "community": 1,
@@ -6597,7 +7337,7 @@
       "label": "GanttBar()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L172",
+      "source_location": "L177",
       "_origin": "ast",
       "id": "production_warpingsizing_ganttbar",
       "community": 1,
@@ -6607,7 +7347,7 @@
       "label": "WarpingSizing()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L380",
+      "source_location": "L387",
       "_origin": "ast",
       "id": "production_warpingsizing_warpingsizing",
       "community": 1,
@@ -6617,7 +7357,7 @@
       "label": "InHouseGantt()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L464",
+      "source_location": "L471",
       "_origin": "ast",
       "id": "production_warpingsizing_inhousegantt",
       "community": 1,
@@ -6627,7 +7367,7 @@
       "label": "WofDetailModal()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L1056",
+      "source_location": "L1066",
       "_origin": "ast",
       "id": "production_warpingsizing_wofdetailmodal",
       "community": 1,
@@ -6637,7 +7377,7 @@
       "label": "InfoField()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L2170",
+      "source_location": "L3014",
       "_origin": "ast",
       "id": "production_warpingsizing_infofield",
       "community": 1,
@@ -6647,7 +7387,7 @@
       "label": "thStyle",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L2183",
+      "source_location": "L3027",
       "_origin": "ast",
       "id": "production_warpingsizing_thstyle",
       "community": 1,
@@ -6657,7 +7397,7 @@
       "label": "tdStyle",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L2193",
+      "source_location": "L3037",
       "_origin": "ast",
       "id": "production_warpingsizing_tdstyle",
       "community": 1,
@@ -6667,7 +7407,7 @@
       "label": "calcBarPositionForDates()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L2197",
+      "source_location": "L3041",
       "_origin": "ast",
       "id": "production_warpingsizing_calcbarpositionfordates",
       "community": 1,
@@ -6677,7 +7417,7 @@
       "label": "calcBarPosition()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L2235",
+      "source_location": "L3079",
       "_origin": "ast",
       "id": "production_warpingsizing_calcbarposition",
       "community": 1,
@@ -6687,7 +7427,7 @@
       "label": "JobWorkTable()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L2242",
+      "source_location": "L3086",
       "_origin": "ast",
       "id": "production_warpingsizing_jobworktable",
       "community": 1,
@@ -6697,7 +7437,7 @@
       "label": "getSofStatusBadge()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L2385",
+      "source_location": "L3231",
       "_origin": "ast",
       "id": "production_warpingsizing_getsofstatusbadge",
       "community": 1,
@@ -6707,7 +7447,7 @@
       "label": "SofDetailModal()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L2416",
+      "source_location": "L3266",
       "_origin": "ast",
       "id": "production_warpingsizing_sofdetailmodal",
       "community": 1,
@@ -6717,7 +7457,7 @@
       "label": "SizingTab()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3059",
+      "source_location": "L5183",
       "_origin": "ast",
       "id": "production_warpingsizing_sizingtab",
       "community": 1,
@@ -6727,7 +7467,7 @@
       "label": "InHouseSizingGantt()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3063",
+      "source_location": "L5187",
       "_origin": "ast",
       "id": "production_warpingsizing_inhousesizinggantt",
       "community": 1,
@@ -6737,7 +7477,7 @@
       "label": "JobWorkSizingTable()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3609",
+      "source_location": "L5734",
       "_origin": "ast",
       "id": "production_warpingsizing_jobworksizingtable",
       "community": 1,
@@ -6937,7 +7677,7 @@
       "label": "MOCK_AIRJET_LOOMS",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L538",
+      "source_location": "L548",
       "_origin": "ast",
       "id": "production_weavingorderforms_mock_airjet_looms",
       "community": 11,
@@ -6947,7 +7687,7 @@
       "label": "MOCK_RAPIER_LOOMS",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L546",
+      "source_location": "L556",
       "_origin": "ast",
       "id": "production_weavingorderforms_mock_rapier_looms",
       "community": 11,
@@ -6957,7 +7697,7 @@
       "label": "getLooms()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L552",
+      "source_location": "L562",
       "_origin": "ast",
       "id": "production_weavingorderforms_getlooms",
       "community": 11,
@@ -6967,7 +7707,7 @@
       "label": "getOrdersForMachine()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L569",
+      "source_location": "L579",
       "_origin": "ast",
       "id": "production_weavingorderforms_getordersformachine",
       "community": 11,
@@ -6977,7 +7717,7 @@
       "label": "STATUS_OPTIONS",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L583",
+      "source_location": "L593",
       "_origin": "ast",
       "id": "production_weavingorderforms_status_options",
       "community": 11,
@@ -6987,7 +7727,7 @@
       "label": "WeavingOrderForms()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L588",
+      "source_location": "L598",
       "_origin": "ast",
       "id": "production_weavingorderforms_weavingorderforms",
       "community": 11,
@@ -6997,11 +7737,21 @@
       "label": "MultiSelectDropdown()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L5860",
+      "source_location": "L5945",
       "_origin": "ast",
       "id": "production_weavingorderforms_multiselectdropdown",
       "community": 11,
       "norm_label": "multiselectdropdown()"
+    },
+    {
+      "label": "WvofStopWizardModal()",
+      "file_type": "code",
+      "source_file": "src/pages/Production/WeavingOrderForms.jsx",
+      "source_location": "L6050",
+      "_origin": "ast",
+      "id": "production_weavingorderforms_wvofstopwizardmodal",
+      "community": 11,
+      "norm_label": "wvofstopwizardmodal()"
     },
     {
       "label": "opencode.py",
@@ -7040,18 +7790,38 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "utils_weaving",
-      "community": 380,
+      "community": 11,
       "norm_label": "weaving.js"
     },
     {
       "label": "generateWeavingNumbersBulk()",
       "file_type": "code",
       "source_file": "src/utils/weaving.js",
-      "source_location": "L9",
+      "source_location": "L12",
       "_origin": "ast",
       "id": "utils_weaving_generateweavingnumbersbulk",
-      "community": 380,
+      "community": 11,
       "norm_label": "generateweavingnumbersbulk()"
+    },
+    {
+      "label": "getMaxSeq()",
+      "file_type": "code",
+      "source_file": "src/utils/weaving.js",
+      "source_location": "L41",
+      "_origin": "ast",
+      "id": "utils_weaving_getmaxseq",
+      "community": 11,
+      "norm_label": "getmaxseq()"
+    },
+    {
+      "label": "insertWeavingOrdersWithRetry()",
+      "file_type": "code",
+      "source_file": "src/utils/weaving.js",
+      "source_location": "L97",
+      "_origin": "ast",
+      "id": "utils_weaving_insertweavingorderswithretry",
+      "community": 11,
+      "norm_label": "insertweavingorderswithretry()"
     },
     {
       "label": "linked-project.json",
@@ -14260,7 +15030,7 @@
       "source_location": "L54",
       "_origin": "ast",
       "id": "users_bundles_security_compliance",
-      "community": 242,
+      "community": 379,
       "norm_label": "security & compliance"
     },
     {
@@ -14270,7 +15040,7 @@
       "source_location": "L56",
       "_origin": "ast",
       "id": "users_bundles_the_security_engineer_pack",
-      "community": 242,
+      "community": 379,
       "norm_label": "\ud83d\udee1\ufe0f the \"security engineer\" pack"
     },
     {
@@ -14280,7 +15050,7 @@
       "source_location": "L70",
       "_origin": "ast",
       "id": "users_bundles_the_security_developer_pack",
-      "community": 242,
+      "community": 379,
       "norm_label": "\ud83d\udd10 the \"security developer\" pack"
     },
     {
@@ -14490,7 +15260,7 @@
       "source_location": "L297",
       "_origin": "ast",
       "id": "users_bundles_data_analytics",
-      "community": 52,
+      "community": 235,
       "norm_label": "\ud83d\udcca data & analytics"
     },
     {
@@ -14500,7 +15270,7 @@
       "source_location": "L299",
       "_origin": "ast",
       "id": "users_bundles_the_data_analytics_pack",
-      "community": 52,
+      "community": 235,
       "norm_label": "\ud83d\udcca the \"data & analytics\" pack"
     },
     {
@@ -14510,7 +15280,7 @@
       "source_location": "L312",
       "_origin": "ast",
       "id": "users_bundles_the_data_engineering_pack",
-      "community": 52,
+      "community": 235,
       "norm_label": "\ud83d\udd04 the \"data engineering\" pack"
     },
     {
@@ -16900,7 +17670,7 @@
       "source_location": "L24",
       "_origin": "ast",
       "id": "users_security_skills_active_directory_attacks_active_directory_attacks",
-      "community": 235,
+      "community": 404,
       "norm_label": "active directory attacks (`active-directory-attacks`)"
     },
     {
@@ -16910,7 +17680,7 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_28",
-      "community": 235,
+      "community": 404,
       "norm_label": "use cases"
     },
     {
@@ -16920,7 +17690,7 @@
       "source_location": "L34",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_34",
-      "community": 235,
+      "community": 404,
       "norm_label": "example prompts"
     },
     {
@@ -17120,7 +17890,7 @@
       "source_location": "L137",
       "_origin": "ast",
       "id": "users_security_skills_auth_implementation_patterns_auth_implementation_patterns",
-      "community": 62,
+      "community": 397,
       "norm_label": "auth-implementation-patterns (`auth-implementation-patterns`)"
     },
     {
@@ -17130,7 +17900,7 @@
       "source_location": "L141",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_141",
-      "community": 62,
+      "community": 397,
       "norm_label": "use cases"
     },
     {
@@ -17140,7 +17910,7 @@
       "source_location": "L146",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_146",
-      "community": 62,
+      "community": 397,
       "norm_label": "example prompts"
     },
     {
@@ -17150,7 +17920,7 @@
       "source_location": "L153",
       "_origin": "ast",
       "id": "users_security_skills_aws_penetration_testing_aws_penetration_testing",
-      "community": 386,
+      "community": 263,
       "norm_label": "aws penetration testing (`aws-penetration-testing`)"
     },
     {
@@ -17160,7 +17930,7 @@
       "source_location": "L157",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_157",
-      "community": 386,
+      "community": 263,
       "norm_label": "use cases"
     },
     {
@@ -17170,7 +17940,7 @@
       "source_location": "L162",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_162",
-      "community": 386,
+      "community": 263,
       "norm_label": "example prompts"
     },
     {
@@ -17180,7 +17950,7 @@
       "source_location": "L169",
       "_origin": "ast",
       "id": "users_security_skills_backend_dev_guidelines_backend_dev_guidelines",
-      "community": 375,
+      "community": 62,
       "norm_label": "backend-dev-guidelines (`backend-dev-guidelines`)"
     },
     {
@@ -17190,7 +17960,7 @@
       "source_location": "L173",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_173",
-      "community": 375,
+      "community": 62,
       "norm_label": "use cases"
     },
     {
@@ -17200,7 +17970,7 @@
       "source_location": "L176",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_176",
-      "community": 375,
+      "community": 62,
       "norm_label": "example prompts"
     },
     {
@@ -17210,7 +17980,7 @@
       "source_location": "L181",
       "_origin": "ast",
       "id": "users_security_skills_backend_security_coder_backend_security_coder",
-      "community": 62,
+      "community": 373,
       "norm_label": "backend-security-coder (`backend-security-coder`)"
     },
     {
@@ -17220,7 +17990,7 @@
       "source_location": "L185",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_185",
-      "community": 62,
+      "community": 373,
       "norm_label": "use cases"
     },
     {
@@ -17230,7 +18000,7 @@
       "source_location": "L190",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_190",
-      "community": 62,
+      "community": 373,
       "norm_label": "example prompts"
     },
     {
@@ -17420,7 +18190,7 @@
       "source_location": "L284",
       "_origin": "ast",
       "id": "users_security_skills_cloud_penetration_testing_cloud_penetration_testing",
-      "community": 389,
+      "community": 62,
       "norm_label": "cloud penetration testing (`cloud-penetration-testing`)"
     },
     {
@@ -17430,7 +18200,7 @@
       "source_location": "L288",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_288",
-      "community": 389,
+      "community": 62,
       "norm_label": "use cases"
     },
     {
@@ -17440,7 +18210,7 @@
       "source_location": "L294",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_294",
-      "community": 389,
+      "community": 62,
       "norm_label": "example prompts"
     },
     {
@@ -17450,7 +18220,7 @@
       "source_location": "L301",
       "_origin": "ast",
       "id": "users_security_skills_cloud_architect_cloud_architect",
-      "community": 387,
+      "community": 376,
       "norm_label": "cloud-architect (`cloud-architect`)"
     },
     {
@@ -17460,7 +18230,7 @@
       "source_location": "L305",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_305",
-      "community": 387,
+      "community": 376,
       "norm_label": "use cases"
     },
     {
@@ -17470,7 +18240,7 @@
       "source_location": "L308",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_308",
-      "community": 387,
+      "community": 376,
       "norm_label": "example prompts"
     },
     {
@@ -17540,7 +18310,7 @@
       "source_location": "L356",
       "_origin": "ast",
       "id": "users_security_skills_codebase_cleanup_deps_audit_codebase_cleanup_deps_audit",
-      "community": 62,
+      "community": 398,
       "norm_label": "codebase-cleanup-deps-audit (`codebase-cleanup-deps-audit`)"
     },
     {
@@ -17550,7 +18320,7 @@
       "source_location": "L360",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_360",
-      "community": 62,
+      "community": 398,
       "norm_label": "use cases"
     },
     {
@@ -17560,7 +18330,7 @@
       "source_location": "L363",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_363",
-      "community": 62,
+      "community": 398,
       "norm_label": "example prompts"
     },
     {
@@ -18910,7 +19680,7 @@
       "source_location": "L1007",
       "_origin": "ast",
       "id": "users_security_skills_mobile_security_coder_mobile_security_coder",
-      "community": 381,
+      "community": 375,
       "norm_label": "mobile-security-coder (`mobile-security-coder`)"
     },
     {
@@ -18920,7 +19690,7 @@
       "source_location": "L1011",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1011",
-      "community": 381,
+      "community": 375,
       "norm_label": "use cases"
     },
     {
@@ -18930,7 +19700,7 @@
       "source_location": "L1016",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1016",
-      "community": 381,
+      "community": 375,
       "norm_label": "example prompts"
     },
     {
@@ -18940,7 +19710,7 @@
       "source_location": "L1032",
       "_origin": "ast",
       "id": "users_security_skills_mtls_configuration_mtls_configuration",
-      "community": 269,
+      "community": 62,
       "norm_label": "mtls-configuration (`mtls-configuration`)"
     },
     {
@@ -18950,7 +19720,7 @@
       "source_location": "L1036",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1036",
-      "community": 269,
+      "community": 62,
       "norm_label": "use cases"
     },
     {
@@ -18960,7 +19730,7 @@
       "source_location": "L1039",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1039",
-      "community": 269,
+      "community": 62,
       "norm_label": "example prompts"
     },
     {
@@ -19000,7 +19770,7 @@
       "source_location": "L1061",
       "_origin": "ast",
       "id": "users_security_skills_nestjs_expert_nestjs_expert",
-      "community": 390,
+      "community": 382,
       "norm_label": "nestjs-expert (`nestjs-expert`)"
     },
     {
@@ -19010,7 +19780,7 @@
       "source_location": "L1065",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1065",
-      "community": 390,
+      "community": 382,
       "norm_label": "use cases"
     },
     {
@@ -19020,7 +19790,7 @@
       "source_location": "L1068",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1068",
-      "community": 390,
+      "community": 382,
       "norm_label": "example prompts"
     },
     {
@@ -19060,7 +19830,7 @@
       "source_location": "L1092",
       "_origin": "ast",
       "id": "users_security_skills_nextjs_supabase_auth_nextjs_supabase_auth",
-      "community": 354,
+      "community": 389,
       "norm_label": "nextjs-supabase-auth (`nextjs-supabase-auth`)"
     },
     {
@@ -19070,7 +19840,7 @@
       "source_location": "L1096",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1096",
-      "community": 354,
+      "community": 389,
       "norm_label": "use cases"
     },
     {
@@ -19080,7 +19850,7 @@
       "source_location": "L1099",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1099",
-      "community": 354,
+      "community": 389,
       "norm_label": "example prompts"
     },
     {
@@ -19120,7 +19890,7 @@
       "source_location": "L1116",
       "_origin": "ast",
       "id": "users_security_skills_nodejs_best_practices_nodejs_best_practices",
-      "community": 62,
+      "community": 399,
       "norm_label": "nodejs-best-practices (`nodejs-best-practices`)"
     },
     {
@@ -19130,7 +19900,7 @@
       "source_location": "L1120",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1120",
-      "community": 62,
+      "community": 399,
       "norm_label": "use cases"
     },
     {
@@ -19140,7 +19910,7 @@
       "source_location": "L1123",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1123",
-      "community": 62,
+      "community": 399,
       "norm_label": "example prompts"
     },
     {
@@ -19630,7 +20400,7 @@
       "source_location": "L1344",
       "_origin": "ast",
       "id": "users_security_skills_security_auditing_workflow_security_audit",
-      "community": 368,
+      "community": 390,
       "norm_label": "security auditing workflow (`security-audit`)"
     },
     {
@@ -19640,7 +20410,7 @@
       "source_location": "L1348",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1348",
-      "community": 368,
+      "community": 390,
       "norm_label": "use cases"
     },
     {
@@ -19650,7 +20420,7 @@
       "source_location": "L1354",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1354",
-      "community": 368,
+      "community": 390,
       "norm_label": "example prompts"
     },
     {
@@ -19690,7 +20460,7 @@
       "source_location": "L1374",
       "_origin": "ast",
       "id": "users_security_skills_security_scanning_tools_scanning_tools",
-      "community": 372,
+      "community": 273,
       "norm_label": "security scanning tools (`scanning-tools`)"
     },
     {
@@ -19700,7 +20470,7 @@
       "source_location": "L1378",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1378",
-      "community": 372,
+      "community": 273,
       "norm_label": "use cases"
     },
     {
@@ -19710,7 +20480,7 @@
       "source_location": "L1381",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1381",
-      "community": 372,
+      "community": 273,
       "norm_label": "example prompts"
     },
     {
@@ -19750,7 +20520,7 @@
       "source_location": "L1403",
       "_origin": "ast",
       "id": "users_security_skills_security_compliance_compliance_check_security_compliance_compliance_check",
-      "community": 393,
+      "community": 62,
       "norm_label": "security-compliance-compliance-check (`security-compliance-compliance-check`)"
     },
     {
@@ -19760,7 +20530,7 @@
       "source_location": "L1407",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1407",
-      "community": 393,
+      "community": 62,
       "norm_label": "use cases"
     },
     {
@@ -19770,7 +20540,7 @@
       "source_location": "L1410",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1410",
-      "community": 393,
+      "community": 62,
       "norm_label": "example prompts"
     },
     {
@@ -19810,7 +20580,7 @@
       "source_location": "L1427",
       "_origin": "ast",
       "id": "users_security_skills_security_review_cc_skill_security_review",
-      "community": 391,
+      "community": 402,
       "norm_label": "security-review (`cc-skill-security-review`)"
     },
     {
@@ -19820,7 +20590,7 @@
       "source_location": "L1431",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1431",
-      "community": 391,
+      "community": 402,
       "norm_label": "use cases"
     },
     {
@@ -19830,7 +20600,7 @@
       "source_location": "L1434",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1434",
-      "community": 391,
+      "community": 402,
       "norm_label": "example prompts"
     },
     {
@@ -19870,7 +20640,7 @@
       "source_location": "L1451",
       "_origin": "ast",
       "id": "users_security_skills_security_scanning_security_hardening_security_scanning_security_hardening",
-      "community": 382,
+      "community": 392,
       "norm_label": "security-scanning-security-hardening (`security-scanning-security-hardening`)"
     },
     {
@@ -19880,7 +20650,7 @@
       "source_location": "L1455",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1455",
-      "community": 382,
+      "community": 392,
       "norm_label": "use cases"
     },
     {
@@ -19890,7 +20660,7 @@
       "source_location": "L1458",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1458",
-      "community": 382,
+      "community": 392,
       "norm_label": "example prompts"
     },
     {
@@ -20110,7 +20880,7 @@
       "source_location": "L1548",
       "_origin": "ast",
       "id": "users_security_skills_ssh_penetration_testing_ssh_penetration_testing",
-      "community": 373,
+      "community": 393,
       "norm_label": "ssh penetration testing (`ssh-penetration-testing`)"
     },
     {
@@ -20120,7 +20890,7 @@
       "source_location": "L1552",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1552",
-      "community": 373,
+      "community": 393,
       "norm_label": "use cases"
     },
     {
@@ -20130,7 +20900,7 @@
       "source_location": "L1555",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1555",
-      "community": 373,
+      "community": 393,
       "norm_label": "example prompts"
     },
     {
@@ -20170,7 +20940,7 @@
       "source_location": "L1572",
       "_origin": "ast",
       "id": "users_security_skills_stripe_integration_stripe_integration",
-      "community": 376,
+      "community": 381,
       "norm_label": "stripe-integration (`stripe-integration`)"
     },
     {
@@ -20180,7 +20950,7 @@
       "source_location": "L1576",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1576",
-      "community": 376,
+      "community": 381,
       "norm_label": "use cases"
     },
     {
@@ -20190,7 +20960,7 @@
       "source_location": "L1579",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1579",
-      "community": 376,
+      "community": 381,
       "norm_label": "example prompts"
     },
     {
@@ -20200,7 +20970,7 @@
       "source_location": "L1584",
       "_origin": "ast",
       "id": "users_security_skills_terraform_specialist_terraform_specialist",
-      "community": 394,
+      "community": 62,
       "norm_label": "terraform-specialist (`terraform-specialist`)"
     },
     {
@@ -20210,7 +20980,7 @@
       "source_location": "L1588",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1588",
-      "community": 394,
+      "community": 62,
       "norm_label": "use cases"
     },
     {
@@ -20220,7 +20990,7 @@
       "source_location": "L1591",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1591",
-      "community": 394,
+      "community": 62,
       "norm_label": "example prompts"
     },
     {
@@ -20350,7 +21120,7 @@
       "source_location": "L1651",
       "_origin": "ast",
       "id": "users_security_skills_vulnerability_scanner_vulnerability_scanner",
-      "community": 392,
+      "community": 406,
       "norm_label": "vulnerability-scanner (`vulnerability-scanner`)"
     },
     {
@@ -20360,7 +21130,7 @@
       "source_location": "L1655",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1655",
-      "community": 392,
+      "community": 406,
       "norm_label": "use cases"
     },
     {
@@ -20370,7 +21140,7 @@
       "source_location": "L1658",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1658",
-      "community": 392,
+      "community": 406,
       "norm_label": "example prompts"
     },
     {
@@ -20410,7 +21180,7 @@
       "source_location": "L1675",
       "_origin": "ast",
       "id": "users_security_skills_web_design_guidelines_web_design_guidelines",
-      "community": 62,
+      "community": 400,
       "norm_label": "web-design-guidelines (`web-design-guidelines`)"
     },
     {
@@ -20420,7 +21190,7 @@
       "source_location": "L1679",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1679",
-      "community": 62,
+      "community": 400,
       "norm_label": "use cases"
     },
     {
@@ -20430,7 +21200,7 @@
       "source_location": "L1682",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1682",
-      "community": 62,
+      "community": 400,
       "norm_label": "example prompts"
     },
     {
@@ -20470,7 +21240,7 @@
       "source_location": "L1699",
       "_origin": "ast",
       "id": "users_security_skills_wireshark_network_traffic_analysis_wireshark_analysis",
-      "community": 385,
+      "community": 394,
       "norm_label": "wireshark network traffic analysis (`wireshark-analysis`)"
     },
     {
@@ -20480,7 +21250,7 @@
       "source_location": "L1703",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1703",
-      "community": 385,
+      "community": 394,
       "norm_label": "use cases"
     },
     {
@@ -20490,7 +21260,7 @@
       "source_location": "L1706",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1706",
-      "community": 385,
+      "community": 394,
       "norm_label": "example prompts"
     },
     {
@@ -20500,7 +21270,7 @@
       "source_location": "L1711",
       "_origin": "ast",
       "id": "users_security_skills_wordpress_penetration_testing_wordpress_penetration_testing",
-      "community": 379,
+      "community": 385,
       "norm_label": "wordpress penetration testing (`wordpress-penetration-testing`)"
     },
     {
@@ -20510,7 +21280,7 @@
       "source_location": "L1715",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1715",
-      "community": 379,
+      "community": 385,
       "norm_label": "use cases"
     },
     {
@@ -20520,7 +21290,7 @@
       "source_location": "L1718",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1718",
-      "community": 379,
+      "community": 385,
       "norm_label": "example prompts"
     },
     {
@@ -31725,6 +32495,66 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L26",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_machines",
+      "target": "scratch_check_machines_check"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L23",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_machines",
+      "target": "scratch_check_machines_createclient"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L2",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_machines",
+      "target": "scratch_check_machines_dotenv"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_machines",
+      "target": "scratch_check_machines_fs"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L20",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_machines",
+      "target": "scratch_check_machines_pkg"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/check_machines.js",
+      "source_location": "L24",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_machines",
+      "target": "scratch_check_machines_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scratch/check_order_status.js",
       "source_location": "L8",
       "weight": 1.0,
@@ -32055,6 +32885,56 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_wofs",
+      "target": "scratch_check_wofs_env"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_wofs",
+      "target": "scratch_check_wofs_envcontent"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_wofs",
+      "target": "scratch_check_wofs_envpath"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L18",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_wofs",
+      "target": "scratch_check_wofs_run"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/check_wofs.js",
+      "source_location": "L16",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_check_wofs",
+      "target": "scratch_check_wofs_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scratch/check_wvof.js",
       "source_location": "L11",
       "weight": 1.0,
@@ -32141,6 +33021,156 @@
       "confidence_score": 1.0,
       "source": "scratch_clear_db",
       "target": "scratch_clear_db_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_clear_transactions_only",
+      "target": "scratch_clear_transactions_only_env"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_clear_transactions_only",
+      "target": "scratch_clear_transactions_only_envcontent"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_clear_transactions_only",
+      "target": "scratch_clear_transactions_only_envpath"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L18",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_clear_transactions_only",
+      "target": "scratch_clear_transactions_only_run"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/clear_transactions_only.js",
+      "source_location": "L16",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_clear_transactions_only",
+      "target": "scratch_clear_transactions_only_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_clear_with_key",
+      "target": "scratch_clear_with_key_env"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_clear_with_key",
+      "target": "scratch_clear_with_key_envcontent"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_clear_with_key",
+      "target": "scratch_clear_with_key_envpath"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L28",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_clear_with_key",
+      "target": "scratch_clear_with_key_run"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/clear_with_key.js",
+      "source_location": "L24",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_clear_with_key",
+      "target": "scratch_clear_with_key_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_count_all_rows",
+      "target": "scratch_count_all_rows_env"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_count_all_rows",
+      "target": "scratch_count_all_rows_envcontent"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_count_all_rows",
+      "target": "scratch_count_all_rows_envpath"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L18",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_count_all_rows",
+      "target": "scratch_count_all_rows_run"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/count_all_rows.js",
+      "source_location": "L16",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_count_all_rows",
+      "target": "scratch_count_all_rows_supabase"
     },
     {
       "relation": "contains",
@@ -32445,6 +33475,106 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_db_functions",
+      "target": "scratch_inspect_db_functions_env"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_db_functions",
+      "target": "scratch_inspect_db_functions_envcontent"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_db_functions",
+      "target": "scratch_inspect_db_functions_envpath"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L18",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_db_functions",
+      "target": "scratch_inspect_db_functions_run"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_db_functions.js",
+      "source_location": "L16",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_db_functions",
+      "target": "scratch_inspect_db_functions_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_dyed_delivery_400",
+      "target": "scratch_inspect_dyed_delivery_400_env"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_dyed_delivery_400",
+      "target": "scratch_inspect_dyed_delivery_400_envcontent"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_dyed_delivery_400",
+      "target": "scratch_inspect_dyed_delivery_400_envpath"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L18",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_dyed_delivery_400",
+      "target": "scratch_inspect_dyed_delivery_400_inspectquery"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_dyed_delivery_400.js",
+      "source_location": "L16",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_dyed_delivery_400",
+      "target": "scratch_inspect_dyed_delivery_400_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scratch/inspect_dyed_yarn_receipts.js",
       "source_location": "L18",
       "weight": 1.0,
@@ -32685,6 +33815,96 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_schema.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_schema",
+      "target": "scratch_inspect_schema_dirname"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_schema.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_schema",
+      "target": "scratch_inspect_schema_filename"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_schema.js",
+      "source_location": "L16",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_schema",
+      "target": "scratch_inspect_schema_run"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_schema.js",
+      "source_location": "L14",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_schema",
+      "target": "scratch_inspect_schema_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_search_result",
+      "target": "scratch_inspect_search_result_env"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_search_result",
+      "target": "scratch_inspect_search_result_envcontent"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_search_result",
+      "target": "scratch_inspect_search_result_envpath"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L17",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_search_result",
+      "target": "scratch_inspect_search_result_run"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_search_result.js",
+      "source_location": "L15",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_search_result",
+      "target": "scratch_inspect_search_result_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scratch/inspect_tables.js",
       "source_location": "L8",
       "weight": 1.0,
@@ -32731,6 +33951,56 @@
       "confidence_score": 1.0,
       "source": "scratch_inspect_tables",
       "target": "scratch_inspect_tables_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_weaving_allotments",
+      "target": "scratch_inspect_weaving_allotments_env"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_weaving_allotments",
+      "target": "scratch_inspect_weaving_allotments_envcontent"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L5",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_weaving_allotments",
+      "target": "scratch_inspect_weaving_allotments_envpath"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L17",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_weaving_allotments",
+      "target": "scratch_inspect_weaving_allotments_run"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_weaving_allotments.js",
+      "source_location": "L15",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_weaving_allotments",
+      "target": "scratch_inspect_weaving_allotments_supabase"
     },
     {
       "relation": "contains",
@@ -32831,6 +34101,56 @@
       "confidence_score": 1.0,
       "source": "scratch_inspect_yarn",
       "target": "scratch_inspect_yarn_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L1",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_yarn_usage",
+      "target": "scratch_inspect_yarn_usage_createclient"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L2",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_yarn_usage",
+      "target": "scratch_inspect_yarn_usage_dotenv"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L12",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_yarn_usage",
+      "target": "scratch_inspect_yarn_usage_inspect"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L3",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_yarn_usage",
+      "target": "scratch_inspect_yarn_usage_path"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/inspect_yarn_usage.js",
+      "source_location": "L10",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_inspect_yarn_usage",
+      "target": "scratch_inspect_yarn_usage_supabase"
     },
     {
       "relation": "contains",
@@ -33031,6 +34351,67 @@
       "confidence_score": 1.0,
       "source": "scratch_recovered_board",
       "target": "scratch_recovered_board_productionhub"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L16",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_test_columns",
+      "target": "scratch_test_columns_checkcolumn"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_test_columns",
+      "target": "scratch_test_columns_dirname"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_test_columns",
+      "target": "scratch_test_columns_filename"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L31",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_test_columns",
+      "target": "scratch_test_columns_run"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L14",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_test_columns",
+      "target": "scratch_test_columns_supabase"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/test_columns.js",
+      "source_location": "L32",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_test_columns_run",
+      "target": "scratch_test_columns_checkcolumn"
     },
     {
       "relation": "contains",
@@ -37920,16 +39301,6 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L543",
-      "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "orders_orderyarnusagetab",
-      "target": "orders_orderyarnusagetab_disabledtdstyle"
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
       "source_location": "L598",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -39182,6 +40553,26 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "src/pages/Production/SizingOrderForms.jsx",
+      "source_location": "L2992",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "production_sizingorderforms",
+      "target": "production_sizingorderforms_sofreallocatemodal"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/pages/Production/SizingOrderForms.jsx",
+      "source_location": "L2096",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "production_sizingorderforms",
+      "target": "production_sizingorderforms_sofstopwizardmodal"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/pages/Production/SizingOrderForms.jsx",
       "source_location": "L26",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -39209,6 +40600,17 @@
       "confidence_score": 1.0,
       "source": "production_sizingorderforms",
       "target": "utils_weaving_generateweavingnumbersbulk"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "src/pages/Production/SizingOrderForms.jsx",
+      "source_location": "L10",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "production_sizingorderforms",
+      "target": "utils_weaving_insertweavingorderswithretry"
     },
     {
       "relation": "contains",
@@ -39323,6 +40725,17 @@
       "confidence_score": 1.0,
       "source": "production_warpingorderforms",
       "target": "utils_weaving_generateweavingnumbersbulk"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "src/pages/Production/WarpingOrderForms.jsx",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "production_warpingorderforms",
+      "target": "utils_weaving_insertweavingorderswithretry"
     },
     {
       "relation": "calls",
@@ -39957,6 +41370,16 @@
       "target": "production_weavingorderforms_weavingorderforms"
     },
     {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/pages/Production/WeavingOrderForms.jsx",
+      "source_location": "L6011",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "production_weavingorderforms",
+      "target": "production_weavingorderforms_wvofstopwizardmodal"
+    },
+    {
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
@@ -39977,6 +41400,17 @@
       "confidence_score": 1.0,
       "source": "production_weavingorderforms",
       "target": "utils_weaving_generateweavingnumbersbulk"
+    },
+    {
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "src/pages/Production/WeavingOrderForms.jsx",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "production_weavingorderforms",
+      "target": "utils_weaving_insertweavingorderswithretry"
     },
     {
       "relation": "calls",
@@ -40100,6 +41534,28 @@
       "target": "production_weavingorderforms_getlooms"
     },
     {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/pages/Production/WeavingOrderForms.jsx",
+      "source_location": "L6374",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "production_weavingorderforms_wvofstopwizardmodal",
+      "target": "utils_weaving_generateweavingnumbersbulk"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/pages/Production/WeavingOrderForms.jsx",
+      "source_location": "L6404",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "production_weavingorderforms_wvofstopwizardmodal",
+      "target": "utils_weaving_insertweavingorderswithretry"
+    },
+    {
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "src/utils/printDydr.js",
@@ -40117,6 +41573,48 @@
       "weight": 1.0,
       "confidence_score": 1.0,
       "source": "utils_weaving",
+      "target": "utils_weaving_generateweavingnumbersbulk"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/utils/weaving.js",
+      "source_location": "L41",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "utils_weaving",
+      "target": "utils_weaving_getmaxseq"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/utils/weaving.js",
+      "source_location": "L97",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "utils_weaving",
+      "target": "utils_weaving_insertweavingorderswithretry"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/utils/weaving.js",
+      "source_location": "L18",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "utils_weaving_generateweavingnumbersbulk",
+      "target": "utils_weaving_getmaxseq"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/utils/weaving.js",
+      "source_location": "L112",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "utils_weaving_insertweavingorderswithretry",
       "target": "utils_weaving_generateweavingnumbersbulk"
     },
     {
@@ -62291,5 +63789,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "4f9a40e0a55482c51c8c9e0d590141b98fd5cd67"
+  "built_at_commit": "46c4bd64a46f13d30251602cda098266a785e0b7"
 }

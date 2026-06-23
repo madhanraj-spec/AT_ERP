@@ -152,7 +152,9 @@ const getSingleDofStatusLabel = (dof, allDyrrs) => {
 const getSingleWofStatusLabel = (wof, orderDydis) => {
   const todayStr = getLocalDateString(new Date());
   let isWofLate = false;
-  if (wof.status === 'completed') {
+  const isFinished = wof.status === 'completed' || (wof.status === 'stopped' && !!wof.wofdc_number);
+
+  if (isFinished) {
     const actualEndStr = wof.process_completed_at
       ? getLocalDateString(wof.process_completed_at)
       : (getLocalDateString(wof.updated_at) || todayStr);
@@ -165,7 +167,7 @@ const getSingleWofStatusLabel = (wof, orderDydis) => {
     }
   }
 
-  if (isWofLate) return 'Late';
+  if (isWofLate) return isFinished ? 'Late Completed' : 'Late';
   if (wof.status === 'stopped') return 'Stopped';
 
   const wofDydrs = (orderDydis || []).filter(d => d.production_form_id === wof.id);
@@ -201,7 +203,9 @@ const getSingleWofStatusLabel = (wof, orderDydis) => {
 const getSingleSofStatusLabel = (sof) => {
   const todayStr = getLocalDateString(new Date());
   let isSofLate = false;
-  if (sof.status === 'completed') {
+  const isFinished = sof.status === 'completed' || (sof.status === 'stopped' && !!sof.sofdc_number);
+
+  if (isFinished) {
     const actualEndStr = sof.process_completed_at
       ? getLocalDateString(sof.process_completed_at)
       : (getLocalDateString(sof.updated_at) || todayStr);
@@ -214,7 +218,7 @@ const getSingleSofStatusLabel = (sof) => {
     }
   }
 
-  if (isSofLate) return 'Late';
+  if (isSofLate) return isFinished ? 'Late Completed' : 'Late';
   if (sof.status === 'stopped') return 'Stopped';
   if (sof.status === 'on_process') return 'On Process';
   if (sof.status === 'created') return 'Created';
@@ -2407,8 +2411,8 @@ export default function OrdersManagement() {
         supabase.from('dyeing_order_forms').select('id, dof_number, expected_delivery_date, order_ids, status'),
         supabase.from('dyed_yarn_receipts').select('id, dof_id, received_date, source_type'),
         supabase.from('master_partners').select('*'),
-        supabase.from('warping_order_forms').select('id, wof_number, order_id, status, end_date, process_completed_at, updated_at, colour_allotments'),
-        supabase.from('sizing_order_forms').select('id, sof_number, order_id, status, end_date, process_completed_at, updated_at'),
+        supabase.from('warping_order_forms').select('id, wof_number, order_id, status, end_date, process_completed_at, updated_at, colour_allotments, wofdc_number'),
+        supabase.from('sizing_order_forms').select('id, sof_number, order_id, status, end_date, process_completed_at, updated_at, sofdc_number'),
         supabase.from('weaving_orders').select('id, weaving_number, order_id, status, start_date, end_date, process_started_at, process_completed_at, updated_at, weft_allotments, fabric_rolls, production_logs'),
         supabase.from('dyed_yarn_delivery_items').select('id, production_form_id, quantity_kg, process_type, order_id'),
         supabase.from('processing_orders').select('*')

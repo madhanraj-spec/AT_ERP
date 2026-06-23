@@ -4,7 +4,7 @@ import {
   ArrowLeft, Layers, ChevronLeft, ChevronRight,
   ChevronDown, ChevronUp, Loader, Calendar,
   Package, Zap, AlertCircle, Clock, X, Play,
-  CheckCircle, Printer, AlertTriangle, StopCircle
+  CheckCircle, Printer, AlertTriangle, StopCircle, RefreshCw
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PrintableWOFDC from './PrintableWOFDC';
@@ -52,7 +52,8 @@ function hasExceededPlannedEnd(wof) {
   if (!wof.end_date) return false;
   const todayStr = getLocalDateString(new Date());
   const plannedEndStr = wof.end_date;
-  if (wof.status === 'completed') {
+  const isFinished = wof.status === 'completed' || (wof.status === 'stopped' && (!!wof.wofdc_number || !!wof.sofdc_number));
+  if (isFinished) {
     const actualEndStr = wof.process_completed_at
       ? getLocalDateString(wof.process_completed_at)
       : (getLocalDateString(wof.updated_at) || todayStr);
@@ -133,14 +134,18 @@ function getWofStatusBadge(wof) {
   const todayStr = getLocalDateString(new Date());
   const sc = getStatusColor(wof.status);
 
-  if (wof.status === 'completed') {
-    if (wof.process_completed_at) {
-        const actualEndStr = getLocalDateString(wof.process_completed_at);
-        if (wof.end_date && actualEndStr > wof.end_date) {
-            return { label: 'Late Completed', bg: '#fee2e2', border: '#fca5a5', text: '#b91c1c' };
-        }
+  const isFinished = wof.status === 'completed' || (wof.status === 'stopped' && !!wof.wofdc_number);
+
+  if (isFinished) {
+    const actualEndStr = wof.process_completed_at
+      ? getLocalDateString(wof.process_completed_at)
+      : (getLocalDateString(wof.updated_at) || todayStr);
+    if (wof.end_date && actualEndStr > wof.end_date) {
+      return { label: wof.status === 'completed' ? 'Late Completed' : 'Stopped Late', bg: '#fee2e2', border: '#fca5a5', text: '#b91c1c' };
     }
-    return { label: 'Completed', bg: '#dcfce7', border: '#22c55e', text: '#166534' };
+    return wof.status === 'completed'
+      ? { label: 'Completed', bg: '#dcfce7', border: '#22c55e', text: '#166534' }
+      : { label: 'Stopped', bg: '#fff7ed', border: '#f97316', text: '#c2410c' };
   }
 
   if (wof.status === 'on_process') {
@@ -912,7 +917,8 @@ function InHouseGantt() {
                               const pText = '#854d0e';
 
                               // 2. Actual Bar
-                              const showActual = !!wof.process_started_at || wof.status === 'on_process' || wof.status === 'completed';
+                              const isFinished = wof.status === 'completed' || (wof.status === 'stopped' && !!wof.wofdc_number);
+                              const showActual = !!wof.process_started_at || wof.status === 'on_process' || isFinished;
                               let actualBar = null;
                               let aBg = '';
                               let aBorder = '';
@@ -920,7 +926,7 @@ function InHouseGantt() {
 
                               if (showActual) {
                                 const actualStartStr = getLocalDateString(wof.process_started_at) || wof.start_date || todayStr;
-                                const actualEndStr = wof.status === 'completed'
+                                const actualEndStr = isFinished
                                   ? (getLocalDateString(wof.process_completed_at) || getLocalDateString(wof.updated_at) || todayStr)
                                   : todayStr;
 
@@ -936,15 +942,15 @@ function InHouseGantt() {
                                     aBorder = '#3b82f6';
                                     aText = '#1d4ed8';
                                   }
-                                } else if (wof.status === 'completed') {
+                                } else if (isFinished) {
                                   if (exceeded) {
                                     aBg = '#fee2e2';
                                     aBorder = '#ef4444';
                                     aText = '#b91c1c';
                                   } else {
-                                    aBg = '#dcfce7';
-                                    aBorder = '#22c55e';
-                                    aText = '#166534';
+                                    aBg = wof.status === 'completed' ? '#dcfce7' : '#fff7ed';
+                                    aBorder = wof.status === 'completed' ? '#22c55e' : '#f97316';
+                                    aText = wof.status === 'completed' ? '#166534' : '#c2410c';
                                   }
                                 } else {
                                   const statusColor = getStatusColor(wof.status);
@@ -1080,12 +1086,14 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
   const [selectedBeamId, setSelectedBeamId] = useState('');
   const [processDate, setProcessDate] = useState(() => {
     const now = new Date();
-    return now.toISOString().slice(0, 16); // yyyy-MM-ddTHH:mm
+    const tzoffset = now.getTimezoneOffset() * 60000;
+    return new Date(now - tzoffset).toISOString().slice(0, 16); // yyyy-MM-ddTHH:mm (local)
   });
 
   const [completeDate, setCompleteDate] = useState(() => {
     const now = new Date();
-    return now.toISOString().slice(0, 16); // yyyy-MM-ddTHH:mm
+    const tzoffset = now.getTimezoneOffset() * 60000;
+    return new Date(now - tzoffset).toISOString().slice(0, 16); // yyyy-MM-ddTHH:mm (local)
   });
 
   const [completeSplits, setCompleteSplits] = useState([]);
@@ -3224,14 +3232,18 @@ function getSofStatusBadge(sof) {
   const todayStr = getLocalDateString(new Date());
   const sc = getStatusColor(sof.status);
 
-  if (sof.status === 'completed') {
+  const isFinished = sof.status === 'completed' || (sof.status === 'stopped' && !!sof.sofdc_number);
+
+  if (isFinished) {
     const actualEndStr = sof.process_completed_at
       ? getLocalDateString(sof.process_completed_at)
       : (getLocalDateString(sof.updated_at) || todayStr);
     if (sof.end_date && actualEndStr > sof.end_date) {
-      return { label: 'Late Completed', bg: '#fee2e2', border: '#fca5a5', text: '#b91c1c' };
+      return { label: sof.status === 'completed' ? 'Late Completed' : 'Stopped Late', bg: '#fee2e2', border: '#fca5a5', text: '#b91c1c' };
     }
-    return { label: 'Completed', bg: '#dcfce7', border: '#22c55e', text: '#166534' };
+    return sof.status === 'completed'
+      ? { label: 'Completed', bg: '#dcfce7', border: '#22c55e', text: '#166534' }
+      : { label: 'Stopped', bg: '#fff7ed', border: '#f97316', text: '#c2410c' };
   }
 
   if (sof.status === 'on_process') {
@@ -3269,9 +3281,118 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
     return (new Date(Date.now() - tzoffset)).toISOString().slice(0, 16);
   });
 
+  // Wizard states
+  const [stopStep, setStopStep] = useState(null); // 'confirm_type' | 'ask_splits' | 'splits_table' | 'reallocate' | 'confirm_stop' | null
+  const [stopHasSplits, setStopHasSplits] = useState(null);
+  const [stopSplits, setStopSplits] = useState([]);
+  const [loadingStopSplits, setLoadingStopSplits] = useState(false);
+  const [reallocWhen, setReallocWhen] = useState(null); // 'now' | 'later' | null
+  const [reallocQty, setReallocQty] = useState('');
+  const [isReallocated, setIsReallocated] = useState(false);
+  const [showReallocateModal, setShowReallocateModal] = useState(false);
+  const [reallocSaving, setReallocSaving] = useState(false);
+  const [reallocSplitsCount, setReallocSplitsCount] = useState(1);
+  const [reallocSplits, setReallocSplits] = useState([]);
+
+  // Reallocation states
+  const [reallocType, setReallocType] = useState('in_house');
+  const [reallocMachineId, setReallocMachineId] = useState('');
+  const [reallocMachineName, setReallocMachineName] = useState('');
+  const [reallocPartnerId, setReallocPartnerId] = useState('');
+  const [reallocPartnerName, setReallocPartnerName] = useState('');
+  const [reallocStartDate, setReallocStartDate] = useState('');
+  const [reallocEndDate, setReallocEndDate] = useState('');
+  const [reallocBeamName, setReallocBeamName] = useState('');
+
+  const [sizingMachines, setSizingMachines] = useState([]);
+  const [sizingPartners, setSizingPartners] = useState([]);
+
   useEffect(() => {
     fetchDetails();
   }, [sof.id]);
+
+  useEffect(() => {
+    if (sofDetail) {
+      setReallocType(sofDetail.sizing_type || 'in_house');
+      setReallocBeamName(sofDetail.beam_name || '');
+      const defaultQty = sofDetail.qty > 0 
+        ? (Number(sofDetail.original_qty || sofDetail.qty) - sofDetail.qty)
+        : (sofDetail.original_qty || sofDetail.qty || 0);
+      setReallocQty(defaultQty.toString());
+      
+      setReallocSplitsCount(1);
+      setReallocSplits([{
+        sizing_type: sofDetail.sizing_type || 'in_house',
+        qty: defaultQty.toString(),
+        machine_id: '',
+        machine_name: '',
+        partner_id: '',
+        partner_name: '',
+        start_date: '',
+        end_date: '',
+        beam_name: sofDetail.beam_name || ''
+      }]);
+    }
+  }, [sofDetail]);
+
+  const handleSplitsCountChange = (count) => {
+    setReallocSplitsCount(count);
+    const defaultQty = sofDetail.qty > 0 
+      ? (Number(sofDetail.original_qty || sofDetail.qty) - sofDetail.qty)
+      : (sofDetail.original_qty || sofDetail.qty || 0);
+
+    const evenQty = Math.round((defaultQty / count) * 100) / 100;
+
+    setReallocSplits(prev => {
+      const next = [...prev];
+      if (count > next.length) {
+        for (let i = next.length; i < count; i++) {
+          next.push({
+            sizing_type: sofDetail.sizing_type || 'in_house',
+            qty: evenQty.toString(),
+            machine_id: '',
+            machine_name: '',
+            partner_id: '',
+            partner_name: '',
+            start_date: '',
+            end_date: '',
+            beam_name: sofDetail.beam_name || ''
+          });
+        }
+      } else if (count < next.length) {
+        next.splice(count);
+      }
+      
+      for (let i = 0; i < next.length; i++) {
+        next[i].qty = evenQty.toString();
+      }
+      return next;
+    });
+  };
+
+  const updateReallocSplit = (index, field, value) => {
+    setReallocSplits(prev => prev.map((item, idx) => {
+      if (idx === index) {
+        const updated = { ...item, [field]: value };
+        if (field === 'sizing_type') {
+          updated.machine_id = '';
+          updated.machine_name = '';
+          updated.partner_id = '';
+          updated.partner_name = '';
+        } else if (field === 'partner_id') {
+          const partner = sizingPartners.find(p => p.id === value || p.id.toString() === value);
+          updated.partner_name = partner ? partner.partner_name : '';
+          updated.machine_id = '';
+          updated.machine_name = '';
+        } else if (field === 'machine_id') {
+          const machine = sizingMachines.find(m => m.id === value || m.id.toString() === value);
+          updated.machine_name = machine ? machine.machine_name : '';
+        }
+        return updated;
+      }
+      return item;
+    }));
+  };
 
   const fetchDetails = async () => {
     setLoading(true);
@@ -3283,12 +3404,25 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
           order:orders(id, order_number, design_no, design_name, total_quantity),
           machine:master_machines!sizing_order_forms_machine_id_fkey(machine_name),
           partner:master_partners!sizing_order_forms_partner_id_fkey(partner_name),
-          wof:warping_order_forms(wof_number, warp_splits_count)
+          wof:warping_order_forms(id, wof_number, warp_splits_count, warp_splits)
         `)
         .eq('id', sof.id)
         .single();
       if (error) throw error;
       setSofDetail(data);
+
+      // Check if reallocated
+      const warpNoToLook = data.warp_no || data.sof_number;
+      if (warpNoToLook && data.wof_id) {
+        const { data: siblings, error: sibErr } = await supabase
+          .from('sizing_order_forms')
+          .select('id')
+          .eq('wof_id', data.wof_id)
+          .ilike('warp_no', `${warpNoToLook}/R%`);
+        if (!sibErr) {
+          setIsReallocated(siblings && siblings.length > 0);
+        }
+      }
 
       // Fetch sizing workers
       try {
@@ -3309,6 +3443,43 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
         }
       } catch (err) {
         console.error('Error fetching sizing workers:', err);
+      }
+
+      // Fetch sizing machines and partners for reallocation
+      try {
+        // Get sizing department IDs for machine filtering
+        const { data: sizingDeptData } = await supabase
+          .from('master_departments')
+          .select('id')
+          .ilike('department_name', '%sizing%');
+        const sizingMachineDeptIds = (sizingDeptData || []).map(d => d.id);
+
+        // Fetch sizing machines filtered by department
+        let machineData = [];
+        if (sizingMachineDeptIds.length > 0) {
+          const { data } = await supabase
+            .from('master_machines')
+            .select('*, master_departments(department_name)')
+            .in('department_id', sizingMachineDeptIds);
+          machineData = data || [];
+        }
+        // Fallback: if no sizing dept machines found, fetch all
+        if (machineData.length === 0) {
+          const { data } = await supabase
+            .from('master_machines')
+            .select('*, master_departments(department_name)');
+          machineData = data || [];
+        }
+        setSizingMachines(machineData);
+
+        // Fetch only sizing partners
+        const { data: partnerData } = await supabase
+          .from('master_partners')
+          .select('*')
+          .ilike('partner_type', '%sizing%');
+        setSizingPartners(partnerData || []);
+      } catch (err) {
+        console.error('Error fetching sizing machines/partners:', err);
       }
     } catch (err) {
       console.error('Error fetching SOF details:', err);
@@ -3375,27 +3546,452 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
     }
   };
 
-  const handleStopProcess = async () => {
+  const loadStopSplits = async () => {
+    setLoadingStopSplits(true);
+    try {
+      const { data, error } = await supabase
+        .from('weaving_orders')
+        .select('*')
+        .eq('sof_id', sofDetail.id)
+        .order('weaving_number', { ascending: true });
+      if (error) throw error;
+      setStopSplits((data || []).map((item) => ({
+        ...item,
+        completedQty: item.qty ? item.qty.toString() : '0'
+      })));
+    } catch (err) {
+      console.error('Error fetching sibling splits:', err);
+      alert('Error fetching splits: ' + err.message);
+    } finally {
+      setLoadingStopSplits(false);
+    }
+  };
+
+  const handleSelectSplitsYes = async () => {
+    setStopHasSplits(true);
+    setStopStep('splits_table');
+    await loadStopSplits();
+  };
+
+  const handleTemporaryStop = async () => {
     setSaving(true);
     try {
       const { error } = await supabase
         .from('sizing_order_forms')
         .update({
           status: 'stopped',
-          sofdc_number: sof.sof_number.replace('/SOF/', '/SOFDC/') + '/1',
           updated_at: new Date().toISOString()
         })
         .eq('id', sof.id);
 
       if (error) throw error;
+      setStopStep(null);
       await fetchDetails();
       onStatusChanged();
-      setShowStopConfirm(false);
     } catch (err) {
-      console.error('Error stopping sizing process:', err);
-      alert('Failed to stop process: ' + err.message);
+      console.error('Error pausing sizing process:', err);
+      alert('Failed to pause process: ' + err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleConfirmStop = async () => {
+    setSaving(true);
+    try {
+      const originalQty = Number(sofDetail.original_qty || sofDetail.qty);
+      const completedSum = stopHasSplits 
+        ? stopSplits.reduce((sum, s) => sum + parseFloat(s.completedQty || 0), 0)
+        : 0;
+      
+      const sofdcNumber = sofDetail.sof_number.replace('/SOF/', '/SOFDC/') + '/1';
+
+      // 1. Fetch parent WOF to sync splits
+      let updatedSplits = [];
+      let parentWof = null;
+      if (sofDetail.wof_id) {
+        const { data, error: wofFetchError } = await supabase
+          .from('warping_order_forms')
+          .select('*')
+          .eq('id', sofDetail.wof_id)
+          .single();
+        
+        if (wofFetchError) throw wofFetchError;
+        parentWof = data;
+      }
+
+      if (parentWof) {
+        const parentSplits = parentWof.warp_splits || [];
+        updatedSplits = parentSplits.map(split => {
+          if (split.warp_no === sofDetail.warp_no || (sofDetail.warp_no && split.warp_no === sofDetail.warp_no)) {
+            return {
+              ...split,
+              qty: completedSum
+            };
+          }
+          return split;
+        });
+      }
+
+      // 2. Generate new SOFs if there is remaining quantity & reallocWhen is now
+      const year = new Date().getFullYear();
+      if (reallocWhen === 'now' && reallocSplits.length > 0) {
+        let baseInHouseSeq = null;
+        const baseJobWorkSeqs = {};
+
+        for (let idx = 0; idx < reallocSplits.length; idx++) {
+          const split = reallocSplits[idx];
+          const splitQty = parseFloat(split.qty);
+
+          let newSofNumber = '';
+          if (split.sizing_type === 'in_house') {
+            if (baseInHouseSeq === null) {
+              const { count } = await supabase
+                .from('sizing_order_forms')
+                .select('id', { count: 'exact', head: true })
+                .eq('sizing_type', 'in_house')
+                .gte('created_at', `${year}-01-01`)
+                .lt('created_at', `${year + 1}-01-01`);
+              baseInHouseSeq = count || 0;
+            }
+            baseInHouseSeq++;
+            const seqStr = String(baseInHouseSeq).padStart(5, '0');
+            newSofNumber = `AT/${year}/SOF/${seqStr}`;
+          } else {
+            const pId = split.partner_id;
+            const slug = (split.partner_name || 'PARTNER').replace(/\s+/g, '').toUpperCase();
+            const prefix = `AT/${year}/SOF/JB/${slug}/`;
+            if (baseJobWorkSeqs[pId] === undefined) {
+              const { count } = await supabase
+                .from('sizing_order_forms')
+                .select('id', { count: 'exact', head: true })
+                .eq('sizing_type', 'job_work')
+                .eq('partner_id', pId)
+                .ilike('sof_number', `${prefix}%`);
+              baseJobWorkSeqs[pId] = count || 0;
+            }
+            baseJobWorkSeqs[pId]++;
+            const seqStr = String(baseJobWorkSeqs[pId]).padStart(5, '0');
+            newSofNumber = `AT/${year}/SOF/JB/${slug}/${seqStr}`;
+          }
+
+          const baseWarpNo = sofDetail.warp_no || sofDetail.sof_number;
+          const newWarpNo = reallocSplits.length > 1
+            ? `${baseWarpNo}/R/${idx + 1}`
+            : `${baseWarpNo}/R`;
+
+          const newSofPayload = {
+            sof_number: newSofNumber,
+            wof_id: sofDetail.wof_id,
+            order_id: sofDetail.order_id,
+            sizing_type: split.sizing_type,
+            qty: splitQty,
+            original_qty: splitQty,
+            start_date: split.start_date,
+            end_date: split.end_date,
+            status: 'created',
+            machine_id: split.machine_id || null,
+            machine_name: split.machine_name || null,
+            partner_id: split.partner_id || null,
+            partner_name: split.partner_name || null,
+            beam_name: split.beam_name || null,
+            warp_no: newWarpNo,
+            created_by: sofDetail.created_by
+          };
+
+          const { error: newSofErr } = await supabase
+            .from('sizing_order_forms')
+            .insert(newSofPayload);
+
+          if (newSofErr) throw newSofErr;
+
+          updatedSplits.push({
+            warp_no: newWarpNo,
+            qty: splitQty,
+            start_date: split.start_date,
+            end_date: split.end_date,
+            sizing_type: split.sizing_type,
+            partner_id: split.partner_id || null,
+            partner_name: split.partner_name || null,
+            machine_id: split.machine_id || null,
+            machine_name: split.machine_name || null,
+            beam_name: split.beam_name || null
+          });
+        }
+      }
+
+      // Update parent WOF splits array if parent WOF exists
+      if (parentWof) {
+        const { error: parentWofUpdateErr } = await supabase
+          .from('warping_order_forms')
+          .update({
+            warp_splits: updatedSplits,
+            warp_splits_count: updatedSplits.length,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', parentWof.id);
+
+        if (parentWofUpdateErr) throw parentWofUpdateErr;
+      }
+
+      // 4. Update weaving orders if splits exist
+      let updatedWeavingSplits = [];
+      if (stopHasSplits && stopSplits.length > 0) {
+        for (const split of stopSplits) {
+          const splitCompletedQty = parseFloat(split.completedQty || 0);
+          if (splitCompletedQty <= 0) {
+            const { error: delErr } = await supabase
+              .from('weaving_orders')
+              .delete()
+              .eq('id', split.id);
+            if (delErr) throw delErr;
+          } else {
+            const { error: updErr } = await supabase
+              .from('weaving_orders')
+              .update({
+                qty: splitCompletedQty,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', split.id);
+            if (updErr) throw updErr;
+
+            updatedWeavingSplits.push({
+              split_no: split.weaving_number || split.split_no,
+              qty: splitCompletedQty,
+              start_date: split.start_date || '',
+              end_date: split.end_date || '',
+              weaving_type: split.weaving_type || null,
+              partner_id: split.partner_id || null,
+              partner_name: split.partner_name || null,
+              machine_id: split.machine_id || null,
+              machine_name: split.machine_name || null,
+              beam_name: split.beam_name || split.beam_number || ''
+            });
+          }
+        }
+      }
+
+      // 5. Update current SOF
+      const sofUpdates = {
+        status: 'stopped',
+        qty: completedSum,
+        original_qty: originalQty,
+        process_completed_at: new Date().toISOString(),
+        sofdc_number: sofdcNumber,
+        weaving_splits: updatedWeavingSplits,
+        weaving_splits_count: updatedWeavingSplits.length,
+        forwarded_to: updatedWeavingSplits.length > 0 ? 'weaving' : null,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: sofUpdateErr } = await supabase
+        .from('sizing_order_forms')
+        .update(sofUpdates)
+        .eq('id', sofDetail.id);
+
+      if (sofUpdateErr) throw sofUpdateErr;
+
+      setStopStep(null);
+      await fetchDetails();
+      onStatusChanged();
+    } catch (err) {
+      console.error('Error stopping sizing process:', err);
+      alert('Failed to stop sizing process: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResumeProcess = async () => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('sizing_order_forms')
+        .update({
+          status: 'on_process',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sofDetail.id);
+
+      if (error) throw error;
+      await fetchDetails();
+      onStatusChanged();
+    } catch (err) {
+      console.error('Error resuming process:', err);
+      alert('Failed to resume process: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePostStopReallocate = async () => {
+    const parentRemainingQty = sofDetail.qty > 0 
+      ? (Number(sofDetail.original_qty || sofDetail.qty) - sofDetail.qty)
+      : (sofDetail.original_qty || sofDetail.qty || 0);
+
+    let totalSplitQty = 0;
+    for (let idx = 0; idx < reallocSplits.length; idx++) {
+      const split = reallocSplits[idx];
+      const prefix = reallocSplits.length > 1 ? `Split #${idx + 1}: ` : '';
+      
+      if (split.sizing_type === 'in_house') {
+        if (!split.machine_id) {
+          alert(`${prefix}Please select a sizing machine/loom.`);
+          return;
+        }
+      } else {
+        if (!split.partner_id) {
+          alert(`${prefix}Please select a sizing partner.`);
+          return;
+        }
+        if (!split.machine_id) {
+          alert(`${prefix}Please select a sizing machine.`);
+          return;
+        }
+      }
+      if (!split.start_date || !split.end_date) {
+        alert(`${prefix}Please enter planned start and end dates.`);
+        return;
+      }
+      const qVal = parseFloat(split.qty);
+      if (isNaN(qVal) || qVal <= 0) {
+        alert(`${prefix}Please enter a valid positive quantity.`);
+        return;
+      }
+      totalSplitQty += qVal;
+    }
+
+    if (totalSplitQty > parentRemainingQty) {
+      alert(`Total reallocated quantity (${totalSplitQty} m) cannot exceed the parent Sizing Order Form's remaining quantity (${parentRemainingQty} m).`);
+      return;
+    }
+
+    setReallocSaving(true);
+    try {
+      const year = new Date().getFullYear();
+      let baseInHouseSeq = null;
+      const baseJobWorkSeqs = {};
+      const updatedSplits = [];
+
+      // Fetch parent WOF first if it exists
+      let parentWof = null;
+      if (sofDetail.wof_id) {
+        const { data, error: wofFetchError } = await supabase
+          .from('warping_order_forms')
+          .select('*')
+          .eq('id', sofDetail.wof_id)
+          .single();
+        if (!wofFetchError) {
+          parentWof = data;
+        }
+      }
+
+      for (let idx = 0; idx < reallocSplits.length; idx++) {
+        const split = reallocSplits[idx];
+        const splitQty = parseFloat(split.qty);
+
+        let newSofNumber = '';
+        if (split.sizing_type === 'in_house') {
+          if (baseInHouseSeq === null) {
+            const { count } = await supabase
+              .from('sizing_order_forms')
+              .select('id', { count: 'exact', head: true })
+              .eq('sizing_type', 'in_house')
+              .gte('created_at', `${year}-01-01`)
+              .lt('created_at', `${year + 1}-01-01`);
+            baseInHouseSeq = count || 0;
+          }
+          baseInHouseSeq++;
+          const seqStr = String(baseInHouseSeq).padStart(5, '0');
+          newSofNumber = `AT/${year}/SOF/${seqStr}`;
+        } else {
+          const pId = split.partner_id;
+          const slug = (split.partner_name || 'PARTNER').replace(/\s+/g, '').toUpperCase();
+          const prefix = `AT/${year}/SOF/JB/${slug}/`;
+          if (baseJobWorkSeqs[pId] === undefined) {
+            const { count } = await supabase
+              .from('sizing_order_forms')
+              .select('id', { count: 'exact', head: true })
+              .eq('sizing_type', 'job_work')
+              .eq('partner_id', pId)
+              .ilike('sof_number', `${prefix}%`);
+            baseJobWorkSeqs[pId] = count || 0;
+          }
+          baseJobWorkSeqs[pId]++;
+          const seqStr = String(baseJobWorkSeqs[pId]).padStart(5, '0');
+          newSofNumber = `AT/${year}/SOF/JB/${slug}/${seqStr}`;
+        }
+
+        const baseWarpNo = sofDetail.warp_no || sofDetail.sof_number;
+        const newWarpNo = reallocSplits.length > 1
+          ? `${baseWarpNo}/R/${idx + 1}`
+          : `${baseWarpNo}/R`;
+
+        const newSofPayload = {
+          sof_number: newSofNumber,
+          wof_id: sofDetail.wof_id,
+          order_id: sofDetail.order_id,
+          sizing_type: split.sizing_type,
+          qty: splitQty,
+          original_qty: splitQty,
+          start_date: split.start_date,
+          end_date: split.end_date,
+          status: 'created',
+          machine_id: split.machine_id || null,
+          machine_name: split.machine_name || null,
+          partner_id: split.partner_id || null,
+          partner_name: split.partner_name || null,
+          beam_name: split.beam_name || null,
+          warp_no: newWarpNo,
+          created_by: sofDetail.created_by
+        };
+
+        const { error: newSofErr } = await supabase
+          .from('sizing_order_forms')
+          .insert(newSofPayload);
+
+        if (newSofErr) throw newSofErr;
+
+        updatedSplits.push({
+          warp_no: newWarpNo,
+          qty: splitQty,
+          start_date: split.start_date,
+          end_date: split.end_date,
+          sizing_type: split.sizing_type,
+          partner_id: split.partner_id || null,
+          partner_name: split.partner_name || null,
+          machine_id: split.machine_id || null,
+          machine_name: split.machine_name || null,
+          beam_name: split.beam_name || null
+        });
+      }
+
+      // Update parent WOF splits array if parent WOF exists
+      if (parentWof) {
+        const parentSplits = parentWof.warp_splits || [];
+        const mergedSplits = [...parentSplits, ...updatedSplits];
+
+        const { error: parentWofUpdateErr } = await supabase
+          .from('warping_order_forms')
+          .update({
+            warp_splits: mergedSplits,
+            warp_splits_count: mergedSplits.length,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', parentWof.id);
+
+        if (parentWofUpdateErr) throw parentWofUpdateErr;
+      }
+
+      setShowReallocateModal(false);
+      await fetchDetails();
+      onStatusChanged();
+      alert('Sizing Order Form reallocated successfully!');
+    } catch (err) {
+      console.error('Error reallocating stopped SOF:', err);
+      alert('Failed to reallocate: ' + err.message);
+    } finally {
+      setReallocSaving(false);
     }
   };
 
@@ -3692,7 +4288,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
             marginTop: '1rem',
             marginBottom: '1rem'
           }}>
-            {!showCompleteForm && !showStopConfirm ? (
+            {!showCompleteForm && !stopStep ? (
               <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <button
                   onClick={() => setShowCompleteForm(true)}
@@ -3715,7 +4311,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                   Complete Process
                 </button>
                 <button
-                  onClick={() => setShowStopConfirm(true)}
+                  onClick={() => setStopStep('confirm_type')}
                   style={{
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
                     padding: '0.65rem 1.25rem',
@@ -3810,61 +4406,532 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                 padding: '1.25rem',
                 backgroundColor: '#fff7ed',
                 borderRadius: '12px',
-                border: '1px solid #fed7aa'
+                border: '1px solid #fed7aa',
+                color: 'var(--text-current)'
               }}>
-                <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <AlertTriangle size={16} />
-                  Stop Sizing Process
-                </h3>
+                {/* STEP 1: Pause vs Stop Permanently */}
+                {stopStep === 'confirm_type' && (
+                  <div>
+                    <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <AlertTriangle size={16} /> Stop Sizing Process
+                    </h3>
+                    <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.82rem', color: '#9a3412', fontWeight: '500', lineHeight: '1.5' }}>
+                      Do you want to <strong>Pause</strong> the process temporarily (so you can resume it later) or <strong>Stop Permanently</strong>?
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => setStopStep(null)}
+                        style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleTemporaryStop}
+                        disabled={saving}
+                        style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#1d4ed8', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                      >
+                        Pause Process (Temporary)
+                      </button>
+                      <button
+                        onClick={() => setStopStep('ask_splits')}
+                        style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                      >
+                        Stop Permanently
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.82rem', color: '#9a3412', fontWeight: '500', lineHeight: '1.5' }}>
-                  Are you sure you want to stop this sizing process? This will change the status of this form to <strong>Stopped</strong>.
-                </p>
+                {/* STEP 2: Ask splits */}
+                {stopStep === 'ask_splits' && (
+                  <div>
+                    <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <AlertTriangle size={16} /> Stop Permanently: Weaving Splits
+                    </h3>
+                    <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.82rem', color: '#9a3412', fontWeight: '500', lineHeight: '1.5' }}>
+                      Are there any weaving splits configured/completed for this Sizing Order Form?
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => setStopStep('confirm_type')}
+                        style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={() => {
+                          setStopHasSplits(false);
+                          setStopStep('ask_realloc_now_later');
+                        }}
+                        style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                      >
+                        No, No Splits
+                      </button>
+                      <button
+                        onClick={handleSelectSplitsYes}
+                        style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#10b981', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                      >
+                        Yes, Splits Configured
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-                  <button
-                    onClick={() => setShowStopConfirm(false)}
-                    disabled={saving}
-                    style={{
-                      padding: '0.6rem 1.25rem',
-                      border: '1.5px solid #fed7aa',
-                      borderRadius: '8px',
-                      backgroundColor: '#fff',
-                      cursor: 'pointer',
-                      fontSize: '0.82rem',
-                      fontWeight: '600',
-                      color: '#c2410c'
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleStopProcess}
-                    disabled={saving}
-                    style={{
-                      padding: '0.6rem 1.5rem',
-                      border: 'none',
-                      borderRadius: '8px',
-                      backgroundColor: '#ea580c',
-                      color: '#fff',
-                      cursor: saving ? 'wait' : 'pointer',
-                      fontSize: '0.82rem',
-                      fontWeight: '700',
-                      display: 'flex', alignItems: 'center', gap: '0.4rem',
-                      boxShadow: '0 3px 10px rgba(234,88,12,0.2)',
-                      opacity: saving ? 0.7 : 1
-                    }}
-                  >
-                    {saving ? <Loader size={14} className="spin" /> : <AlertTriangle size={14} />}
-                    {saving ? 'Stopping...' : 'Yes, Stop Process'}
-                  </button>
-                </div>
+                {/* STEP 2.5: Ask reallocate now or later */}
+                {stopStep === 'ask_realloc_now_later' && (
+                  <div>
+                    <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <AlertTriangle size={16} /> Reallocate Sizing Order Form
+                    </h3>
+                    <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.82rem', color: '#9a3412', fontWeight: '500', lineHeight: '1.5' }}>
+                      Do you want to reallocate this Sizing Order Form <strong>Now</strong> or <strong>Later</strong>?
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => setStopStep('ask_splits')}
+                        style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={() => {
+                          setReallocWhen('later');
+                          setStopStep('confirm_stop');
+                        }}
+                        style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                      >
+                        Reallocate Later
+                      </button>
+                      <button
+                        onClick={() => {
+                          setReallocWhen('now');
+                          setStopStep('reallocate');
+                        }}
+                        style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#10b981', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                      >
+                        Reallocate Now
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 3: Splits table */}
+                {stopStep === 'splits_table' && (
+                  <div>
+                    <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <AlertTriangle size={16} /> Enter Completed Quantities for Splits
+                    </h3>
+                    {loadingStopSplits ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem 0' }}>
+                        <Loader className="spin" size={16} /> Loading configured splits...
+                      </div>
+                    ) : stopSplits.length === 0 ? (
+                      <div style={{ marginBottom: '1.25rem' }}>
+                        <p style={{ fontSize: '0.82rem', color: '#9a3412', fontStyle: 'italic' }}>
+                           No weaving splits configured for this Sizing Order Form. Click next to reallocate the full quantity.
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ marginBottom: '1.25rem', overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', textAlign: 'left' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid #fed7aa', color: '#9a3412', fontWeight: '700' }}>
+                              <th style={{ padding: '0.4rem' }}>Split Number (WVOF)</th>
+                              <th style={{ padding: '0.4rem' }}>Type</th>
+                              <th style={{ padding: '0.4rem' }}>Partner / Loom</th>
+                              <th style={{ padding: '0.4rem' }}>Planned Qty</th>
+                              <th style={{ padding: '0.4rem' }}>Completed Qty *</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {stopSplits.map((split, sIdx) => (
+                              <tr key={split.id || sIdx} style={{ borderBottom: '1px solid #fed7aa' }}>
+                                <td style={{ padding: '0.4rem', fontFamily: 'monospace', fontWeight: '700' }}>{split.weaving_number}</td>
+                                <td style={{ padding: '0.4rem' }}>{split.weaving_type === 'in_house' ? 'In House' : 'Job Work'}</td>
+                                <td style={{ padding: '0.4rem' }}>{split.partner_name || split.machine_name || '—'}</td>
+                                <td style={{ padding: '0.4rem', fontWeight: '600' }}>{split.qty} m</td>
+                                <td style={{ padding: '0.4rem' }}>
+                                  <input
+                                    type="number"
+                                    value={split.completedQty}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setStopSplits(prev => prev.map((s, idx) => idx === sIdx ? { ...s, completedQty: val } : s));
+                                    }}
+                                    style={{
+                                      width: '80px',
+                                      padding: '2px 6px',
+                                      border: '1px solid #fed7aa',
+                                      borderRadius: '4px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: '700'
+                                    }}
+                                  />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => setStopStep('ask_splits')}
+                        style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={() => {
+                          // Validation
+                          const originalQty = Number(sofDetail.original_qty || sofDetail.qty);
+                          let sum = 0;
+                          for (const split of stopSplits) {
+                            const completedQty = parseFloat(split.completedQty || 0);
+                            if (isNaN(completedQty) || completedQty < 0) {
+                              alert('Please enter a valid non-negative completed quantity for all splits.');
+                              return;
+                            }
+                            sum += completedQty;
+                          }
+                          if (sum > originalQty) {
+                            alert(`The sum of completed quantities (${sum} m) cannot exceed the original SOF quantity (${originalQty} m).`);
+                            return;
+                          }
+                          const remainingQty = originalQty - sum;
+                          if (remainingQty > 0) {
+                            setStopStep('reallocate');
+                          } else {
+                            setStopStep('confirm_stop');
+                          }
+                        }}
+                        style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 4: Reallocate Remaining Qty */}
+                {stopStep === 'reallocate' && (
+                  <div>
+                    <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <AlertTriangle size={16} /> Reallocate Sizing Order Form
+                    </h3>
+                    <p style={{ margin: '0 0 1rem 0', fontSize: '0.78rem', color: '#9a3412', fontWeight: '600' }}>
+                      Configure reallocation for the unfinished quantity.
+                    </p>
+
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+                        Number of Splits *
+                      </label>
+                      <select
+                        value={reallocSplitsCount}
+                        onChange={e => handleSplitsCountChange(parseInt(e.target.value))}
+                        style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.85rem', fontWeight: '700' }}
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+                          <option key={n} value={n}>{n} {n === 1 ? 'Split' : 'Splits'}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ maxHeight: '320px', overflowY: 'auto', paddingRight: '0.5rem', marginBottom: '1.25rem', border: '1px solid #fed7aa', borderRadius: '8px', padding: '0.5rem', backgroundColor: '#fafafa' }}>
+                      {reallocSplits.map((split, idx) => (
+                        <div key={idx} style={{ padding: '0.75rem', border: '1px solid #fed7aa', borderRadius: '6px', marginBottom: '0.75rem', backgroundColor: '#fff' }}>
+                          <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#ea580c' }}>
+                            Split #{idx + 1}
+                          </h4>
+                          
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                            {/* Quantity */}
+                            <div style={{ gridColumn: 'span 2' }}>
+                              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>
+                                Quantity (Mtrs) *
+                              </label>
+                              <input
+                                type="number"
+                                value={split.qty}
+                                onChange={e => updateReallocSplit(idx, 'qty', e.target.value)}
+                                style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.8rem', fontWeight: '700', boxSizing: 'border-box' }}
+                              />
+                            </div>
+
+                            {/* Sizing Type */}
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Sizing Type</label>
+                              <select
+                                value={split.sizing_type}
+                                onChange={e => updateReallocSplit(idx, 'sizing_type', e.target.value)}
+                                style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.8rem', fontWeight: '600' }}
+                              >
+                                <option value="in_house">In House</option>
+                                <option value="job_work">Job Work</option>
+                              </select>
+                            </div>
+
+                            {/* Machine / Partner */}
+                            {split.sizing_type === 'in_house' ? (
+                              <div>
+                                <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Sizing Loom / Machine *</label>
+                                <select
+                                  value={split.machine_id}
+                                  onChange={e => updateReallocSplit(idx, 'machine_id', e.target.value)}
+                                  style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.8rem', fontWeight: '600' }}
+                                >
+                                  <option value="">Select machine...</option>
+                                  {sizingMachines.filter(m => m.scope === 'in_house').map(m => (
+                                    <option key={m.id} value={m.id}>{m.machine_name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : (
+                              <>
+                                <div>
+                                  <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Sizing Partner *</label>
+                                  <select
+                                    value={split.partner_id}
+                                    onChange={e => updateReallocSplit(idx, 'partner_id', e.target.value)}
+                                    style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.8rem', fontWeight: '600' }}
+                                  >
+                                    <option value="">Select partner...</option>
+                                    {sizingPartners.map(p => (
+                                      <option key={p.id} value={p.id}>{p.partner_name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Sizing Loom / Machine *</label>
+                                  <select
+                                    value={split.machine_id}
+                                    onChange={e => updateReallocSplit(idx, 'machine_id', e.target.value)}
+                                    disabled={!split.partner_id}
+                                    style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.8rem', fontWeight: '600' }}
+                                  >
+                                    <option value="">Select machine...</option>
+                                    {sizingMachines.filter(m => m.scope === 'job_work' && m.partner_id?.toString() === split.partner_id?.toString()).map(m => (
+                                      <option key={m.id} value={m.id}>{m.machine_name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </>
+                            )}
+
+                            {/* Start Date */}
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Start Date *</label>
+                              <input
+                                type="date"
+                                value={split.start_date}
+                                onChange={e => updateReallocSplit(idx, 'start_date', e.target.value)}
+                                style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.8rem', fontWeight: '600' }}
+                              />
+                            </div>
+
+                            {/* End Date */}
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>End Date *</label>
+                              <input
+                                type="date"
+                                value={split.end_date}
+                                onChange={e => updateReallocSplit(idx, 'end_date', e.target.value)}
+                                style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.8rem', fontWeight: '600' }}
+                              />
+                            </div>
+
+                            {/* Beam Name */}
+                            <div style={{ gridColumn: 'span 2' }}>
+                              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Beam Name</label>
+                              <input
+                                type="text"
+                                value={split.beam_name}
+                                onChange={e => updateReallocSplit(idx, 'beam_name', e.target.value)}
+                                style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.8rem', fontWeight: '600', boxSizing: 'border-box' }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => {
+                          if (stopHasSplits) {
+                            setStopStep('splits_table');
+                          } else {
+                            setStopStep('ask_realloc_now_later');
+                          }
+                        }}
+                        style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={() => {
+                          const parentRemainingQty = sofDetail.qty > 0 
+                            ? (Number(sofDetail.original_qty || sofDetail.qty) - sofDetail.qty)
+                            : (sofDetail.original_qty || sofDetail.qty || 0);
+
+                          let totalSplitQty = 0;
+                          for (let idx = 0; idx < reallocSplits.length; idx++) {
+                            const split = reallocSplits[idx];
+                            const prefix = reallocSplits.length > 1 ? `Split #${idx + 1}: ` : '';
+                            
+                            if (split.sizing_type === 'in_house') {
+                              if (!split.machine_id) {
+                                alert(`${prefix}Please select a sizing machine/loom.`);
+                                return;
+                              }
+                            } else {
+                              if (!split.partner_id) {
+                                alert(`${prefix}Please select a sizing partner.`);
+                                return;
+                              }
+                              if (!split.machine_id) {
+                                alert(`${prefix}Please select a sizing machine.`);
+                                return;
+                              }
+                            }
+                            if (!split.start_date || !split.end_date) {
+                              alert(`${prefix}Please enter planned start and end dates.`);
+                              return;
+                            }
+                            const qVal = parseFloat(split.qty);
+                            if (isNaN(qVal) || qVal <= 0) {
+                              alert(`${prefix}Please enter a valid positive quantity.`);
+                              return;
+                            }
+                            totalSplitQty += qVal;
+                          }
+
+                          if (totalSplitQty > parentRemainingQty) {
+                            alert(`Total reallocated quantity (${totalSplitQty} m) cannot exceed the parent Sizing Order Form's remaining quantity (${parentRemainingQty} m).`);
+                            return;
+                          }
+                          setStopStep('confirm_stop');
+                        }}
+                        style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 5: Confirm Stop */}
+                {stopStep === 'confirm_stop' && (
+                  <div>
+                    <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <AlertTriangle size={16} /> Confirm Sizing Order Form Permanent Stop
+                    </h3>
+                    <div style={{ backgroundColor: 'rgba(254,215,170,0.2)', padding: '1rem', borderRadius: '8px', border: '1px solid #fed7aa', marginBottom: '1.25rem', fontSize: '0.8rem', lineHeight: '1.5' }}>
+                      <div><strong>Form to Stop:</strong> {sofDetail.sof_number}</div>
+                      <div><strong>Original Qty:</strong> {Number(sofDetail.original_qty || sofDetail.qty).toLocaleString()} m</div>
+                      <div><strong>Completed Qty:</strong> {stopHasSplits ? stopSplits.reduce((sum, s) => sum + parseFloat(s.completedQty || 0), 0) : 0} m</div>
+                      <div><strong>Remaining Qty:</strong> {stopHasSplits ? (Number(sofDetail.original_qty || sofDetail.qty) - stopSplits.reduce((sum, s) => sum + parseFloat(s.completedQty || 0), 0)) : (reallocWhen === 'later' ? Number(sofDetail.original_qty || sofDetail.qty) : reallocSplits.reduce((sum, s) => sum + parseFloat(s.qty || 0), 0))} m</div>
+                      
+                      {reallocWhen === 'later' ? (
+                        <div style={{ marginTop: '0.75rem', borderTop: '1px dashed #fed7aa', paddingTop: '0.5rem', color: '#ea580c', fontWeight: '700' }}>
+                          Reallocation will be performed later.
+                        </div>
+                      ) : (
+                        reallocSplits.reduce((sum, s) => sum + parseFloat(s.qty || 0), 0) > 0 && (
+                          <div style={{ marginTop: '0.75rem', borderTop: '1px dashed #fed7aa', paddingTop: '0.5rem' }}>
+                            <span style={{ fontWeight: '700', color: '#ea580c', display: 'block', marginBottom: '4px' }}>New Reallocated Sizing Order Form Details:</span>
+                            {reallocSplits.map((split, sIdx) => (
+                              <div key={sIdx} style={{ marginBottom: '0.5rem', paddingBottom: '0.5rem', borderBottom: sIdx < reallocSplits.length - 1 ? '1px dotted #fed7aa' : 'none' }}>
+                                <strong>Split #{sIdx + 1}:</strong> {split.qty} m ({split.sizing_type === 'in_house' ? 'In House' : 'Job Work'} - {split.sizing_type === 'in_house' ? split.machine_name : `${split.partner_name} / ${split.machine_name}`})
+                                <div>Dates: {split.start_date} to {split.end_date} {split.beam_name ? `(Beam: ${split.beam_name})` : ''}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => {
+                          if (reallocWhen === 'later') {
+                            setStopStep('ask_realloc_now_later');
+                          } else {
+                            const originalQty = Number(sofDetail.original_qty || sofDetail.qty);
+                            const sum = stopHasSplits ? stopSplits.reduce((sum, s) => sum + parseFloat(s.completedQty || 0), 0) : 0;
+                            if (originalQty - sum > 0 || !stopHasSplits) {
+                              setStopStep('reallocate');
+                            } else {
+                              setStopStep('splits_table');
+                            }
+                          }
+                        }}
+                        style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={handleConfirmStop}
+                        disabled={saving}
+                        style={{
+                          padding: '0.5rem 1.5rem',
+                          border: 'none',
+                          borderRadius: '8px',
+                          backgroundColor: '#ea580c',
+                          color: '#fff',
+                          cursor: saving ? 'wait' : 'pointer',
+                          fontSize: '0.82rem',
+                          fontWeight: '700',
+                          display: 'flex', alignItems: 'center', gap: '0.4rem',
+                          boxShadow: '0 3px 10px rgba(234,88,12,0.2)',
+                          opacity: saving ? 0.7 : 1
+                        }}
+                      >
+                        {saving ? <Loader size={14} className="spin" /> : <AlertTriangle size={14} />}
+                        {saving ? 'Stopping...' : 'Confirm & Stop Process'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
-        {(sofDetail.status === 'completed' || sofDetail.status === 'stopped') && (
+        {/* Resuming stopped process if it was paused (sofdc_number is empty) */}
+        {sofDetail.status === 'stopped' && !sofDetail.sofdc_number && (
+          <div style={{
+            borderTop: '1px solid var(--border-current)',
+            paddingTop: '1.25rem',
+            marginTop: '1rem',
+            marginBottom: '1rem',
+            display: 'flex',
+            justifyContent: 'flex-start'
+          }}>
+            <button
+              onClick={handleResumeProcess}
+              disabled={saving}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                padding: '0.6rem 1.5rem',
+                backgroundColor: '#1d4ed8',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '0.82rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+                boxShadow: '0 3px 10px rgba(29,78,216,0.2)'
+              }}
+            >
+              {saving ? <Loader size={14} className="spin" /> : <Play size={14} />}
+              Resume Process
+            </button>
+          </div>
+        )}
+
+        {(sofDetail.status === 'completed' || (sofDetail.status === 'stopped' && !!sofDetail.sofdc_number)) && (
           <PrintableSOFDC 
             sof={sofDetail} 
             order={sofDetail.order} 
@@ -3873,7 +4940,33 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
           />
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-current)', paddingTop: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-current)', paddingTop: '1rem' }}>
+          {sofDetail.status === 'stopped' && !!sofDetail.sofdc_number && !isReallocated && (
+            <button
+              onClick={() => {
+                setReallocType(sofDetail.sizing_type || 'in_house');
+                setReallocBeamName(sofDetail.beam_name || '');
+                setReallocQty(sofDetail.original_qty || sofDetail.qty || '');
+                setShowReallocateModal(true);
+              }}
+              style={{
+                padding: '0.5rem 1.5rem',
+                backgroundColor: '#ea580c',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '0.82rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+                boxShadow: '0 3px 10px rgba(234,88,12,0.15)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
+            >
+              <RefreshCw size={14} /> Reallocate
+            </button>
+          )}
           <button onClick={onClose} style={{
             padding: '0.5rem 1.5rem',
             backgroundColor: '#800000',
@@ -3887,6 +4980,199 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
             Close
           </button>
         </div>
+
+        {showReallocateModal && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 110,
+            backgroundColor: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '1rem'
+          }}>
+            <div style={{
+              backgroundColor: '#fff',
+              borderRadius: '16px',
+              width: '100%',
+              maxWidth: '700px',
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.04)',
+              border: '1px solid var(--border-current)',
+              padding: '1.5rem',
+              color: 'var(--text-current)'
+            }}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '800', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <RefreshCw size={18} /> Reallocate Sizing Order Form
+              </h3>
+              
+              <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.8rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>
+                Create new Sizing Order Forms to reallocate the unfinished quantity.
+              </p>
+
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+                  Number of Splits *
+                </label>
+                <select
+                  value={reallocSplitsCount}
+                  onChange={e => handleSplitsCountChange(parseInt(e.target.value))}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.85rem', fontWeight: '700' }}
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+                    <option key={n} value={n}>{n} {n === 1 ? 'Split' : 'Splits'}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ maxHeight: '350px', overflowY: 'auto', paddingRight: '0.5rem', marginBottom: '1.5rem', border: '1px solid var(--border-current)', borderRadius: '8px', padding: '0.5rem', backgroundColor: '#fafafa' }}>
+                {reallocSplits.map((split, idx) => (
+                  <div key={idx} style={{ padding: '0.75rem', border: '1px solid var(--border-current)', borderRadius: '6px', marginBottom: '0.75rem', backgroundColor: '#fff' }}>
+                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#800000' }}>
+                      Split #{idx + 1}
+                    </h4>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                      {/* Quantity */}
+                      <div style={{ gridColumn: 'span 2' }}>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>
+                          Quantity (Mtrs) *
+                        </label>
+                        <input
+                          type="number"
+                          value={split.qty}
+                          onChange={e => updateReallocSplit(idx, 'qty', e.target.value)}
+                          style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '700', boxSizing: 'border-box' }}
+                        />
+                      </div>
+
+                      {/* Sizing Type */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Sizing Type</label>
+                        <select
+                          value={split.sizing_type}
+                          onChange={e => updateReallocSplit(idx, 'sizing_type', e.target.value)}
+                          style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600' }}
+                        >
+                          <option value="in_house">In House</option>
+                          <option value="job_work">Job Work</option>
+                        </select>
+                      </div>
+
+                      {/* Machine / Partner */}
+                      {split.sizing_type === 'in_house' ? (
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Sizing Loom / Machine *</label>
+                          <select
+                            value={split.machine_id}
+                            onChange={e => updateReallocSplit(idx, 'machine_id', e.target.value)}
+                            style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600' }}
+                          >
+                            <option value="">Select machine...</option>
+                            {sizingMachines.filter(m => m.scope === 'in_house').map(m => (
+                              <option key={m.id} value={m.id}>{m.machine_name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Sizing Partner *</label>
+                            <select
+                              value={split.partner_id}
+                              onChange={e => updateReallocSplit(idx, 'partner_id', e.target.value)}
+                              style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600' }}
+                            >
+                              <option value="">Select partner...</option>
+                              {sizingPartners.map(p => (
+                                <option key={p.id} value={p.id}>{p.partner_name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Sizing Loom / Machine *</label>
+                            <select
+                              value={split.machine_id}
+                              onChange={e => updateReallocSplit(idx, 'machine_id', e.target.value)}
+                              disabled={!split.partner_id}
+                              style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600' }}
+                            >
+                              <option value="">Select machine...</option>
+                              {sizingMachines.filter(m => m.scope === 'job_work' && m.partner_id?.toString() === split.partner_id?.toString()).map(m => (
+                                      <option key={m.id} value={m.id}>{m.machine_name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Start Date */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Start Date *</label>
+                        <input
+                          type="date"
+                          value={split.start_date}
+                          onChange={e => updateReallocSplit(idx, 'start_date', e.target.value)}
+                          style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600' }}
+                        />
+                      </div>
+
+                      {/* End Date */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>End Date *</label>
+                        <input
+                          type="date"
+                          value={split.end_date}
+                          onChange={e => updateReallocSplit(idx, 'end_date', e.target.value)}
+                          style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600' }}
+                        />
+                      </div>
+
+                      {/* Beam Name */}
+                      <div style={{ gridColumn: 'span 2' }}>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Beam Name</label>
+                        <input
+                          type="text"
+                          value={split.beam_name}
+                          onChange={e => updateReallocSplit(idx, 'beam_name', e.target.value)}
+                          style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  disabled={reallocSaving}
+                  onClick={() => setShowReallocateModal(false)}
+                  style={{ padding: '0.5rem 1.25rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={reallocSaving}
+                  onClick={handlePostStopReallocate}
+                  style={{
+                    padding: '0.5rem 1.5rem',
+                    border: 'none',
+                    borderRadius: '8px',
+                    backgroundColor: '#ea580c',
+                    color: '#fff',
+                    cursor: reallocSaving ? 'wait' : 'pointer',
+                    fontSize: '0.82rem',
+                    fontWeight: '700',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    boxShadow: '0 3px 10px rgba(234,88,12,0.2)',
+                    opacity: reallocSaving ? 0.7 : 1
+                  }}
+                >
+                  {reallocSaving ? <Loader size={14} className="spin" /> : <RefreshCw size={14} />}
+                  {reallocSaving ? 'Reallocating...' : 'Confirm Reallocate'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -4333,7 +5619,8 @@ function InHouseSizingGantt() {
                               }} />
                             ))}
                             {(() => {
-                              const actualEndStr = sof.status === 'completed'
+                              const isFinished = sof.status === 'completed' || (sof.status === 'stopped' && !!sof.sofdc_number);
+                              const actualEndStr = isFinished
                                 ? (getLocalDateString(sof.process_completed_at) || getLocalDateString(sof.updated_at) || todayStr)
                                 : todayStr;
                               const exceeded = sof.end_date && actualEndStr > sof.end_date;
@@ -4345,7 +5632,7 @@ function InHouseSizingGantt() {
                               const pText = '#854d0e';
 
                               // 2. Actual Bar
-                              const showActual = !!sof.process_started_at || sof.status === 'on_process' || sof.status === 'completed';
+                              const showActual = !!sof.process_started_at || sof.status === 'on_process' || isFinished;
                               let actualBar = null;
                               let aBg = '';
                               let aBorder = '';
@@ -4365,15 +5652,15 @@ function InHouseSizingGantt() {
                                     aBorder = '#3b82f6';
                                     aText = '#1d4ed8';
                                   }
-                                } else if (sof.status === 'completed') {
+                                } else if (isFinished) {
                                   if (exceeded) {
                                     aBg = '#fee2e2';
                                     aBorder = '#ef4444';
                                     aText = '#b91c1c';
                                   } else {
-                                    aBg = '#dcfce7';
-                                    aBorder = '#22c55e';
-                                    aText = '#166534';
+                                    aBg = sof.status === 'completed' ? '#dcfce7' : '#fff7ed';
+                                    aBorder = sof.status === 'completed' ? '#22c55e' : '#f97316';
+                                    aText = sof.status === 'completed' ? '#166534' : '#c2410c';
                                   }
                                 } else {
                                   const statusColor = getStatusColor(sof.status);

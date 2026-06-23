@@ -279,8 +279,7 @@ export default function DeliverDyedYarn() {
           setOrderFormError('Weaving Order not found or not yet allotted. Please verify the Weaving Order Number.');
         } else {
           setSelectedTarget(data);
-          // Default weaving type to in_house (user can toggle it)
-          setDeliveryType('in_house');
+          setDeliveryType(data.weaving_type || 'in_house');
 
           // Fetch associated DYDRs for this searched weaving order
           const { data: dydrData } = await supabase
@@ -319,7 +318,9 @@ export default function DeliverDyedYarn() {
   };
 
   const handleProceedToDelivery = async (targetDoc) => {
-    const doc = targetDoc || selectedTarget;
+    // If targetDoc is a React Event or doesn't have an id, default to selectedTarget
+    const isEvent = targetDoc && (targetDoc.nativeEvent || targetDoc.preventDefault || targetDoc.stopPropagation);
+    const doc = (targetDoc && !isEvent && targetDoc.id) ? targetDoc : selectedTarget;
     if (!doc) return;
 
     // Safety guard: check if yarn status is already Delivered (complete)
@@ -504,28 +505,36 @@ export default function DeliverDyedYarn() {
           );
           const deliveredQty = formDeliveries.reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
 
-          // Find available stock matching this requirement
+          // Find available stock matching this count and colour
           const matchingStocks = Object.values(stockMap).filter(s => 
             s.yarn_count_id === countId && 
             s.colour === colour &&
-            (s.lot_number === lotNum || (!s.lot_number && !lotNum) || (s.lot_number === '—' && !lotNum) || (lotNum === '—' && !s.lot_number)) &&
-            s.location_id === locId
+            s.available > 0.01
           );
 
           let defaultAllocations = [];
           if (matchingStocks.length > 0) {
+            // Find stock matching the allotted lot and location by preference
+            const matchedIdx = matchingStocks.findIndex(s => 
+              (s.lot_number === lotNum || (!s.lot_number && !lotNum) || (s.lot_number === '—' && !lotNum) || (lotNum === '—' && !s.lot_number)) &&
+              s.location_id === locId
+            );
+            
+            const selectedIdx = matchedIdx !== -1 ? matchedIdx : 0;
+            const defaultStock = matchingStocks[selectedIdx];
+
             defaultAllocations = [{
-              lot_number: matchingStocks[0].lot_number,
-              location_id: matchingStocks[0].location_id,
-              location_name: matchingStocks[0].location_name,
-              dof_id: matchingStocks[0].dof_id,
-              dof_number: matchingStocks[0].dof_number,
-              receipt_id: matchingStocks[0].receipt_id,
-              stock_kg: matchingStocks[0].available,
+              lot_number: defaultStock.lot_number,
+              location_id: defaultStock.location_id,
+              location_name: defaultStock.location_name,
+              dof_id: defaultStock.dof_id,
+              dof_number: defaultStock.dof_number,
+              receipt_id: defaultStock.receipt_id,
+              stock_kg: defaultStock.available,
               quantity_kg: '',
               no_of_bags: '',
-              selectedIndex: '0',
-              disabled: matchingStocks[0].available <= 0.01
+              selectedIndex: selectedIdx.toString(),
+              disabled: false
             }];
           } else {
             defaultAllocations = [{
@@ -558,7 +567,7 @@ export default function DeliverDyedYarn() {
       if (targetProcess === 'warping') {
         setDeliveryType(doc.wof_type || 'in_house');
       } else {
-        setDeliveryType('in_house');
+        setDeliveryType(doc.weaving_type || 'in_house');
       }
       setItems(builtItems);
       setStep(2);
@@ -610,29 +619,125 @@ export default function DeliverDyedYarn() {
   const updateAllocation = (reqIndex, allocIndex, field, value) => {
     const newItems = [...items];
     const alloc = newItems[reqIndex].allocations[allocIndex];
+    const stocks = newItems[reqIndex].availableStocks || [];
+
     if (field === 'lot_number') {
-      const stockOption = newItems[reqIndex].availableStocks[parseInt(value)];
-      if (stockOption) {
-        alloc.lot_number = stockOption.lot_number;
-        alloc.location_id = stockOption.location_id;
-        alloc.location_name = stockOption.location_name;
-        alloc.dof_id = stockOption.dof_id;
-        alloc.dof_number = stockOption.dof_number;
-        alloc.receipt_id = stockOption.receipt_id;
-        alloc.stock_kg = stockOption.available;
-        alloc.selectedIndex = value;
+      const selectedLot = value;
+      alloc.lot_number = selectedLot;
+      
+      // Filter stocks matching the new lot number
+      const matching = stocks.filter(s => !selectedLot || s.lot_number === selectedLot);
+      
+      // If there was a DOF selected, check if it's still valid under the selected lot
+      let dofStillValid = false;
+      if (alloc.dof_number) {
+        dofStillValid = matching.some(s => s.dof_number === alloc.dof_number);
+      }
+      
+      if (!dofStillValid) {
+        alloc.dof_number = '';
+        alloc.dof_id = null;
+      }
+      
+      // Now find matching stock with both selected lot and selected DOF
+      const finalMatch = stocks.find(s => 
+        s.lot_number === selectedLot && 
+        (!alloc.dof_number || s.dof_number === alloc.dof_number)
+      );
+
+      // If we don't have a final match but there's a unique DOF for this lot, auto-select it
+      const uniqueDofsForLot = [...new Set(stocks.filter(s => s.lot_number === selectedLot).map(s => s.dof_number))];
+      if (selectedLot && !alloc.dof_number && uniqueDofsForLot.length === 1) {
+        alloc.dof_number = uniqueDofsForLot[0];
+        const autoMatch = stocks.find(s => s.lot_number === selectedLot && s.dof_number === uniqueDofsForLot[0]);
+        if (autoMatch) {
+          alloc.location_id = autoMatch.location_id;
+          alloc.location_name = autoMatch.location_name;
+          alloc.dof_id = autoMatch.dof_id;
+          alloc.dof_number = autoMatch.dof_number;
+          alloc.receipt_id = autoMatch.receipt_id;
+          alloc.stock_kg = autoMatch.available;
+          alloc.selectedIndex = stocks.indexOf(autoMatch).toString();
+          setItems(newItems);
+          return;
+        }
+      }
+
+      if (finalMatch && selectedLot && alloc.dof_number) {
+        alloc.location_id = finalMatch.location_id;
+        alloc.location_name = finalMatch.location_name;
+        alloc.dof_id = finalMatch.dof_id;
+        alloc.dof_number = finalMatch.dof_number;
+        alloc.receipt_id = finalMatch.receipt_id;
+        alloc.stock_kg = finalMatch.available;
+        alloc.selectedIndex = stocks.indexOf(finalMatch).toString();
       } else {
-        alloc.lot_number = '';
         alloc.location_id = null;
         alloc.location_name = '';
         alloc.dof_id = null;
-        alloc.dof_number = '';
         alloc.receipt_id = null;
         alloc.stock_kg = 0;
-        alloc.quantity_kg = '';
-        alloc.no_of_bags = '';
         alloc.selectedIndex = '';
       }
+
+    } else if (field === 'dof_number') {
+      const selectedDof = value;
+      alloc.dof_number = selectedDof;
+
+      // Filter stocks matching the new DOF number
+      const matching = stocks.filter(s => !selectedDof || s.dof_number === selectedDof);
+
+      // If there was a lot selected, check if it's still valid under the selected DOF
+      let lotStillValid = false;
+      if (alloc.lot_number) {
+        lotStillValid = matching.some(s => s.lot_number === alloc.lot_number);
+      }
+
+      if (!lotStillValid) {
+        alloc.lot_number = '';
+      }
+
+      // Now find matching stock with both selected lot and selected DOF
+      const finalMatch = stocks.find(s => 
+        (!alloc.lot_number || s.lot_number === alloc.lot_number) && 
+        s.dof_number === selectedDof
+      );
+
+      // If we don't have a final match but there's a unique lot for this DOF, auto-select it
+      const uniqueLotsForDof = [...new Set(stocks.filter(s => s.dof_number === selectedDof).map(s => s.lot_number))];
+      if (selectedDof && !alloc.lot_number && uniqueLotsForDof.length === 1) {
+        alloc.lot_number = uniqueLotsForDof[0];
+        const autoMatch = stocks.find(s => s.lot_number === uniqueLotsForDof[0] && s.dof_number === selectedDof);
+        if (autoMatch) {
+          alloc.location_id = autoMatch.location_id;
+          alloc.location_name = autoMatch.location_name;
+          alloc.dof_id = autoMatch.dof_id;
+          alloc.dof_number = autoMatch.dof_number;
+          alloc.receipt_id = autoMatch.receipt_id;
+          alloc.stock_kg = autoMatch.available;
+          alloc.selectedIndex = stocks.indexOf(autoMatch).toString();
+          setItems(newItems);
+          return;
+        }
+      }
+
+      if (finalMatch && alloc.lot_number && selectedDof) {
+        alloc.location_id = finalMatch.location_id;
+        alloc.location_name = finalMatch.location_name;
+        alloc.dof_id = finalMatch.dof_id;
+        alloc.dof_number = finalMatch.dof_number;
+        alloc.receipt_id = finalMatch.receipt_id;
+        alloc.stock_kg = finalMatch.available;
+        alloc.selectedIndex = stocks.indexOf(finalMatch).toString();
+      } else {
+        alloc.location_id = null;
+        alloc.location_name = '';
+        alloc.dof_id = null;
+        alloc.receipt_id = null;
+        alloc.stock_kg = 0;
+        alloc.selectedIndex = '';
+      }
+
     } else if (field === 'quantity_kg') {
       const floatVal = parseFloat(value) || 0;
       if (floatVal > alloc.stock_kg) {
@@ -674,8 +779,8 @@ export default function DeliverDyedYarn() {
             alert(`Entered quantity for ${req.colour} (${qty.toFixed(2)} kg) exceeds available stock of ${alloc.stock_kg.toFixed(2)} kg!`);
             return;
           }
-          if (!alloc.lot_number) {
-            alert(`Please select a lot number for the allocated quantity of ${req.colour}.`);
+          if (!alloc.lot_number || !alloc.dof_number) {
+            alert(`Please select both Lot Number and DOF Number for the allocated quantity of ${req.colour}.`);
             return;
           }
           validItems.push({
@@ -1246,7 +1351,7 @@ export default function DeliverDyedYarn() {
               {/* Action Button to Step 2 */}
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button 
-                  onClick={handleProceedToDelivery} 
+                  onClick={() => handleProceedToDelivery(selectedTarget)} 
                   disabled={loading || isSelectedTargetDelivered}
                   className="btn btn-primary" 
                   style={{ 
@@ -1326,7 +1431,7 @@ export default function DeliverDyedYarn() {
                                       key={allocIdx} 
                                       style={{ 
                                         display: 'grid', 
-                                        gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1.2fr auto', 
+                                        gridTemplateColumns: '1fr 1.8fr 1fr 1fr 1.2fr auto', 
                                         gap: '1rem', 
                                         alignItems: 'center', 
                                         backgroundColor: '#fff', 
@@ -1345,16 +1450,18 @@ export default function DeliverDyedYarn() {
                                           <select
                                             className="form-input"
                                             style={{ fontWeight: '750', padding: '0.35rem 0.5rem', fontSize: '0.8rem', width: '100%', backgroundColor: '#fff', border: '1px solid var(--border-current)', borderRadius: '4px', cursor: 'pointer' }}
-                                            value={alloc.selectedIndex !== undefined ? alloc.selectedIndex : ''}
+                                            value={alloc.lot_number || ''}
                                             onChange={e => updateAllocation(reqIdx, allocIdx, 'lot_number', e.target.value)}
                                             disabled={alloc.disabled}
                                           >
                                             <option value="">Select Lot...</option>
-                                            {req.availableStocks.map((stock, sIdx) => {
-                                              const isAlreadySelected = req.allocations.some((a, aIdx) => aIdx !== allocIdx && a.lot_number === stock.lot_number && a.location_id === stock.location_id && a.dof_id === stock.dof_id);
+                                            {[...new Set(req.availableStocks
+                                              .filter(s => !alloc.dof_number || s.dof_number === alloc.dof_number)
+                                              .map(s => s.lot_number)
+                                            )].map((lot, idx) => {
                                               return (
-                                                <option key={sIdx} value={sIdx} disabled={isAlreadySelected}>
-                                                  {stock.lot_number} {isAlreadySelected ? '(Selected)' : ''}
+                                                <option key={idx} value={lot}>
+                                                  {lot}
                                                 </option>
                                               );
                                             })}
@@ -1362,12 +1469,32 @@ export default function DeliverDyedYarn() {
                                         )}
                                       </div>
 
-                                      {/* DOF Number */}
+                                      {/* DOF Number Dropdown */}
                                       <div>
                                         <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>DOF Number</label>
-                                        <span style={{ fontSize: '0.78rem', fontWeight: '700', fontFamily: 'monospace', color: alloc.dof_number ? '#374151' : '#9ca3af' }}>
-                                          {alloc.dof_number || '—'}
-                                        </span>
+                                        {req.availableStocks.length === 0 ? (
+                                          <span style={{ fontSize: '0.78rem', color: '#9ca3af', fontStyle: 'italic' }}>—</span>
+                                        ) : (
+                                          <select
+                                            className="form-input"
+                                            style={{ fontWeight: '750', padding: '0.35rem 0.5rem', fontSize: '0.8rem', width: '100%', backgroundColor: '#fff', border: '1px solid var(--border-current)', borderRadius: '4px', cursor: 'pointer' }}
+                                            value={alloc.dof_number || ''}
+                                            onChange={e => updateAllocation(reqIdx, allocIdx, 'dof_number', e.target.value)}
+                                            disabled={alloc.disabled}
+                                          >
+                                            <option value="">Select DOF...</option>
+                                            {[...new Set(req.availableStocks
+                                              .filter(s => !alloc.lot_number || s.lot_number === alloc.lot_number)
+                                              .map(s => s.dof_number)
+                                            )].map((dof, idx) => {
+                                              return (
+                                                <option key={idx} value={dof}>
+                                                  {dof}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        )}
                                       </div>
 
                                       {/* Location */}
@@ -1394,7 +1521,7 @@ export default function DeliverDyedYarn() {
                                           step="0.01"
                                           min="0"
                                           max={alloc.stock_kg}
-                                          disabled={!alloc.lot_number || alloc.disabled}
+                                          disabled={!alloc.lot_number || !alloc.dof_number || alloc.disabled}
                                           className="form-input"
                                           style={{
                                             fontWeight: '800',
@@ -1408,7 +1535,7 @@ export default function DeliverDyedYarn() {
                                           }}
                                           value={alloc.quantity_kg}
                                           onChange={e => updateAllocation(reqIdx, allocIdx, 'quantity_kg', e.target.value)}
-                                          placeholder={!alloc.lot_number ? 'Select lot' : '0.00'}
+                                          placeholder={!alloc.lot_number || !alloc.dof_number ? 'Select lot/DOF' : '0.00'}
                                         />
                                         {isOverAllotted && (
                                           <div style={{ fontSize: '0.65rem', color: '#ef4444', marginTop: '2px', textAlign: 'right', fontWeight: 'bold' }}>
@@ -1634,40 +1761,9 @@ export default function DeliverDyedYarn() {
               {/* Delivery Type (In-house vs Job Work) */}
               <div className="form-group">
                 <label className="form-label">Delivery Type</label>
-                {targetProcess === 'warping' ? (
-                  /* Warping WOF determines type automatically, show read-only status */
-                  <div style={{ padding: '0.5rem 0.75rem', border: '1.5px solid var(--border-current)', borderRadius: '6px', backgroundColor: 'var(--surface-current)', fontWeight: '800', textTransform: 'uppercase', fontSize: '0.85rem', color: '#800000', height: '38px', display: 'flex', alignItems: 'center' }}>
-                    {selectedTarget.wof_type === 'job_work' ? 'Job Work (External)' : 'In-House (Internal)'}
-                  </div>
-                ) : (
-                  /* Weaving doesn't have an implicit type, allow manual toggle */
-                  <div style={{ display: 'flex', gap: '0.5rem', height: '38px' }}>
-                    <button 
-                      type="button" 
-                      onClick={() => { setDeliveryType('in_house'); setVehicleNo(''); }}
-                      style={{
-                        flex: 1, border: '1.5px solid', borderRadius: '6px', cursor: 'pointer', fontWeight: '800', fontSize: '0.8rem',
-                        borderColor: deliveryType === 'in_house' ? '#800000' : 'var(--border-current)',
-                        backgroundColor: deliveryType === 'in_house' ? 'rgba(128, 0, 0, 0.04)' : '#fff',
-                        color: deliveryType === 'in_house' ? '#800000' : 'var(--text-muted-current)'
-                      }}
-                    >
-                      In-House
-                    </button>
-                    <button 
-                      type="button" 
-                      onClick={() => setDeliveryType('job_work')}
-                      style={{
-                        flex: 1, border: '1.5px solid', borderRadius: '6px', cursor: 'pointer', fontWeight: '800', fontSize: '0.8rem',
-                        borderColor: deliveryType === 'job_work' ? '#800000' : 'var(--border-current)',
-                        backgroundColor: deliveryType === 'job_work' ? 'rgba(128, 0, 0, 0.04)' : '#fff',
-                        color: deliveryType === 'job_work' ? '#800000' : 'var(--text-muted-current)'
-                      }}
-                    >
-                      Job Work
-                    </button>
-                  </div>
-                )}
+                <div style={{ padding: '0.5rem 0.75rem', border: '1.5px solid var(--border-current)', borderRadius: '6px', backgroundColor: 'var(--surface-current)', fontWeight: '800', textTransform: 'uppercase', fontSize: '0.85rem', color: '#800000', height: '38px', display: 'flex', alignItems: 'center' }}>
+                  {((targetProcess === 'warping' ? selectedTarget.wof_type : selectedTarget.weaving_type) === 'job_work') ? 'Job Work (External)' : 'In-House (Internal)'}
+                </div>
               </div>
 
               {/* Vehicle Number (Shown only if job work) */}

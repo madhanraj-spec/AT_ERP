@@ -165,7 +165,7 @@
     "semantic_hash": ""
   },
   "package.json": {
-    "mtime": 1781618801.0863361,
+    "mtime": 1782188124.069435,
     "ast_hash": "dafa25d9380b62cff848540cd24a404e",
     "semantic_hash": ""
   },
@@ -270,8 +270,8 @@
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/DeliverYarn.jsx": {
-    "mtime": 1781676711.3568587,
-    "ast_hash": "10043687a98d460ed765c3d23a8bb962",
+    "mtime": 1782201518.9038527,
+    "ast_hash": "a1eaeba6f9f8805985951470bbf51b4f",
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/DyedDeliveryPrintModal.jsx": {
@@ -290,7 +290,7 @@
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/OrderStock.jsx": {
-    "mtime": 1781158185.462656,
+    "mtime": 1782188124.0734692,
     "ast_hash": "c5a0cb62ac693c18a787b59de4a847c0",
     "semantic_hash": ""
   },
@@ -310,8 +310,8 @@
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/DeliverYarn.jsx": {
-    "mtime": 1781156512.2966874,
-    "ast_hash": "e5bcd0fd5f1aaa9aafb066b62554f19a",
+    "mtime": 1782188126.9386487,
+    "ast_hash": "2a9162eea274af7702646188c9700cdd",
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/DeliveriesList.jsx": {
@@ -365,13 +365,13 @@
     "semantic_hash": ""
   },
   "src/pages/Merchandiser/CreateDyeingForm.jsx": {
-    "mtime": 1781249805.261468,
-    "ast_hash": "ca14fbc5a14abd0ea8513cca1c2a53f9",
+    "mtime": 1782188126.9390879,
+    "ast_hash": "d2765fa8179c8d1e88114b1bf1290e65",
     "semantic_hash": ""
   },
   "src/pages/Merchandiser/CreateOrder.jsx": {
-    "mtime": 1781855865.1726801,
-    "ast_hash": "7c60b2219c6d98950182487a2c0eb7d7",
+    "mtime": 1782188126.9396517,
+    "ast_hash": "4685d434ee089bc94cab6c56d1ddde21",
     "semantic_hash": ""
   },
   "src/pages/Merchandiser/Dashboard.jsx": {
@@ -390,63 +390,63 @@
     "semantic_hash": ""
   },
   "src/pages/Orders/Management.jsx": {
-    "mtime": 1781875719.076804,
-    "ast_hash": "0a9516caf7d4787447730165b6f59f56",
+    "mtime": 1782188800.8272827,
+    "ast_hash": "c8f7dd0fdf432174a51469bd4b60741f",
     "semantic_hash": ""
   },
   "src/pages/Orders/OrderSizingTab.jsx": {
-    "mtime": 1781851212.0920024,
-    "ast_hash": "7d2809d11acdc332c3c402c663589cef",
+    "mtime": 1782188579.0741112,
+    "ast_hash": "da769442e85c7e1bff8c67c507cb2c6c",
     "semantic_hash": ""
   },
   "src/pages/Orders/OrderWarpingTab.jsx": {
-    "mtime": 1781851227.8684459,
-    "ast_hash": "c8fecec17b21dd063117f7e54b052c06",
+    "mtime": 1782189225.262624,
+    "ast_hash": "d49c25e615bd47f07f59d35c398dff1f",
     "semantic_hash": ""
   },
   "src/pages/Orders/OrderYarnUsageTab.jsx": {
-    "mtime": 1781851276.273184,
-    "ast_hash": "e0c537dbf5d05f50a6199e2392e4f688",
+    "mtime": 1782188126.9427204,
+    "ast_hash": "2e19c115cc1812c09d2c5e717f3a42f1",
     "semantic_hash": ""
   },
   "src/pages/Production/Board.jsx": {
-    "mtime": 1781875944.0945444,
-    "ast_hash": "df578b10833829c3cd62d14539583675",
+    "mtime": 1782188126.9440014,
+    "ast_hash": "a025d1ee89c14c03ac740b87e486a934",
     "semantic_hash": ""
   },
   "src/pages/Production/CreateWarpingOrderForm.jsx": {
-    "mtime": 1781676109.2348282,
-    "ast_hash": "70eaf7428fedbc5287e8fa85e907c708",
+    "mtime": 1782188994.529829,
+    "ast_hash": "2417899b182eefed2d606f40229b2700",
     "semantic_hash": ""
   },
   "src/pages/Production/PrintableSOF.jsx": {
-    "mtime": 1781157216.5634332,
-    "ast_hash": "1509142c296b043d19cd98f39cd8f573",
+    "mtime": 1782188126.946626,
+    "ast_hash": "0e0966e016a8825957bb21c95de34856",
     "semantic_hash": ""
   },
   "src/pages/Production/PrintableWOF.jsx": {
-    "mtime": 1781157203.424847,
-    "ast_hash": "129c94da3cd2735002227fad0658bff0",
+    "mtime": 1782188126.9484715,
+    "ast_hash": "72115ba9d17de8488126e04a7b9489f1",
     "semantic_hash": ""
   },
   "src/pages/Production/PrintableWOFDC.jsx": {
-    "mtime": 1781157060.98947,
-    "ast_hash": "ae6cbf000fe4563235b1c8d744d8d31b",
+    "mtime": 1782188126.948934,
+    "ast_hash": "931466ce62d7bbaa198c0eeda5c8a996",
     "semantic_hash": ""
   },
   "src/pages/Production/SizingOrderForms.jsx": {
-    "mtime": 1781677853.6116316,
-    "ast_hash": "a9f9ab72161aba3fe819c4e5c01e83da",
+    "mtime": 1782203182.0544004,
+    "ast_hash": "1beee99bdad699ca979b74118dbe4b63",
     "semantic_hash": ""
   },
   "src/pages/Production/WarpingOrderForms.jsx": {
-    "mtime": 1781678522.8921273,
-    "ast_hash": "e98e0cbb2df3f63fb8913ca6b1631e1d",
+    "mtime": 1782201601.969627,
+    "ast_hash": "3a4a4570a6a62d4d29704bd5a58c8424",
     "semantic_hash": ""
   },
   "src/pages/Production/WarpingSizing.jsx": {
-    "mtime": 1781850035.2084966,
-    "ast_hash": "5e1cc56c8a5c1c0b2705e17570934d3a",
+    "mtime": 1782199239.4403677,
+    "ast_hash": "205004d50b9fba95e80a2a3be0e79cb1",
     "semantic_hash": ""
   },
   "src/utils/printDydr.js": {
@@ -520,18 +520,18 @@
     "semantic_hash": ""
   },
   "src/pages/Production/PrintableWVOF.jsx": {
-    "mtime": 1781328000.369341,
-    "ast_hash": "0b2af59491923e17a6e09bf7dc6342ff",
+    "mtime": 1782188126.9496896,
+    "ast_hash": "8bf469a96df82799872c94896d23e6a9",
     "semantic_hash": ""
   },
   "src/pages/Production/WeavingOrderForms.jsx": {
-    "mtime": 1781875929.1491032,
-    "ast_hash": "841d5e5a0cc5fa26f8b98056074b7a50",
+    "mtime": 1782204059.3034182,
+    "ast_hash": "affc6484988c14bb85495ac74e8e25cb",
     "semantic_hash": ""
   },
   "src/utils/weaving.js": {
-    "mtime": 1781153094.499974,
-    "ast_hash": "a110c2b2ed469e9dffe611685ddd2792",
+    "mtime": 1782198320.817074,
+    "ast_hash": "97fdce4c01fae259e4987fc2d8ef3e61",
     "semantic_hash": ""
   },
   "database/migration_add_sofdc_to_sof.sql": {
@@ -540,8 +540,8 @@
     "semantic_hash": ""
   },
   "src/pages/Production/PrintableSOFDC.jsx": {
-    "mtime": 1781157076.4807289,
-    "ast_hash": "68fc0af1ceb3170653193fc3bf75f18e",
+    "mtime": 1782188126.9477243,
+    "ast_hash": "71304779da90f9c5342f4829a2b3a6f1",
     "semantic_hash": ""
   },
   "scratch/check_beige_lots.js": {
@@ -550,8 +550,8 @@
     "semantic_hash": ""
   },
   "src/pages/Orders/OrderWeavingTab.jsx": {
-    "mtime": 1781875886.328443,
-    "ast_hash": "110cf308bce9ada8ebf3648ec8fc9543",
+    "mtime": 1782203650.9857676,
+    "ast_hash": "4eb40d64b0806a27c966f230ec5bbf5a",
     "semantic_hash": ""
   },
   "database/migration_add_planned_daily_production_to_weaving.sql": {
@@ -1325,8 +1325,8 @@
     "semantic_hash": ""
   },
   "src/pages/Production/FabricInput.jsx": {
-    "mtime": 1781876871.0950232,
-    "ast_hash": "e79bac6636bcafbec76b87c5cc146eae",
+    "mtime": 1782204560.093392,
+    "ast_hash": "042660ae55890d04416004eefca5c7e5",
     "semantic_hash": ""
   },
   "database/migration_add_delete_policies_to_dof.sql": {
@@ -1455,8 +1455,8 @@
     "semantic_hash": ""
   },
   "src/pages/Production/PrintableWVOFDC.jsx": {
-    "mtime": 1781328594.7122157,
-    "ast_hash": "dffe75470fd108d50e2f8db56b5fbaf5",
+    "mtime": 1782204199.8062904,
+    "ast_hash": "8777c4215dd6fd538c51d2f32e5c0e7a",
     "semantic_hash": ""
   },
   "scratch/check_orders_wvofs.js": {
@@ -1565,7 +1565,7 @@
     "semantic_hash": ""
   },
   "src/pages/Processing/ProcessingModule.jsx": {
-    "mtime": 1782105964.734329,
+    "mtime": 1782188124.0815928,
     "ast_hash": "d06bd3d4f31bdb30d5debfe18ed0780e",
     "semantic_hash": ""
   },
@@ -1682,6 +1682,81 @@
   "scratch/find_roll.js": {
     "mtime": 1781877195.1135871,
     "ast_hash": "1170aed701338f3925aa4b1691e15a00",
+    "semantic_hash": ""
+  },
+  "scratch/check_wofs.js": {
+    "mtime": 1782188771.0751064,
+    "ast_hash": "edde9f8dcaba773fcc1b901d98e9332c",
+    "semantic_hash": ""
+  },
+  "scratch/clear_transactions_only.js": {
+    "mtime": 1782188126.93434,
+    "ast_hash": "a74015f80639fdfd70f486f7cea070f8",
+    "semantic_hash": ""
+  },
+  "scratch/clear_with_key.js": {
+    "mtime": 1782188126.9348586,
+    "ast_hash": "b89a5defb0d85013d6ac04ee37909096",
+    "semantic_hash": ""
+  },
+  "scratch/count_all_rows.js": {
+    "mtime": 1782188126.9351568,
+    "ast_hash": "20e2cc039aa0371337c8e6bee7bf9f72",
+    "semantic_hash": ""
+  },
+  "scratch/inspect_db_functions.js": {
+    "mtime": 1782188126.9360418,
+    "ast_hash": "0115ffbec3da3df48ab1fb21a69728c1",
+    "semantic_hash": ""
+  },
+  "scratch/inspect_schema.js": {
+    "mtime": 1782108901.5233798,
+    "ast_hash": "8541994041a2a0c65d4f2c575ccf2a77",
+    "semantic_hash": ""
+  },
+  "scratch/inspect_yarn_usage.js": {
+    "mtime": 1782120200.1612778,
+    "ast_hash": "06f5508c9852891b29b6589f37065efd",
+    "semantic_hash": ""
+  },
+  "scratch/print_env.js": {
+    "mtime": 1782188126.9363968,
+    "ast_hash": "9865225acfff165ea4bbd33f72e9e3f7",
+    "semantic_hash": ""
+  },
+  "scratch/test_columns.js": {
+    "mtime": 1782108968.8701544,
+    "ast_hash": "2174aa47f6b08f6b525848702f134ce6",
+    "semantic_hash": ""
+  },
+  "database/migration_add_warp_no_to_sof_and_weaving.sql": {
+    "mtime": 1782194769.5293894,
+    "ast_hash": "291a39866efaee940e9e91b0ec3f3673",
+    "semantic_hash": ""
+  },
+  "scratch/check_machines.js": {
+    "mtime": 1782197262.9420266,
+    "ast_hash": "c5125e85aa87c3d5d924747e45093a46",
+    "semantic_hash": ""
+  },
+  "scratch/inspect_dyed_delivery_400.js": {
+    "mtime": 1782200783.6583211,
+    "ast_hash": "a4c661e3efc0d11cf8a353dbd78ecfd2",
+    "semantic_hash": ""
+  },
+  "scratch/inspect_weaving_allotments.js": {
+    "mtime": 1782200770.495081,
+    "ast_hash": "6e5671c4efeabc7d0a62f5fd53ba05de",
+    "semantic_hash": ""
+  },
+  "scratch/inspect_search_result.js": {
+    "mtime": 1782201447.8178334,
+    "ast_hash": "97447e5d89608d7d0d21fab5fdd00d30",
+    "semantic_hash": ""
+  },
+  "database/migration_add_original_qty_to_weaving_orders.sql": {
+    "mtime": 1782202258.613907,
+    "ast_hash": "ee9eaa320f9d31c09584bd6573153f36",
     "semantic_hash": ""
   }
 }

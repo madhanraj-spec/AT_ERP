@@ -17,7 +17,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   process.exit(1);
 }
 
-const pkg = require('../package.json');
+const pkg = require('./package.json');
 console.log("Dependencies:", pkg.dependencies);
 
 const { createClient } = require('@supabase/supabase-js');

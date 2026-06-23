@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  ArrowLeft, Loader, Package, Search, RefreshCw, ChevronDown, ChevronRight, Eye, Settings, Calendar, User, ArrowRight, SlidersHorizontal, ChevronUp, X, CheckCircle, AlertCircle, Inbox, Truck, Layers, ChevronLeft
+  ArrowLeft, Loader, Package, Search, RefreshCw, ChevronDown, ChevronRight, Eye, Settings, Calendar, User, ArrowRight, SlidersHorizontal, ChevronUp, X, CheckCircle, AlertCircle, AlertTriangle, Inbox, Truck, Layers, ChevronLeft
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { generateWeavingNumbersBulk } from '../../utils/weaving';
+import { generateWeavingNumbersBulk, insertWeavingOrdersWithRetry } from '../../utils/weaving';
 import PrintableWVOF from './PrintableWVOF';
 import PrintableWVOFDC from './PrintableWVOFDC';
 import DyedDeliveryPrintModal from '../DyedYarn/DyedDeliveryPrintModal';
@@ -62,7 +62,7 @@ function getWvofStatusBadge(wvofOrStatus) {
     case 'start_date_exceeded':
       return { label: 'Start Date Exceeded', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     case 'stopped':
-      return { label: 'Stopped', bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' };
+      return { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
     case 'on_process':
       return { label: 'On Process', bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' };
     case 'weft_yarn_allotted':
@@ -265,7 +265,7 @@ function getStatusColorForWeaving(wvofOrStatus) {
     case 'start_date_exceeded':
       return { bg: '#fee2e2', border: '#ef4444', text: '#b91c1c', label: 'Start Date Exceeded' };
     case 'stopped':
-      return { bg: '#f1f5f9', border: '#94a3b8', text: '#475569', label: 'Stopped' };
+      return { bg: '#fff7ed', border: '#f97316', text: '#c2410c', label: 'Stopped' };
     case 'on_process':
       return { bg: '#dbeafe', border: '#3b82f6', text: '#1d4ed8', label: 'On Process' };
     case 'weft_yarn_allotted':
@@ -481,10 +481,10 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
                       : '?'
                     }
                     {' → '}
-                    {wof.status === 'completed' || wof.status === 'late_complete'
+                    {['completed', 'late_complete', 'stopped'].includes(wof.status)
                       ? (wof.process_completed_at
                           ? new Date(wof.process_completed_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-                          : 'Completed'
+                          : (wof.status === 'stopped' ? 'Stopped' : 'Completed')
                         )
                       : 'Running (Today)'
                     }
@@ -515,7 +515,17 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
                 padding: '1px 8px', borderRadius: '10px',
                 fontSize: '0.6rem', fontWeight: '700'
               }}>
-                {tooltipType === 'planned' ? 'Planned' : tooltipType === 'actual' ? (['completed', 'late_complete'].includes(wof.status) ? 'Completed' : 'On Process') : sc.label}
+                {tooltipType === 'planned' 
+                  ? 'Planned' 
+                  : tooltipType === 'actual' 
+                    ? (['completed', 'late_complete'].includes(wof.status) 
+                        ? 'Completed' 
+                        : wof.status === 'stopped' 
+                          ? (wof.wvofdc_number ? 'Stopped (Permanent)' : 'Stopped (Temporary)')
+                          : 'On Process'
+                      ) 
+                    : sc.label
+                }
               </span>
               {hasExceededPlannedEnd(wof) && (
                 <span style={{
@@ -732,8 +742,13 @@ export default function WeavingOrderForms() {
 
   const [printWvof, setPrintWvof] = useState(null);
   const [printWvofdc, setPrintWvofdc] = useState(null);
+  const [activeStopWvof, setActiveStopWvof] = useState(null);
   const [showCompleteWvofForm, setShowCompleteWvofForm] = useState(null);
-  const [completeWvofDate, setCompleteWvofDate] = useState(new Date().toISOString().slice(0, 16));
+  const [completeWvofDate, setCompleteWvofDate] = useState(() => {
+    const now = new Date();
+    const tzoffset = now.getTimezoneOffset() * 60000;
+    return new Date(now - tzoffset).toISOString().slice(0, 16);
+  });
   const [weftYarnReturns, setWeftYarnReturns] = useState([]);
   const [savingCompleteWvof, setSavingCompleteWvof] = useState(false);
   const [selectedDydr, setSelectedDydr] = useState(null);
@@ -1496,7 +1511,9 @@ export default function WeavingOrderForms() {
   const openCompleteWvofForm = async (wvof) => {
     setSavingCompleteWvof(true);
     setShowCompleteWvofForm(wvof);
-    setCompleteWvofDate(new Date().toISOString().slice(0, 16));
+    const completeWvofNow = new Date();
+    const completeWvofTzoffset = completeWvofNow.getTimezoneOffset() * 60000;
+    setCompleteWvofDate(new Date(completeWvofNow - completeWvofTzoffset).toISOString().slice(0, 16));
     try {
       // Fetch dyed yarn delivery items for this weaving order form
       const { data: dydi, error: delError } = await supabase
@@ -2654,6 +2671,7 @@ export default function WeavingOrderForms() {
 
                               {(() => {
                                 if (!['pending', 'weft_yarn_allotted', 'weft_yarn_partially_delivered', 'weft_yarn_delivered', 'stopped'].includes(wvof.status)) return null;
+                                if (wvof.status === 'stopped' && wvof.wvofdc_number) return null;
                                 const weftBadge = getWeftYarnStatus(wvof, deliveries);
                                 const hasDydr = deliveries.some(d => d.production_form_id === wvof.id);
                                 const canStart = (weftBadge.label === 'Partially Delivered' || weftBadge.label === 'Delivered') && hasDydr;
@@ -2682,7 +2700,7 @@ export default function WeavingOrderForms() {
                               
                               {wvof.status === 'on_process' && (
                                 <button
-                                  onClick={() => handleUpdateStatus(wvof.id, 'on_process', 'stopped')}
+                                  onClick={() => setActiveStopWvof(wvof)}
                                   style={actionBtnSolid('#64748b')}
                                 >
                                   Stop
@@ -2731,20 +2749,22 @@ export default function WeavingOrderForms() {
                                     <h6 style={{ margin: '0 0 1rem', fontSize: '0.82rem', fontWeight: '800', color: '#800000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                       Record Production Round
                                     </h6>
-                                    {['completed', 'late_complete'].includes(wvof.status) ? (
+                                    {['completed', 'late_complete'].includes(wvof.status) || (wvof.status === 'stopped' && wvof.wvofdc_number) ? (
                                       <div style={{
-                                        backgroundColor: 'rgba(16,185,129,0.06)',
-                                        border: '1px solid rgba(16,185,129,0.2)',
+                                        backgroundColor: (wvof.status === 'stopped' && wvof.wvofdc_number) ? 'rgba(249,115,22,0.06)' : 'rgba(16,185,129,0.06)',
+                                        border: (wvof.status === 'stopped' && wvof.wvofdc_number) ? '1px solid rgba(249,115,22,0.2)' : '1px solid rgba(16,185,129,0.2)',
                                         borderRadius: '10px',
                                         padding: '1rem',
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: '0.75rem',
-                                        color: '#047857'
+                                        color: (wvof.status === 'stopped' && wvof.wvofdc_number) ? '#c2410c' : '#047857'
                                       }}>
-                                        <CheckCircle size={18} style={{ flexShrink: 0 }} />
+                                        {(wvof.status === 'stopped' && wvof.wvofdc_number) ? <AlertCircle size={18} style={{ flexShrink: 0 }} /> : <CheckCircle size={18} style={{ flexShrink: 0 }} />}
                                         <span style={{ fontSize: '0.825rem', fontWeight: '600' }}>
-                                          Production completed. No further production rounds can be recorded.
+                                          {(wvof.status === 'stopped' && wvof.wvofdc_number) 
+                                            ? 'Order is permanently stopped (DC generated). No further production rounds can be recorded.' 
+                                            : 'Production completed. No further production rounds can be recorded.'}
                                         </span>
                                       </div>
                                     ) : (
@@ -3699,7 +3719,7 @@ export default function WeavingOrderForms() {
                                           const pText = '#854d0e';
 
                                           // 2. Actual Bar
-                                          const showActual = !!wof.process_started_at || wof.status === 'on_process' || wof.status === 'completed' || wof.status === 'late_complete';
+                                          const showActual = !!wof.process_started_at || wof.status === 'on_process' || wof.status === 'completed' || wof.status === 'late_complete' || wof.status === 'stopped';
                                           let actualBar = null;
                                           let aBg = '';
                                           let aBorder = '';
@@ -3707,7 +3727,7 @@ export default function WeavingOrderForms() {
 
                                           if (showActual) {
                                             const actualStartStr = getLocalDateString(wof.process_started_at) || wof.start_date || todayStr;
-                                            const actualEndStr = ['completed', 'late_complete'].includes(wof.status)
+                                            const actualEndStr = ['completed', 'late_complete', 'stopped'].includes(wof.status)
                                               ? (getLocalDateString(wof.process_completed_at) || getLocalDateString(wof.updated_at) || todayStr)
                                               : todayStr;
 
@@ -3722,6 +3742,10 @@ export default function WeavingOrderForms() {
                                               aBg = '#fee2e2';
                                               aBorder = '#ef4444';
                                               aText = '#b91c1c';
+                                            } else if (statusVal === 'stopped') {
+                                              aBg = '#fff7ed';
+                                              aBorder = '#f97316';
+                                              aText = '#c2410c';
                                             } else {
                                               aBg = '#dbeafe';
                                               aBorder = '#3b82f6';
@@ -3976,7 +4000,7 @@ export default function WeavingOrderForms() {
                                           const pText = '#854d0e';
 
                                           // 2. Actual Bar
-                                          const showActual = !!wof.process_started_at || wof.status === 'on_process' || wof.status === 'completed' || wof.status === 'late_complete';
+                                          const showActual = !!wof.process_started_at || wof.status === 'on_process' || wof.status === 'completed' || wof.status === 'late_complete' || wof.status === 'stopped';
                                           let actualBar = null;
                                           let aBg = '';
                                           let aBorder = '';
@@ -3984,7 +4008,7 @@ export default function WeavingOrderForms() {
 
                                           if (showActual) {
                                             const actualStartStr = getLocalDateString(wof.process_started_at) || wof.start_date || todayStr;
-                                            const actualEndStr = ['completed', 'late_complete'].includes(wof.status)
+                                            const actualEndStr = ['completed', 'late_complete', 'stopped'].includes(wof.status)
                                               ? (getLocalDateString(wof.process_completed_at) || getLocalDateString(wof.updated_at) || todayStr)
                                               : todayStr;
 
@@ -3999,6 +4023,10 @@ export default function WeavingOrderForms() {
                                               aBg = '#fee2e2';
                                               aBorder = '#ef4444';
                                               aText = '#b91c1c';
+                                            } else if (statusVal === 'stopped') {
+                                              aBg = '#fff7ed';
+                                              aBorder = '#f97316';
+                                              aText = '#c2410c';
                                             } else {
                                               aBg = '#dbeafe';
                                               aBorder = '#3b82f6';
@@ -4212,6 +4240,22 @@ export default function WeavingOrderForms() {
                   {/* Status change actions */}
                   {(() => {
                     if (!['pending', 'weft_yarn_allotted', 'weft_yarn_partially_delivered', 'weft_yarn_delivered', 'stopped'].includes(selectedWvof.status)) return null;
+                    if (selectedWvof.status === 'stopped' && selectedWvof.wvofdc_number) {
+                      return (
+                        <div style={{ 
+                          padding: '0.5rem', 
+                          backgroundColor: 'rgba(249,115,22,0.06)', 
+                          border: '1px solid rgba(249,115,22,0.2)', 
+                          borderRadius: '6px', 
+                          color: '#c2410c', 
+                          fontSize: '0.8rem', 
+                          fontWeight: '750', 
+                          textAlign: 'center' 
+                        }}>
+                          Permanently Stopped (DC generated)
+                        </div>
+                      );
+                    }
                     const weftBadge = getWeftYarnStatus(selectedWvof, deliveries);
                     const hasDydr = deliveries.some(d => d.production_form_id === selectedWvof.id);
                     const canStart = (weftBadge.label === 'Partially Delivered' || weftBadge.label === 'Delivered') && hasDydr;
@@ -4260,10 +4304,7 @@ export default function WeavingOrderForms() {
                         ✓ Complete
                       </button>
                       <button
-                        onClick={async () => {
-                          await handleUpdateStatus(selectedWvof.id, 'on_process', 'stopped');
-                          setSelectedWvof(prev => ({ ...prev, status: 'stopped' }));
-                        }}
+                        onClick={() => setActiveStopWvof(selectedWvof)}
                         style={{
                           flex: 1, padding: '0.5rem',
                           backgroundColor: '#64748b', color: 'white',
@@ -4359,20 +4400,22 @@ export default function WeavingOrderForms() {
                         <h6 style={{ margin: '0 0 1rem', fontSize: '0.82rem', fontWeight: '800', color: '#800000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           Record Production Round
                         </h6>
-                        {['completed', 'late_complete'].includes(selectedWvof.status) ? (
+                        {['completed', 'late_complete'].includes(selectedWvof.status) || (selectedWvof.status === 'stopped' && selectedWvof.wvofdc_number) ? (
                           <div style={{
-                            backgroundColor: 'rgba(16,185,129,0.06)',
-                            border: '1px solid rgba(16,185,129,0.2)',
+                            backgroundColor: (selectedWvof.status === 'stopped' && selectedWvof.wvofdc_number) ? 'rgba(249,115,22,0.06)' : 'rgba(16,185,129,0.06)',
+                            border: (selectedWvof.status === 'stopped' && selectedWvof.wvofdc_number) ? '1px solid rgba(249,115,22,0.2)' : '1px solid rgba(16,185,129,0.2)',
                             borderRadius: '10px',
                             padding: '1rem',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '0.75rem',
-                            color: '#047857'
+                            color: (selectedWvof.status === 'stopped' && selectedWvof.wvofdc_number) ? '#c2410c' : '#047857'
                           }}>
-                            <CheckCircle size={18} style={{ flexShrink: 0 }} />
+                            {(selectedWvof.status === 'stopped' && selectedWvof.wvofdc_number) ? <AlertCircle size={18} style={{ flexShrink: 0 }} /> : <CheckCircle size={18} style={{ flexShrink: 0 }} />}
                             <span style={{ fontSize: '0.825rem', fontWeight: '600' }}>
-                              Production completed. No further production rounds can be recorded.
+                              {(selectedWvof.status === 'stopped' && selectedWvof.wvofdc_number) 
+                                ? 'Order is permanently stopped (DC generated). No further production rounds can be recorded.' 
+                                : 'Production completed. No further production rounds can be recorded.'}
                             </span>
                           </div>
                         ) : (
@@ -5505,6 +5548,23 @@ export default function WeavingOrderForms() {
         </div>
       )}
 
+      {/* Stop Wizard Modal Overlay */}
+      {activeStopWvof && (
+        <WvofStopWizardModal
+          wvof={activeStopWvof}
+          onClose={() => setActiveStopWvof(null)}
+          onSuccess={async (updatedWvof) => {
+            await fetchWeavingOrders();
+            if (updatedWvof) {
+              if (selectedWvof && selectedWvof.id === updatedWvof.id) {
+                setSelectedWvof(updatedWvof);
+              }
+              setPrintWvofdc(updatedWvof);
+            }
+          }}
+        />
+      )}
+
       {/* Allot Dyed Yarn Modal Overlay */}
       {allotWvof && (
         <div style={{
@@ -5523,7 +5583,7 @@ export default function WeavingOrderForms() {
             backgroundColor: 'var(--surface-current)',
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '680px',
+            maxWidth: '900px',
             maxHeight: '90vh',
             display: 'flex',
             flexDirection: 'column',
@@ -5802,6 +5862,31 @@ export default function WeavingOrderForms() {
                         );
                       })}
                     </div>
+                    {/* Total Planned Daily Qty Summary */}
+                    {(() => {
+                      const totalPlanned = allotPlannedProduction.reduce((sum, p) => sum + (parseFloat(p.qty) || 0), 0);
+                      const target = parseFloat(allotWvof.qty) || 0;
+                      const diff = totalPlanned - target;
+                      const isMatched = Math.abs(diff) < 0.01;
+                      return (
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          borderTop: '1px solid var(--border-current)',
+                          paddingTop: '0.6rem',
+                          marginTop: '0.75rem',
+                          fontSize: '0.78rem',
+                          fontWeight: '700'
+                        }}>
+                          <span style={{ color: 'var(--text-muted-current)' }}>Total Planned Daily Qty:</span>
+                          <span style={{ color: isMatched ? '#16a34a' : '#d97706' }}>
+                            {totalPlanned.toLocaleString()} / {target.toLocaleString()} m
+                            {isMatched ? ' ✓' : ` (${diff > 0 ? '+' : ''}${diff.toLocaleString()} m)`}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -5957,6 +6042,1090 @@ function MultiSelectDropdown({ label, options, selectedValues, onChange, placeho
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ── Weaving Order Stop Wizard Modal ──────────────────────────────────────────
+function WvofStopWizardModal({ wvof, onClose, onSuccess }) {
+  const [loading, setLoading] = useState(true);
+  const [wvofDetail, setWvofDetail] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  // Wizard states
+  const [stopStep, setStopStep] = useState('confirm_type'); // 'confirm_type' | 'permanent_history' | 'reallocate_later_setup' | 'reallocate_now_splits' | 'configure_splits' | 'reallocate_now_confirm'
+  const [reallocWhen, setReallocWhen] = useState(null); // 'now' | 'later' | null
+  
+  // Quantities
+  const [completedQty, setCompletedQty] = useState('');
+  
+  // Reallocation splits
+  const [reallocSplitsCount, setReallocSplitsCount] = useState(1);
+  const [reallocSplits, setReallocSplits] = useState([]);
+  
+  // Weft returns details
+  const [weftYarnReturns, setWeftYarnReturns] = useState([]);
+  const [stopDateTime, setStopDateTime] = useState('');
+  
+  // Master lists
+  const [weavingMachines, setWeavingMachines] = useState([]);
+  const [weavingPartners, setWeavingPartners] = useState([]);
+
+  useEffect(() => {
+    fetchDetails();
+  }, [wvof.id]);
+
+  const fetchDetails = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch current Weaving Order details
+      const { data, error } = await supabase
+        .from('weaving_orders')
+        .select(`
+          *,
+          order:orders(id, order_number, design_no, design_name, total_quantity)
+        `)
+        .eq('id', wvof.id)
+        .single();
+      if (error) throw error;
+      setWvofDetail(data);
+
+      // Sum of daily production logs
+      const totalProduced = (data.production_logs || []).reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0);
+      setCompletedQty(totalProduced.toString());
+
+      // 2. Fetch weft yarn returns grouping logic
+      const { data: dydi, error: delError } = await supabase
+        .from('dyed_yarn_delivery_items')
+        .select(`
+          id,
+          yarn_count_id,
+          colour,
+          lot_number,
+          quantity_kg,
+          yarn_count:master_yarn_counts(count_value, material, product_type)
+        `)
+        .eq('production_form_id', wvof.id);
+
+      if (delError) throw delError;
+
+      const groupedDelivered = {};
+      (dydi || []).forEach(item => {
+        const key = `${item.colour || ''}_${item.yarn_count_id || ''}_${item.lot_number || ''}`;
+        if (!groupedDelivered[key]) {
+          const countDisplay = item.yarn_count
+            ? `${item.yarn_count.count_value} ${item.yarn_count.material} ${item.yarn_count.product_type}`
+            : '—';
+          groupedDelivered[key] = {
+            colour: item.colour || '—',
+            yarn_count_id: item.yarn_count_id,
+            count_display: countDisplay,
+            lot_number: item.lot_number || '—',
+            quantity_received: 0,
+            quantity_returned: '0'
+          };
+        }
+        groupedDelivered[key].quantity_received += parseFloat(item.quantity_kg || 0);
+      });
+
+      setWeftYarnReturns(Object.values(groupedDelivered));
+
+      // Set default stop date
+      const completeNow = new Date();
+      const completeTzoffset = completeNow.getTimezoneOffset() * 60000;
+      setStopDateTime(new Date(completeNow - completeTzoffset).toISOString().slice(0, 16));
+
+      // 3. Fetch weaving department machines
+      const { data: deptData } = await supabase
+        .from('master_departments')
+        .select('id')
+        .ilike('department_name', '%weaving%');
+      const weavingDeptIds = (deptData || []).map(d => d.id);
+
+      let machineData = [];
+      if (weavingDeptIds.length > 0) {
+        const { data } = await supabase
+          .from('master_machines')
+          .select('*, master_departments(department_name)')
+          .in('department_id', weavingDeptIds);
+        machineData = data || [];
+      }
+      if (machineData.length === 0) {
+        const { data } = await supabase
+          .from('master_machines')
+          .select('*, master_departments(department_name)');
+        machineData = data || [];
+      }
+      setWeavingMachines(machineData);
+
+      // 4. Fetch weaving partners
+      const { data: partnerData } = await supabase
+        .from('master_partners')
+        .select('*')
+        .ilike('partner_type', '%weaving%');
+      setWeavingPartners(partnerData || []);
+
+    } catch (err) {
+      console.error('Error fetching details in WvofStopWizardModal:', err);
+      alert('Error fetching details: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getBalanceQty = () => {
+    const originalQty = Number(wvofDetail?.original_qty || wvofDetail?.qty || 0);
+    const compVal = parseFloat(completedQty) || 0;
+    return Math.max(0, originalQty - compVal);
+  };
+
+  const handleSplitsCountChange = (count) => {
+    setReallocSplitsCount(count);
+    const balanceQty = getBalanceQty();
+    const evenQty = Math.round((balanceQty / count) * 100) / 100;
+
+    setReallocSplits(prev => {
+      const next = [...prev];
+      if (count > next.length) {
+        for (let i = next.length; i < count; i++) {
+          next.push({
+            weaving_type: wvofDetail.weaving_type || 'in_house',
+            qty: evenQty.toString(),
+            machine_id: '',
+            machine_name: '',
+            partner_id: '',
+            partner_name: '',
+            start_date: '',
+            end_date: '',
+            beam_number: wvofDetail.beam_number || ''
+          });
+        }
+      } else if (count < next.length) {
+        next.splice(count);
+      }
+      
+      // Distribute balance evenly, last split gets remainder
+      for (let i = 0; i < next.length; i++) {
+        if (i === next.length - 1) {
+          const otherSum = next.slice(0, i).reduce((s, x) => s + (parseFloat(x.qty) || 0), 0);
+          next[i] = { ...next[i], qty: Math.max(0, Math.round((balanceQty - otherSum) * 100) / 100).toString() };
+        } else {
+          next[i] = { ...next[i], qty: evenQty.toString() };
+        }
+      }
+      return next;
+    });
+  };
+
+  const updateReallocSplit = (index, field, value) => {
+    setReallocSplits(prev => prev.map((item, idx) => {
+      if (idx === index) {
+        const updated = { ...item, [field]: value };
+        if (field === 'weaving_type') {
+          updated.machine_id = '';
+          updated.machine_name = '';
+          updated.partner_id = '';
+          updated.partner_name = '';
+        } else if (field === 'partner_id') {
+          const partner = weavingPartners.find(p => p.id === value || p.id.toString() === value);
+          updated.partner_name = partner ? partner.partner_name : '';
+          updated.machine_id = '';
+          updated.machine_name = '';
+        } else if (field === 'machine_id') {
+          const machine = weavingMachines.find(m => m.id === value || m.id.toString() === value);
+          updated.machine_name = machine ? machine.machine_name : '';
+        }
+        return updated;
+      }
+      return item;
+    }));
+  };
+
+  const handleTemporaryStop = async () => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('weaving_orders')
+        .update({
+          status: 'stopped',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', wvof.id);
+
+      if (error) throw error;
+      onSuccess();
+      onClose();
+    } catch (err) {
+      console.error('Error pausing weaving process:', err);
+      alert('Failed to pause process: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStopLater = async () => {
+    if (!stopDateTime) {
+      alert('Please enter a stop date.');
+      return;
+    }
+
+    // Validate returns
+    for (let i = 0; i < weftYarnReturns.length; i++) {
+      const ret = weftYarnReturns[i];
+      const retQty = parseFloat(ret.quantity_returned || 0);
+      if (isNaN(retQty) || retQty < 0) {
+        alert(`Please enter a valid return quantity for Colour ${ret.colour}, Lot ${ret.lot_number}`);
+        return;
+      }
+      if (retQty > ret.quantity_received) {
+        alert(`Return quantity (${retQty} kg) cannot exceed delivered quantity (${ret.quantity_received} kg) for Colour ${ret.colour}, Lot ${ret.lot_number}`);
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      const originalQty = Number(wvofDetail.original_qty || wvofDetail.qty);
+      const totalProduced = (wvofDetail.production_logs || []).reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0);
+      const stopDateStr = stopDateTime.slice(0, 10);
+      const wvofdcNumber = (wvofDetail.weaving_number || 'WVOF') + '/DC';
+
+      const updates = {
+        status: 'stopped',
+        qty: totalProduced,
+        original_qty: originalQty,
+        end_date: stopDateStr,
+        process_completed_at: new Date(stopDateTime).toISOString(),
+        yarn_returns: weftYarnReturns.map(r => ({
+          colour: r.colour,
+          yarn_count_id: r.yarn_count_id,
+          count_display: r.count_display,
+          lot_number: r.lot_number,
+          quantity_received: r.quantity_received,
+          quantity_returned: parseFloat(r.quantity_returned || 0)
+        })),
+        wvofdc_number: wvofdcNumber,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('weaving_orders')
+        .update(updates)
+        .eq('id', wvofDetail.id);
+
+      if (error) throw error;
+
+      onSuccess( { ...wvofDetail, ...updates } );
+      onClose();
+    } catch (err) {
+      console.error('Error stopping process (later):', err);
+      alert('Failed to stop weaving order: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStopAndReallocateNow = async () => {
+    if (!stopDateTime) {
+      alert('Please enter a stop date.');
+      return;
+    }
+
+    const cVal = parseFloat(completedQty);
+    if (isNaN(cVal) || cVal < 0) {
+      alert('Please enter a valid completed quantity.');
+      return;
+    }
+
+    // Validate returns
+    for (let i = 0; i < weftYarnReturns.length; i++) {
+      const ret = weftYarnReturns[i];
+      const retQty = parseFloat(ret.quantity_returned || 0);
+      if (isNaN(retQty) || retQty < 0) {
+        alert(`Please enter a valid return quantity for Colour ${ret.colour}, Lot ${ret.lot_number}`);
+        return;
+      }
+      if (retQty > ret.quantity_received) {
+        alert(`Return quantity (${retQty} kg) cannot exceed delivered quantity (${ret.quantity_received} kg) for Colour ${ret.colour}, Lot ${ret.lot_number}`);
+        return;
+      }
+    }
+
+    // Validate splits
+    let totalSplitQty = 0;
+    for (let idx = 0; idx < reallocSplits.length; idx++) {
+      const split = reallocSplits[idx];
+      const prefix = reallocSplits.length > 1 ? `Split #${idx + 1}: ` : '';
+      
+      if (split.weaving_type === 'in_house') {
+        if (!split.machine_id) {
+          alert(`${prefix}Please select a weaving loom/machine.`);
+          return;
+        }
+      } else {
+        if (!split.partner_id) {
+          alert(`${prefix}Please select a weaving partner.`);
+          return;
+        }
+        if (!split.machine_id) {
+          alert(`${prefix}Please select a weaving loom/machine.`);
+          return;
+        }
+      }
+      if (!split.start_date || !split.end_date) {
+        alert(`${prefix}Please enter planned start and end dates.`);
+        return;
+      }
+      const qVal = parseFloat(split.qty);
+      if (isNaN(qVal) || qVal <= 0) {
+        alert(`${prefix}Please enter a valid positive quantity.`);
+        return;
+      }
+      totalSplitQty += qVal;
+    }
+
+    const balanceQty = getBalanceQty();
+    if (Math.abs(totalSplitQty - balanceQty) > 0.01) {
+      alert(`The sum of split quantities (${totalSplitQty} m) must match the remaining quantity (${balanceQty} m) exactly.`);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const originalQty = Number(wvofDetail.original_qty || wvofDetail.qty);
+      const stopDateStr = stopDateTime.slice(0, 10);
+      const wvofdcNumber = (wvofDetail.weaving_number || 'WVOF') + '/DC';
+
+      // 1. Generate weaving numbers in bulk for new splits
+      const groups = {};
+      reallocSplits.forEach((s, idx) => {
+        const key = `${s.weaving_type}|${s.partner_name || ''}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push({ split: s, index: idx });
+      });
+
+      const newWeavingNumbers = new Array(reallocSplits.length);
+      const orderNumber = wvofDetail.order?.order_number || '';
+
+      for (const key of Object.keys(groups)) {
+        const [wType, pName] = key.split('|');
+        const groupItems = groups[key];
+        const generated = await generateWeavingNumbersBulk(wType, pName || null, null, orderNumber, groupItems.length);
+        groupItems.forEach((item, i) => {
+          newWeavingNumbers[item.index] = generated[i];
+        });
+      }
+
+      // 2. Insert new split weaving orders
+      const newSplitsPayload = reallocSplits.map((s, index) => ({
+        order_id: wvofDetail.order_id,
+        weaving_number: newWeavingNumbers[index],
+        design_no: wvofDetail.design_no,
+        status: 'pending',
+        qty: parseFloat(s.qty),
+        original_qty: parseFloat(s.qty),
+        start_date: s.start_date,
+        end_date: s.end_date,
+        weaving_type: s.weaving_type,
+        machine_id: s.machine_id || null,
+        machine_name: s.machine_name || null,
+        partner_id: s.partner_id || null,
+        partner_name: s.partner_name || null,
+        beam_number: s.beam_number || null,
+        sof_id: wvofDetail.sof_id || null,
+        sof_number: wvofDetail.sof_number || null,
+        wof_id: wvofDetail.wof_id || null,
+        wof_number: wvofDetail.wof_number || null,
+        warp_no: wvofDetail.warp_no || null,
+        weft_allotments: []
+      }));
+
+      const { error: insertErr } = await insertWeavingOrdersWithRetry(
+        newSplitsPayload, reallocSplits, null, null, null, orderNumber
+      );
+      if (insertErr) throw insertErr;
+
+      // 3. Update parent weaving order form
+      const updates = {
+        status: 'stopped',
+        qty: cVal,
+        original_qty: originalQty,
+        end_date: stopDateStr,
+        process_completed_at: new Date(stopDateTime).toISOString(),
+        yarn_returns: weftYarnReturns.map(r => ({
+          colour: r.colour,
+          yarn_count_id: r.yarn_count_id,
+          count_display: r.count_display,
+          lot_number: r.lot_number,
+          quantity_received: r.quantity_received,
+          quantity_returned: parseFloat(r.quantity_returned || 0)
+        })),
+        wvofdc_number: wvofdcNumber,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: updateErr } = await supabase
+        .from('weaving_orders')
+        .update(updates)
+        .eq('id', wvofDetail.id);
+
+      if (updateErr) throw updateErr;
+
+      onSuccess( { ...wvofDetail, ...updates } );
+      onClose();
+    } catch (err) {
+      console.error('Error stopping and reallocating process (now):', err);
+      alert('Failed to reallocate weaving orders: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ backgroundColor: '#fff', padding: '2rem', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: '600' }}>
+          <Loader className="spin" size={18} /> Loading weaving details...
+        </div>
+      </div>
+    );
+  }
+
+  const originalQty = Number(wvofDetail.original_qty || wvofDetail.qty);
+  const totalProduced = (wvofDetail.production_logs || []).reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0);
+  const reallocBalanceQty = getBalanceQty();
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      backdropFilter: 'blur(4px)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '2rem',
+      boxSizing: 'border-box'
+    }}>
+      <div style={{
+        backgroundColor: 'var(--surface-current)',
+        borderRadius: '16px',
+        width: '100%',
+        maxWidth: '700px',
+        maxHeight: '90vh',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+        overflow: 'hidden',
+        border: '1px solid var(--border-current)'
+      }}>
+        {/* Modal Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '1.25rem 1.5rem',
+          borderBottom: '1px solid var(--border-current)',
+          backgroundColor: 'var(--surface-current)'
+        }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: 'var(--text-current)' }}>
+              Stop Weaving Process
+            </h3>
+            <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted-current)' }}>
+              Weaving Ref: <strong style={{ color: '#800000', fontFamily: 'monospace' }}>{wvofDetail.weaving_number}</strong>
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted-current)', cursor: 'pointer', fontSize: '1.5rem', fontWeight: '300', lineHeight: 1, padding: '4px' }}
+          >
+            &times;
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '1.5rem',
+          backgroundColor: 'var(--bg-current)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1.25rem'
+        }}>
+          
+          {/* STEP 1: Temporary vs Permanent Stop */}
+          {stopStep === 'confirm_type' && (
+            <div>
+              <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.82rem', color: 'var(--text-current)', fontWeight: '500', lineHeight: '1.5' }}>
+                Do you want to <strong>Pause</strong> the weaving process temporarily (so you can resume it later) or <strong>Stop Permanently</strong>?
+              </p>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={onClose}
+                  style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-muted-current)', fontWeight: '600' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleTemporaryStop}
+                  disabled={saving}
+                  style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#1d4ed8', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                >
+                  Pause (Temporary)
+                </button>
+                <button
+                  onClick={() => setStopStep('permanent_history')}
+                  style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                >
+                  Stop Permanently
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: Permanent Stop - Daily Logs History */}
+          {stopStep === 'permanent_history' && (
+            <div>
+              <p style={{ margin: '0 0 1rem 0', fontSize: '0.82rem', color: 'var(--text-current)', fontWeight: '600' }}>
+                Daily Production Logs Summary:
+              </p>
+              
+              <div style={{ maxHeight: '200px', overflowY: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)', marginBottom: '1.25rem' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                      <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Date & Time</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Weaver</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Produced Qty (Mtrs)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(!wvofDetail.production_logs || wvofDetail.production_logs.length === 0) ? (
+                      <tr>
+                        <td colSpan="3" style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
+                          No production rounds recorded.
+                        </td>
+                      </tr>
+                    ) : (
+                      [...wvofDetail.production_logs]
+                        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                        .map((log, lIdx) => (
+                          <tr key={log.id || lIdx} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                            <td style={{ padding: '0.5rem 0.75rem' }}>
+                              {new Date(log.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>{log.weaver}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#047857', textAlign: 'right' }}>{Number(log.qty).toLocaleString()} m</td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '0.75rem 1rem', color: '#166534', fontSize: '0.825rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', fontWeight: '700' }}>
+                <span>Total Produced (Sum of Daily Logs):</span>
+                <span>{totalProduced.toLocaleString()} Mtrs</span>
+              </div>
+
+              <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.82rem', color: 'var(--text-current)', fontWeight: '500', lineHeight: '1.5' }}>
+                The sum of daily production logs (<strong>{totalProduced.toLocaleString()} Mtrs</strong>) will become the produced quantity of this Weaving Order. Do you want to reallocate the remaining quantity (<strong>{(originalQty - totalProduced).toLocaleString()} Mtrs</strong>) now or later?
+              </p>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setStopStep('confirm_type')}
+                  style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-muted-current)', fontWeight: '600' }}
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => {
+                    setReallocWhen('later');
+                    setStopStep('reallocate_later_setup');
+                  }}
+                  style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                >
+                  Reallocate Later
+                </button>
+                <button
+                  onClick={() => {
+                    setReallocWhen('now');
+                    setStopStep('reallocate_now_splits');
+                  }}
+                  style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#10b981', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                >
+                  Reallocate Now
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3A: Reallocate Later - Date & Weft Returns Details */}
+          {stopStep === 'reallocate_later_setup' && (
+            <div>
+              <p style={{ margin: '0 0 1rem 0', fontSize: '0.8rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>
+                Stopping loom process. Enter the stop date and weft returns.
+              </p>
+
+              {/* Stop Date Selection */}
+              <div style={{ maxWidth: '300px', marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
+                  Stop Date & Time *
+                </label>
+                <input
+                  type="datetime-local"
+                  value={stopDateTime}
+                  onChange={e => setStopDateTime(e.target.value)}
+                  style={{ width: '100%', padding: '0.6rem 0.75rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              {/* Weft Yarn Returns */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#800000', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Weft Yarn Return Details
+                </h4>
+                {weftYarnReturns.length === 0 ? (
+                  <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted-current)', border: '1px dashed var(--border-current)', borderRadius: '8px', backgroundColor: 'var(--surface-current)' }}>
+                    No weft yarn delivered for this process.
+                  </div>
+                ) : (
+                  <div style={{ border: '1px solid var(--border-current)', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--surface-current)' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Colour</th>
+                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Count</th>
+                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Lot Number</th>
+                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Received (kg)</th>
+                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', width: '140px' }}>Return Qty (kg)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {weftYarnReturns.map((item, idx) => (
+                          <tr key={idx} style={{ borderBottom: idx < weftYarnReturns.length - 1 ? '1px solid var(--border-current)' : 'none' }}>
+                            <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>{item.colour}</td>
+                            <td style={{ padding: '0.5rem 0.75rem' }}>{item.count_display}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace' }}>{item.lot_number}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '600' }}>{Number(item.quantity_received).toFixed(2)}</td>
+                            <td style={{ padding: '0.5rem 0.75rem' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                value={item.quantity_returned}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setWeftYarnReturns(prev => prev.map((it, i) => i === idx ? { ...it, quantity_returned: val } : it));
+                                }}
+                                style={{ width: '100%', padding: '0.3rem 0.5rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '600', boxSizing: 'border-box' }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setStopStep('permanent_history')}
+                  style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-muted-current)', fontWeight: '600' }}
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleStopLater}
+                  disabled={saving}
+                  style={{ padding: '0.5rem 1.5rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  {saving ? 'Stopping...' : 'Confirm & Stop Process'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3B: Reallocate Now - Completed Qty and Splits Number */}
+          {stopStep === 'reallocate_now_splits' && (
+            <div>
+              <p style={{ margin: '0 0 1rem 0', fontSize: '0.8rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>
+                Define completed quantity and configure split reallocation.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
+                    Completed Quantity (Mtrs) *
+                  </label>
+                  <input
+                    type="number"
+                    value={completedQty}
+                    onChange={e => setCompletedQty(e.target.value)}
+                    max={originalQty}
+                    min="0"
+                    style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid var(--border-current)', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700', boxSizing: 'border-box', backgroundColor: 'var(--surface-current)', color: 'var(--text-current)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
+                    Number of Splits *
+                  </label>
+                  <select
+                    value={reallocSplitsCount}
+                    onChange={e => handleSplitsCountChange(parseInt(e.target.value))}
+                    style={{ width: '100%', padding: '0.55rem 0.75rem', border: '1px solid var(--border-current)', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '700', backgroundColor: 'var(--surface-current)', color: 'var(--text-current)' }}
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+                      <option key={n} value={n}>{n} {n === 1 ? 'Split' : 'Splits'}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: 'var(--surface-current)', border: '1px solid var(--border-current)', borderRadius: '10px', padding: '1rem', fontSize: '0.8rem', lineHeight: '1.6', marginBottom: '1.25rem' }}>
+                <div><strong>Original Allocation Qty:</strong> {originalQty.toLocaleString()} m</div>
+                <div><strong>Completed/Produced Qty:</strong> {(parseFloat(completedQty) || 0).toLocaleString()} m</div>
+                <div style={{ color: '#ea580c', fontWeight: '800' }}>
+                  <strong>Remaining Qty to Reallocate:</strong> {reallocBalanceQty.toLocaleString()} m
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setStopStep('permanent_history')}
+                  style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-muted-current)', fontWeight: '600' }}
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => {
+                    const cVal = parseFloat(completedQty);
+                    if (isNaN(cVal) || cVal < 0) {
+                      alert('Please enter a valid completed quantity.');
+                      return;
+                    }
+                    if (cVal > originalQty) {
+                      alert(`Completed quantity (${cVal} m) cannot exceed the original weaving quantity (${originalQty} m).`);
+                      return;
+                    }
+                    // Re-run split calculation to ensure correct values
+                    handleSplitsCountChange(reallocSplitsCount);
+                    setStopStep('configure_splits');
+                  }}
+                  style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#10b981', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                >
+                  Configure Splits
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: Reallocate Now - Configure Split Forms */}
+          {stopStep === 'configure_splits' && (
+            <div>
+              <p style={{ margin: '0 0 1rem 0', fontSize: '0.78rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>
+                Configure Loom and Partner details for each split. (Remaining to split: {reallocBalanceQty} m)
+              </p>
+
+              <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '0.5rem', marginBottom: '1.25rem', border: '1px solid var(--border-current)', borderRadius: '8px', padding: '0.5rem', backgroundColor: 'var(--surface-current)' }}>
+                {reallocSplits.map((split, idx) => (
+                  <div key={idx} style={{ padding: '0.75rem', border: '1px solid var(--border-current)', borderRadius: '6px', marginBottom: '0.75rem', backgroundColor: 'var(--bg-current)' }}>
+                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#10b981' }}>
+                      Split #{idx + 1}
+                    </h4>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                      {/* Quantity */}
+                      <div style={{ gridColumn: 'span 2' }}>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>
+                          Split Quantity (Mtrs) * <span style={{ fontWeight: '400', fontSize: '0.65rem', color: '#666' }}>(Balance: {reallocBalanceQty} m)</span>
+                        </label>
+                        <input
+                          type="number"
+                          value={split.qty}
+                          onChange={e => {
+                            const newVal = e.target.value;
+                            setReallocSplits(prev => {
+                              const updated = prev.map((s, i) => i === idx ? { ...s, qty: newVal } : s);
+                              // Auto-balance: fill last split with remaining
+                              if (updated.length > 1 && idx !== updated.length - 1) {
+                                const otherSum = updated.reduce((sum, s, i) => i !== updated.length - 1 ? sum + (parseFloat(s.qty) || 0) : sum, 0);
+                                const remaining = Math.max(0, Math.round((reallocBalanceQty - otherSum) * 100) / 100);
+                                updated[updated.length - 1] = { ...updated[updated.length - 1], qty: remaining.toString() };
+                              }
+                              return updated;
+                            });
+                          }}
+                          min="0"
+                          max={reallocBalanceQty}
+                          style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '700', boxSizing: 'border-box', backgroundColor: 'var(--surface-current)', color: 'var(--text-current)' }}
+                        />
+                      </div>
+
+                      {/* Weaving Type */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Weaving Type</label>
+                        <select
+                          value={split.weaving_type}
+                          onChange={e => updateReallocSplit(idx, 'weaving_type', e.target.value)}
+                          style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600', backgroundColor: 'var(--surface-current)', color: 'var(--text-current)' }}
+                        >
+                          <option value="in_house">In House</option>
+                          <option value="job_work">Job Work</option>
+                        </select>
+                      </div>
+
+                      {/* Machine / Partner */}
+                      {split.weaving_type === 'in_house' ? (
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Weaving Loom *</label>
+                          <select
+                            value={split.machine_id}
+                            onChange={e => updateReallocSplit(idx, 'machine_id', e.target.value)}
+                            style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600', backgroundColor: 'var(--surface-current)', color: 'var(--text-current)' }}
+                          >
+                            <option value="">Select loom...</option>
+                            {weavingMachines.filter(m => m.scope === 'in_house').map(m => (
+                              <option key={m.id} value={m.id}>{m.machine_name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Weaving Partner *</label>
+                            <select
+                              value={split.partner_id}
+                              onChange={e => updateReallocSplit(idx, 'partner_id', e.target.value)}
+                              style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600', backgroundColor: 'var(--surface-current)', color: 'var(--text-current)' }}
+                            >
+                              <option value="">Select partner...</option>
+                              {weavingPartners.map(p => (
+                                <option key={p.id} value={p.id}>{p.partner_name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Weaving Loom *</label>
+                            <select
+                              value={split.machine_id}
+                              onChange={e => updateReallocSplit(idx, 'machine_id', e.target.value)}
+                              disabled={!split.partner_id}
+                              style={{ width: '100%', padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600', backgroundColor: 'var(--surface-current)', color: 'var(--text-current)' }}
+                            >
+                              <option value="">Select loom...</option>
+                              {weavingMachines.filter(m => m.scope === 'job_work' && m.partner_id?.toString() === split.partner_id?.toString()).map(m => (
+                                <option key={m.id} value={m.id}>{m.machine_name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Start Date */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Start Date *</label>
+                        <input
+                          type="date"
+                          value={split.start_date}
+                          onChange={e => updateReallocSplit(idx, 'start_date', e.target.value)}
+                          style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600', backgroundColor: 'var(--surface-current)', color: 'var(--text-current)' }}
+                        />
+                      </div>
+
+                      {/* End Date */}
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>End Date *</label>
+                        <input
+                          type="date"
+                          value={split.end_date}
+                          onChange={e => updateReallocSplit(idx, 'end_date', e.target.value)}
+                          style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600', backgroundColor: 'var(--surface-current)', color: 'var(--text-current)' }}
+                        />
+                      </div>
+
+                      {/* Beam Number */}
+                      <div style={{ gridColumn: 'span 2' }}>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.2rem' }}>Beam Number</label>
+                        <input
+                          type="text"
+                          value={split.beam_number}
+                          onChange={e => updateReallocSplit(idx, 'beam_number', e.target.value)}
+                          style={{ width: '100%', padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: '600', boxSizing: 'border-box', backgroundColor: 'var(--surface-current)', color: 'var(--text-current)' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setStopStep('reallocate_now_splits')}
+                  style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-muted-current)', fontWeight: '600' }}
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => {
+                    let totalSplitQty = 0;
+                    for (let idx = 0; idx < reallocSplits.length; idx++) {
+                      const split = reallocSplits[idx];
+                      const prefix = reallocSplits.length > 1 ? `Split #${idx + 1}: ` : '';
+                      
+                      if (split.weaving_type === 'in_house') {
+                        if (!split.machine_id) {
+                          alert(`${prefix}Please select a weaving loom.`);
+                          return;
+                        }
+                      } else {
+                        if (!split.partner_id) {
+                          alert(`${prefix}Please select a weaving partner.`);
+                          return;
+                        }
+                        if (!split.machine_id) {
+                          alert(`${prefix}Please select a weaving loom.`);
+                          return;
+                        }
+                      }
+                      if (!split.start_date || !split.end_date) {
+                        alert(`${prefix}Please enter planned start and end dates.`);
+                        return;
+                      }
+                      const qVal = parseFloat(split.qty);
+                      if (isNaN(qVal) || qVal <= 0) {
+                        alert(`${prefix}Please enter a valid positive quantity.`);
+                        return;
+                      }
+                      totalSplitQty += qVal;
+                    }
+
+                    if (Math.abs(totalSplitQty - reallocBalanceQty) > 0.01) {
+                      alert(`Total reallocated quantity (${totalSplitQty} m) must match the remaining quantity (${reallocBalanceQty} m) exactly.`);
+                      return;
+                    }
+                    setStopStep('reallocate_now_confirm');
+                  }}
+                  style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#10b981', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                >
+                  Next: Returns & Confirm
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 5: Reallocate Now - Weft Returns and Final Confirmation */}
+          {stopStep === 'reallocate_now_confirm' && (
+            <div>
+              <p style={{ margin: '0 0 1rem 0', fontSize: '0.8rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>
+                Stopping parent weaving order. Enter stop date and weft returns.
+              </p>
+
+              {/* Stop Date Selection */}
+              <div style={{ maxWidth: '300px', marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
+                  Stop Date & Time *
+                </label>
+                <input
+                  type="datetime-local"
+                  value={stopDateTime}
+                  onChange={e => setStopDateTime(e.target.value)}
+                  style={{ width: '100%', padding: '0.6rem 0.75rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              {/* Weft Yarn Returns */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#800000', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Weft Yarn Return Details
+                </h4>
+                {weftYarnReturns.length === 0 ? (
+                  <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted-current)', border: '1px dashed var(--border-current)', borderRadius: '8px', backgroundColor: 'var(--surface-current)' }}>
+                    No weft yarn delivered for this process.
+                  </div>
+                ) : (
+                  <div style={{ border: '1px solid var(--border-current)', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--surface-current)' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
+                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Colour</th>
+                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Count</th>
+                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Lot Number</th>
+                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Received (kg)</th>
+                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', width: '140px' }}>Return Qty (kg)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {weftYarnReturns.map((item, idx) => (
+                          <tr key={idx} style={{ borderBottom: idx < weftYarnReturns.length - 1 ? '1px solid var(--border-current)' : 'none' }}>
+                            <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>{item.colour}</td>
+                            <td style={{ padding: '0.5rem 0.75rem' }}>{item.count_display}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace' }}>{item.lot_number}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '600' }}>{Number(item.quantity_received).toFixed(2)}</td>
+                            <td style={{ padding: '0.5rem 0.75rem' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                value={item.quantity_returned}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setWeftYarnReturns(prev => prev.map((it, i) => i === idx ? { ...it, quantity_returned: val } : it));
+                                }}
+                                style={{ width: '100%', padding: '0.3rem 0.5rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '600', boxSizing: 'border-box' }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Splits Summary */}
+              <div style={{ backgroundColor: 'rgba(254,215,170,0.2)', padding: '1rem', borderRadius: '8px', border: '1px solid #fed7aa', marginBottom: '1.25rem', fontSize: '0.8rem', lineHeight: '1.5', color: 'var(--text-current)' }}>
+                <div><strong>Weaving Order to Stop:</strong> {wvofDetail.weaving_number}</div>
+                <div><strong>Original target Qty:</strong> {originalQty.toLocaleString()} m</div>
+                <div><strong>Completed Qty:</strong> {(parseFloat(completedQty) || 0).toLocaleString()} m</div>
+                <div><strong>Remaining Qty to Split:</strong> {reallocBalanceQty.toLocaleString()} m</div>
+                
+                <div style={{ marginTop: '0.75rem', borderTop: '1px dashed #fed7aa', paddingTop: '0.5rem' }}>
+                  <span style={{ fontWeight: '700', color: '#ea580c', display: 'block', marginBottom: '4px' }}>New Weaving Order Splits to be Created:</span>
+                  {reallocSplits.map((split, sIdx) => (
+                    <div key={sIdx} style={{ marginBottom: '0.5rem', paddingBottom: '0.5rem', borderBottom: sIdx < reallocSplits.length - 1 ? '1px dotted #fed7aa' : 'none' }}>
+                      <strong>Split #{sIdx + 1}:</strong> {split.qty} m ({split.weaving_type === 'in_house' ? 'In House' : 'Job Work'} - {split.weaving_type === 'in_house' ? split.machine_name : `${split.partner_name} / ${split.machine_name}`})
+                      <div>Dates: {split.start_date} to {split.end_date} {split.beam_number ? `(Beam: ${split.beam_number})` : ''}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setStopStep('configure_splits')}
+                  style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-muted-current)', fontWeight: '600' }}
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleStopAndReallocateNow}
+                  disabled={saving}
+                  style={{ padding: '0.5rem 1.5rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  {saving ? <Loader size={14} className="spin" /> : <AlertTriangle size={14} />}
+                  {saving ? 'Creating splits...' : 'Confirm & Create Splits'}
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
     </div>
   );
 }

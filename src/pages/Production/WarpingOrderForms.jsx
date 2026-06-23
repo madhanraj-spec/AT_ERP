@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PrintableWOF from './PrintableWOF';
-import { generateWeavingNumbersBulk } from '../../utils/weaving';
+import { generateWeavingNumbersBulk, insertWeavingOrdersWithRetry } from '../../utils/weaving';
 
 import PrintableWOFDC from './PrintableWOFDC';
 import DYDRDetail from '../../components/DYDRDetail';
@@ -23,16 +23,18 @@ function getLocalDateString(dateInput) {
 
 function getWofStatusBadge(wof) {
   const todayStr = getLocalDateString(new Date());
+  const isFinished = wof.status === 'completed' || (wof.status === 'stopped' && !!wof.wofdc_number);
 
-  if (wof.status === 'completed') {
-    // Completed late?
+  if (isFinished) {
     const actualEndStr = wof.process_completed_at
       ? getLocalDateString(wof.process_completed_at)
       : (getLocalDateString(wof.updated_at) || todayStr);
     if (wof.end_date && actualEndStr > wof.end_date) {
-      return { label: 'Completed Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
+      return { label: wof.status === 'completed' ? 'Completed Late' : 'Stopped Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
-    return { label: 'Completed', bg: '#dcfce7', color: '#166534', border: '#86efac' };
+    return wof.status === 'completed'
+      ? { label: 'Completed', bg: '#dcfce7', color: '#166534', border: '#86efac' }
+      : { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
   }
   if (wof.status === 'stopped') {
     return { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
@@ -96,7 +98,11 @@ export default function WarpingOrderForms() {
 
   // Completion form states for job work warping
   const [showCompleteForm, setShowCompleteForm] = useState(null); // holds the WOF being completed
-  const [completeDate, setCompleteDate] = useState(new Date().toISOString().slice(0, 16));
+  const [completeDate, setCompleteDate] = useState(() => {
+    const now = new Date();
+    const tzoffset = now.getTimezoneOffset() * 60000;
+    return new Date(now - tzoffset).toISOString().slice(0, 16);
+  });
   const [completeSplits, setCompleteSplits] = useState([]);
   const [yarnReturns, setYarnReturns] = useState([]);
   const [beams, setBeams] = useState([]);
@@ -529,6 +535,8 @@ export default function WarpingOrderForms() {
             order_id: forwardWof.order_id,
             sizing_type: s.sizing_type,
             qty: s.qty,
+            original_qty: s.qty,
+            warp_no: s.warp_no,
             start_date: s.start_date,
             end_date: s.end_date,
             status: 'created',
@@ -593,9 +601,9 @@ export default function WarpingOrderForms() {
           weft_allotments: []
         }));
 
-        const { error: insertWeavingErr } = await supabase
-          .from('weaving_orders')
-          .insert(weavingOrdersPayload);
+        const { error: insertWeavingErr } = await insertWeavingOrdersWithRetry(
+          weavingOrdersPayload, warpSplits, null, null, null, orderNumber
+        );
 
         if (insertWeavingErr) throw insertWeavingErr;
       }
@@ -954,26 +962,27 @@ export default function WarpingOrderForms() {
                 1
               );
               
-              const { error: insertWeavingErr } = await supabase
-                .from('weaving_orders')
-                .insert({
-                  order_id: editWof.order_id,
-                  weaving_number: generated[0],
-                  design_no: editWof.order?.design_no || null,
-                  status: 'pending',
-                  qty: s.qty,
-                  start_date: s.start_date,
-                  end_date: s.end_date,
-                  weaving_type: s.weaving_type,
-                  machine_id: s.machine_id || null,
-                  machine_name: s.machine_name,
-                  partner_id: s.partner_id || null,
-                  partner_name: s.partner_name,
-                  wof_id: wofId,
-                  wof_number: editWof.wof_number,
-                  beam_number: editWof.beam_name || null,
-                  weft_allotments: []
-                });
+              const singlePayload = [{
+                order_id: editWof.order_id,
+                weaving_number: generated[0],
+                design_no: editWof.order?.design_no || null,
+                status: 'pending',
+                qty: s.qty,
+                start_date: s.start_date,
+                end_date: s.end_date,
+                weaving_type: s.weaving_type,
+                machine_id: s.machine_id || null,
+                machine_name: s.machine_name,
+                partner_id: s.partner_id || null,
+                partner_name: s.partner_name,
+                wof_id: wofId,
+                wof_number: editWof.wof_number,
+                beam_number: editWof.beam_name || null,
+                weft_allotments: []
+              }];
+              const { error: insertWeavingErr } = await insertWeavingOrdersWithRetry(
+                singlePayload, [s], null, null, null, orderNumber
+              );
                 
               if (insertWeavingErr) throw insertWeavingErr;
             } else if (i >= newWarpSplits.length && i < weavingList.length) {
@@ -1415,7 +1424,9 @@ export default function WarpingOrderForms() {
   const openCompleteForm = async (wof) => {
     setSavingComplete(true);
     setShowCompleteForm(wof);
-    setCompleteDate(new Date().toISOString().slice(0, 16));
+    const completeNow = new Date();
+    const completeTzoffset = completeNow.getTimezoneOffset() * 60000;
+    setCompleteDate(new Date(completeNow - completeTzoffset).toISOString().slice(0, 16));
     try {
       // Fetch beams from master_beams
       const { data: beamData } = await supabase

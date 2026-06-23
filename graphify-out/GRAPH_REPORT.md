@@ -1,16 +1,16 @@
-# Graph Report - ERP  (2026-06-22)
+# Graph Report - ERP  (2026-06-23)
 
 ## Corpus Check
-- 320 files · ~545,296 words
+- 335 files · ~575,182 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3071 nodes · 3125 edges · 394 communities (338 shown, 56 thin omitted)
+- 3148 nodes · 3197 edges · 405 communities (349 shown, 56 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `4f9a40e0`
+- Built from commit: `46c4bd64`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -398,12 +398,22 @@
 - [[_COMMUNITY_Community 385|Community 385]]
 - [[_COMMUNITY_Community 386|Community 386]]
 - [[_COMMUNITY_Community 387|Community 387]]
+- [[_COMMUNITY_Community 388|Community 388]]
 - [[_COMMUNITY_Community 389|Community 389]]
 - [[_COMMUNITY_Community 390|Community 390]]
 - [[_COMMUNITY_Community 391|Community 391]]
 - [[_COMMUNITY_Community 392|Community 392]]
 - [[_COMMUNITY_Community 393|Community 393]]
 - [[_COMMUNITY_Community 394|Community 394]]
+- [[_COMMUNITY_Community 395|Community 395]]
+- [[_COMMUNITY_Community 396|Community 396]]
+- [[_COMMUNITY_Community 397|Community 397]]
+- [[_COMMUNITY_Community 398|Community 398]]
+- [[_COMMUNITY_Community 399|Community 399]]
+- [[_COMMUNITY_Community 400|Community 400]]
+- [[_COMMUNITY_Community 402|Community 402]]
+- [[_COMMUNITY_Community 404|Community 404]]
+- [[_COMMUNITY_Community 406|Community 406]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Security-Related Skills Report` - 123 edges
@@ -418,53 +428,53 @@
 10. `Visual Quick Start Guide` - 16 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `AppRoutes()` --calls--> `useAuth()`  [EXTRACTED]
-  src/App.jsx → src/contexts/AuthContext.jsx
+- `AdminApprovals()` --calls--> `useAuth()`  [EXTRACTED]
+  src/pages/Admin/Approvals.jsx → src/contexts/AuthContext.jsx
+- `DyeingFinanceApprovals()` --calls--> `useAuth()`  [EXTRACTED]
+  src/pages/Admin/Approvals.jsx → src/contexts/AuthContext.jsx
+- `GreigeApprovals()` --calls--> `useAuth()`  [EXTRACTED]
+  src/pages/Admin/Approvals.jsx → src/contexts/AuthContext.jsx
 - `AdminFinances()` --calls--> `useAuth()`  [EXTRACTED]
   src/pages/Admin/Finances.jsx → src/contexts/AuthContext.jsx
-- `CreateOrder()` --calls--> `useAuth()`  [EXTRACTED]
-  src/pages/Merchandiser/CreateOrder.jsx → src/contexts/AuthContext.jsx
 - `DyeingFormsList()` --calls--> `useAuth()`  [EXTRACTED]
   src/pages/Merchandiser/DyeingFormsList.jsx → src/contexts/AuthContext.jsx
-- `OrdersManagement()` --calls--> `useAuth()`  [EXTRACTED]
-  src/pages/Orders/Management.jsx → src/contexts/AuthContext.jsx
 
 ## Import Cycles
 - None detected.
 
-## Communities (394 total, 56 thin omitted)
+## Communities (405 total, 56 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.08
-Nodes (17): AdminApprovals(), DyeingFinanceApprovals(), GreigeApprovals(), AuthContext, AuthProvider(), useAuth(), DyedYarnDashboard(), StockInventory() (+9 more)
+Cohesion: 0.07
+Nodes (20): AuthContext, AuthProvider(), useAuth(), DyedYarnDashboard(), StockInventory(), GreigeYarnDashboard(), DeliverYarn(), ReceiptForm() (+12 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.11
-Nodes (16): OrderCard(), calcBarPosition(), calcBarPositionForDates(), DAY_NAMES, formatDateKey(), GanttBar(), getLocalDateString(), getSofStatusBadge() (+8 more)
+Cohesion: 0.10
+Nodes (18): getLocalDateString(), getSofStatusBadge(), PrintableSOFDC(), calcBarPosition(), calcBarPositionForDates(), DAY_NAMES, formatDateKey(), GanttBar() (+10 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.06
 Nodes (32): dependencies, dotenv, lucide-react, pdf-lib, qrcode, qrcode-terminal, react, react-dom (+24 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.08
-Nodes (10): DeliverDyedYarn(), getYarnStatusBadge(), getLocalDateString(), getWofStatusBadge(), OrderWarpingTab(), SizingFinancesTab(), WarpingFinancesTab(), WarpingOverseeTab() (+2 more)
+Cohesion: 0.06
+Nodes (13): DeliverDyedYarn(), getYarnStatusBadge(), getLocalDateString(), getWofStatusBadge(), OrderWarpingTab(), SizingFinancesTab(), WarpingFinancesTab(), WarpingOverseeTab() (+5 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.10
-Nodes (6): WARP_COMMENTS_OPTIONS, WEFT_COMMENTS_OPTIONS, supabase, MASTER_CONFIG, WARP_COMMENTS_OPTIONS, WEFT_COMMENTS_OPTIONS
+Cohesion: 0.06
+Nodes (10): WARP_COMMENTS_OPTIONS, WEFT_COMMENTS_OPTIONS, supabase, MASTER_CONFIG, getLocalDateString(), getSofStatusBadge(), PROCESS_OPTIONS, ProcessingModule() (+2 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.08
+Cohesion: 0.09
 Nodes (19): docBoxStyle, docBoxTitleStyle, docItemStyle, docListContainerStyle, emptyDocStyle, getApprovalStatus(), getApprovalStatusBadge(), getDofYarnStatusBadge() (+11 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.09
-Nodes (15): DOFModal(), getAggregatedStatusSummary(), getApprovalStatus(), getDofAlertInfo(), getLocalDateString(), getSingleDofStatusLabel(), getSingleSofStatusLabel(), getSingleWofStatusLabel() (+7 more)
+Cohesion: 0.10
+Nodes (14): DOFModal(), getAggregatedStatusSummary(), getApprovalStatus(), getDofAlertInfo(), getLocalDateString(), getSingleDofStatusLabel(), getSingleSofStatusLabel(), getSingleWofStatusLabel() (+6 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.19
-Nodes (11): getApprovalStatus(), getApprovalStatusBadge(), getDofAlertInfo(), getTodayString(), getYarnStatus(), getYarnStatusBadge(), ReceiveYarn(), subNumericTdStyle (+3 more)
+Cohesion: 0.11
+Nodes (16): dataLineStyle, infoBoxStyle, infoLabelStyle, tdStyle, thStyle, getApprovalStatus(), getApprovalStatusBadge(), getDofAlertInfo() (+8 more)
 
 ### Community 10 - "Community 10"
 Cohesion: 0.25
@@ -472,7 +482,7 @@ Nodes (5): DyeingFormsList(), getDofAlertInfo(), getTodayString(), subNumericThS
 
 ### Community 11 - "Community 11"
 Cohesion: 0.06
-Nodes (32): dataLineStyle, infoBoxStyle, infoLabelStyle, tdStyle, thStyle, getDatesInRange(), getLocalDateString(), getWeftYarnStatus() (+24 more)
+Nodes (36): dataLineStyle, infoBoxStyle, infoLabelStyle, tdStyle, thStyle, getDatesInRange(), getLocalDateString(), getWeftYarnStatus() (+28 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.33
@@ -579,8 +589,8 @@ Cohesion: 0.10
 Nodes (20): Best Practices, Common Pitfalls, Example 1: Protected Dashboard Route, Example 2: Hooks — Session Middleware, Example 3: Preloading and Invalidation, Examples, How It Works, Limitations (+12 more)
 
 ### Community 52 - "Community 52"
-Cohesion: 0.10
-Nodes (20): 🤖 AI & Agents, Antigravity Skill Bundles, Beginner → Intermediate → Advanced, Contributing, 🎨 Creative & Content, 📊 Data & Analytics, Essentials & Core, 🎮 Game Development (+12 more)
+Cohesion: 0.11
+Nodes (17): 🤖 AI & Agents, Antigravity Skill Bundles, Beginner → Intermediate → Advanced, Contributing, 🎨 Creative & Content, Essentials & Core, 🎮 Game Development, Learning Paths (+9 more)
 
 ### Community 53 - "Community 53"
 Cohesion: 0.10
@@ -620,7 +630,7 @@ Nodes (18): 🤖 AI & Automation (5 skills), 🎯 Benefits of This Recommendatio
 
 ### Community 62 - "Community 62"
 Cohesion: 0.11
-Nodes (18): auth-implementation-patterns (`auth-implementation-patterns`), backend-security-coder (`backend-security-coder`), codebase-cleanup-deps-audit (`codebase-cleanup-deps-audit`), Example Prompts, Example Prompts, Example Prompts, Example Prompts, Example Prompts (+10 more)
+Nodes (18): backend-dev-guidelines (`backend-dev-guidelines`), Cloud Penetration Testing (`cloud-penetration-testing`), Example Prompts, Example Prompts, Example Prompts, Example Prompts, Example Prompts, memory-forensics (`memory-forensics`) (+10 more)
 
 ### Community 63 - "Community 63"
 Cohesion: 0.11
@@ -1151,8 +1161,8 @@ Cohesion: 0.67
 Nodes (3): Masking Dynamic Values, Secrets in Composite Actions, Secrets Management
 
 ### Community 195 - "Community 195"
-Cohesion: 0.11
-Nodes (4): CreateOrder(), ORDER_CATEGORIES, WEAVE_TYPES, AppRoutes()
+Cohesion: 0.14
+Nodes (3): AdminApprovals(), DyeingFinanceApprovals(), GreigeApprovals()
 
 ### Community 196 - "Community 196"
 Cohesion: 0.67
@@ -1191,8 +1201,8 @@ Cohesion: 0.33
 Nodes (4): env, envContent, envPath, supabase
 
 ### Community 206 - "Community 206"
-Cohesion: 0.17
-Nodes (10): disabledTdStyle, emptyTextStyle, numericTdStyle, numericThStyle, receiptCardStyle, receiptColStyle, receiptHeaderStyle, tdStyle (+2 more)
+Cohesion: 0.18
+Nodes (9): emptyTextStyle, numericTdStyle, numericThStyle, receiptCardStyle, receiptColStyle, receiptHeaderStyle, tdStyle, thStyle (+1 more)
 
 ### Community 208 - "Community 208"
 Cohesion: 0.67
@@ -1243,8 +1253,8 @@ Cohesion: 0.67
 Nodes (3): computer-use-agents (`computer-use-agents`), Example Prompts, Use Cases
 
 ### Community 220 - "Community 220"
-Cohesion: 0.20
-Nodes (5): dataLineStyle, infoBoxStyle, infoLabelStyle, tdStyle, thStyle
+Cohesion: 0.29
+Nodes (5): { createClient }, dotenv, fs, pkg, supabase
 
 ### Community 221 - "Community 221"
 Cohesion: 0.25
@@ -1304,7 +1314,7 @@ Nodes (3): Cross-Site Scripting and HTML Injection Testing (`xss-html-injection`
 
 ### Community 235 - "Community 235"
 Cohesion: 0.67
-Nodes (3): Active Directory Attacks (`active-directory-attacks`), Example Prompts, Use Cases
+Nodes (3): 📊 Data & Analytics, 📊 The "Data & Analytics" Pack, 🔄 The "Data Engineering" Pack
 
 ### Community 236 - "Community 236"
 Cohesion: 0.40
@@ -1327,8 +1337,8 @@ Cohesion: 0.33
 Nodes (4): env, envContent, envPath, supabase
 
 ### Community 242 - "Community 242"
-Cohesion: 0.67
-Nodes (3): Security & Compliance, 🔐 The "Security Developer" Pack, 🛡️ The "Security Engineer" Pack
+Cohesion: 0.33
+Nodes (4): env, envContent, envPath, supabase
 
 ### Community 243 - "Community 243"
 Cohesion: 0.67
@@ -1410,6 +1420,10 @@ Nodes (3): Example Prompts, security-auditor (`security-auditor`), Use Cases
 Cohesion: 0.33
 Nodes (4): env, envContent, envPath, supabase
 
+### Community 263 - "Community 263"
+Cohesion: 0.67
+Nodes (3): AWS Penetration Testing (`aws-penetration-testing`), Example Prompts, Use Cases
+
 ### Community 264 - "Community 264"
 Cohesion: 0.67
 Nodes (3): Example Prompts, SQL Injection Testing (`sql-injection-testing`), Use Cases
@@ -1427,8 +1441,8 @@ Cohesion: 0.67
 Nodes (3): Example Prompts, Shodan Reconnaissance and Pentesting (`shodan-reconnaissance`), Use Cases
 
 ### Community 269 - "Community 269"
-Cohesion: 0.67
-Nodes (3): Example Prompts, mtls-configuration (`mtls-configuration`), Use Cases
+Cohesion: 0.33
+Nodes (4): env, envContent, envPath, supabase
 
 ### Community 270 - "Community 270"
 Cohesion: 0.67
@@ -1443,8 +1457,8 @@ Cohesion: 0.67
 Nodes (3): Example Prompts, SQLMap Database Penetration Testing (`sqlmap-database-pentesting`), Use Cases
 
 ### Community 273 - "Community 273"
-Cohesion: 0.36
-Nodes (5): getLocalDateString(), getSofStatusBadge(), getLocalDateString(), getSofStatusBadge(), PrintableSOFDC()
+Cohesion: 0.67
+Nodes (3): Example Prompts, Security Scanning Tools (`scanning-tools`), Use Cases
 
 ### Community 274 - "Community 274"
 Cohesion: 0.67
@@ -1647,8 +1661,8 @@ Cohesion: 0.33
 Nodes (4): env, envContent, envPath, supabase
 
 ### Community 354 - "Community 354"
-Cohesion: 0.67
-Nodes (3): Example Prompts, nextjs-supabase-auth (`nextjs-supabase-auth`), Use Cases
+Cohesion: 0.33
+Nodes (4): env, envContent, envPath, supabase
 
 ### Community 360 - "Community 360"
 Cohesion: 0.33
@@ -1675,8 +1689,8 @@ Cohesion: 0.33
 Nodes (4): env, envContent, envPath, supabase
 
 ### Community 368 - "Community 368"
-Cohesion: 0.67
-Nodes (3): Example Prompts, Security Auditing Workflow (`security-audit`), Use Cases
+Cohesion: 0.83
+Nodes (3): getLocalDateString(), getSofStatusBadge(), PrintableSOF()
 
 ### Community 369 - "Community 369"
 Cohesion: 0.33
@@ -1687,24 +1701,24 @@ Cohesion: 0.67
 Nodes (3): Example Prompts, nodejs-backend-patterns (`nodejs-backend-patterns`), Use Cases
 
 ### Community 371 - "Community 371"
-Cohesion: 0.83
-Nodes (3): getLocalDateString(), getSofStatusBadge(), PrintableSOF()
+Cohesion: 0.33
+Nodes (4): env, envContent, envPath, supabase
 
 ### Community 372 - "Community 372"
-Cohesion: 0.67
-Nodes (3): Example Prompts, Security Scanning Tools (`scanning-tools`), Use Cases
+Cohesion: 0.33
+Nodes (4): env, envContent, envPath, supabase
 
 ### Community 373 - "Community 373"
 Cohesion: 0.67
-Nodes (3): Example Prompts, SSH Penetration Testing (`ssh-penetration-testing`), Use Cases
+Nodes (3): backend-security-coder (`backend-security-coder`), Example Prompts, Use Cases
 
 ### Community 375 - "Community 375"
 Cohesion: 0.67
-Nodes (3): backend-dev-guidelines (`backend-dev-guidelines`), Example Prompts, Use Cases
+Nodes (3): Example Prompts, mobile-security-coder (`mobile-security-coder`), Use Cases
 
 ### Community 376 - "Community 376"
 Cohesion: 0.67
-Nodes (3): Example Prompts, stripe-integration (`stripe-integration`), Use Cases
+Nodes (3): cloud-architect (`cloud-architect`), Example Prompts, Use Cases
 
 ### Community 377 - "Community 377"
 Cohesion: 0.67
@@ -1712,19 +1726,15 @@ Nodes (3): Example Prompts, security-requirement-extraction (`security-requireme
 
 ### Community 379 - "Community 379"
 Cohesion: 0.67
-Nodes (3): Example Prompts, Use Cases, WordPress Penetration Testing (`wordpress-penetration-testing`)
-
-### Community 380 - "Community 380"
-Cohesion: 0.16
-Nodes (6): SizingOrderForms(), STATUS_OPTIONS, getLocalDateString(), getWofStatusBadge(), STATUS_OPTIONS, generateWeavingNumbersBulk()
+Nodes (3): Security & Compliance, 🔐 The "Security Developer" Pack, 🛡️ The "Security Engineer" Pack
 
 ### Community 381 - "Community 381"
 Cohesion: 0.67
-Nodes (3): Example Prompts, mobile-security-coder (`mobile-security-coder`), Use Cases
+Nodes (3): Example Prompts, stripe-integration (`stripe-integration`), Use Cases
 
 ### Community 382 - "Community 382"
 Cohesion: 0.67
-Nodes (3): Example Prompts, security-scanning-security-hardening (`security-scanning-security-hardening`), Use Cases
+Nodes (3): Example Prompts, nestjs-expert (`nestjs-expert`), Use Cases
 
 ### Community 383 - "Community 383"
 Cohesion: 0.67
@@ -1732,59 +1742,99 @@ Nodes (3): Example Prompts, security-scanning-security-sast (`security-scanning-
 
 ### Community 385 - "Community 385"
 Cohesion: 0.67
-Nodes (3): Example Prompts, Use Cases, Wireshark Network Traffic Analysis (`wireshark-analysis`)
+Nodes (3): Example Prompts, Use Cases, WordPress Penetration Testing (`wordpress-penetration-testing`)
 
 ### Community 386 - "Community 386"
-Cohesion: 0.67
-Nodes (3): AWS Penetration Testing (`aws-penetration-testing`), Example Prompts, Use Cases
+Cohesion: 0.33
+Nodes (4): env, envContent, envPath, supabase
 
 ### Community 387 - "Community 387"
-Cohesion: 0.67
-Nodes (3): cloud-architect (`cloud-architect`), Example Prompts, Use Cases
+Cohesion: 0.33
+Nodes (4): env, envContent, envPath, supabase
+
+### Community 388 - "Community 388"
+Cohesion: 0.33
+Nodes (4): env, envContent, envPath, supabase
 
 ### Community 389 - "Community 389"
 Cohesion: 0.67
-Nodes (3): Cloud Penetration Testing (`cloud-penetration-testing`), Example Prompts, Use Cases
+Nodes (3): Example Prompts, nextjs-supabase-auth (`nextjs-supabase-auth`), Use Cases
 
 ### Community 390 - "Community 390"
 Cohesion: 0.67
-Nodes (3): Example Prompts, nestjs-expert (`nestjs-expert`), Use Cases
+Nodes (3): Example Prompts, Security Auditing Workflow (`security-audit`), Use Cases
 
 ### Community 391 - "Community 391"
-Cohesion: 0.67
-Nodes (3): Example Prompts, security-review (`cc-skill-security-review`), Use Cases
+Cohesion: 0.33
+Nodes (4): { createClient }, dotenv, path, supabase
 
 ### Community 392 - "Community 392"
 Cohesion: 0.67
-Nodes (3): Example Prompts, Use Cases, vulnerability-scanner (`vulnerability-scanner`)
+Nodes (3): Example Prompts, security-scanning-security-hardening (`security-scanning-security-hardening`), Use Cases
 
 ### Community 393 - "Community 393"
 Cohesion: 0.67
-Nodes (3): Example Prompts, security-compliance-compliance-check (`security-compliance-compliance-check`), Use Cases
+Nodes (3): Example Prompts, SSH Penetration Testing (`ssh-penetration-testing`), Use Cases
 
 ### Community 394 - "Community 394"
 Cohesion: 0.67
-Nodes (3): Example Prompts, terraform-specialist (`terraform-specialist`), Use Cases
+Nodes (3): Example Prompts, Use Cases, Wireshark Network Traffic Analysis (`wireshark-analysis`)
+
+### Community 395 - "Community 395"
+Cohesion: 0.40
+Nodes (5): checkColumn(), __dirname, __filename, run(), supabase
+
+### Community 396 - "Community 396"
+Cohesion: 0.40
+Nodes (3): __dirname, __filename, supabase
+
+### Community 397 - "Community 397"
+Cohesion: 0.67
+Nodes (3): auth-implementation-patterns (`auth-implementation-patterns`), Example Prompts, Use Cases
+
+### Community 398 - "Community 398"
+Cohesion: 0.67
+Nodes (3): codebase-cleanup-deps-audit (`codebase-cleanup-deps-audit`), Example Prompts, Use Cases
+
+### Community 399 - "Community 399"
+Cohesion: 0.67
+Nodes (3): Example Prompts, nodejs-best-practices (`nodejs-best-practices`), Use Cases
+
+### Community 400 - "Community 400"
+Cohesion: 0.67
+Nodes (3): Example Prompts, Use Cases, web-design-guidelines (`web-design-guidelines`)
+
+### Community 402 - "Community 402"
+Cohesion: 0.67
+Nodes (3): Example Prompts, security-review (`cc-skill-security-review`), Use Cases
+
+### Community 404 - "Community 404"
+Cohesion: 0.67
+Nodes (3): Active Directory Attacks (`active-directory-attacks`), Example Prompts, Use Cases
+
+### Community 406 - "Community 406"
+Cohesion: 0.67
+Nodes (3): Example Prompts, Use Cases, vulnerability-scanner (`vulnerability-scanner`)
 
 ## Knowledge Gaps
-- **1990 isolated node(s):** `schemaVersion`, `updatedAt`, `entries`, `type`, `source` (+1985 more)
+- **2036 isolated node(s):** `schemaVersion`, `updatedAt`, `entries`, `type`, `source` (+2031 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **56 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Security-Related Skills Report` connect `Community 62` to `Community 101`, `Community 185`, `Community 199`, `Community 200`, `Community 201`, `Community 202`, `Community 203`, `Community 208`, `Community 209`, `Community 210`, `Community 211`, `Community 212`, `Community 213`, `Community 216`, `Community 219`, `Community 222`, `Community 223`, `Community 224`, `Community 225`, `Community 226`, `Community 227`, `Community 228`, `Community 229`, `Community 230`, `Community 231`, `Community 232`, `Community 233`, `Community 234`, `Community 235`, `Community 237`, `Community 239`, `Community 243`, `Community 244`, `Community 245`, `Community 246`, `Community 247`, `Community 248`, `Community 249`, `Community 250`, `Community 251`, `Community 252`, `Community 253`, `Community 254`, `Community 255`, `Community 256`, `Community 257`, `Community 259`, `Community 261`, `Community 264`, `Community 266`, `Community 268`, `Community 269`, `Community 270`, `Community 271`, `Community 272`, `Community 274`, `Community 277`, `Community 278`, `Community 279`, `Community 280`, `Community 281`, `Community 283`, `Community 284`, `Community 286`, `Community 287`, `Community 288`, `Community 289`, `Community 290`, `Community 291`, `Community 292`, `Community 293`, `Community 294`, `Community 295`, `Community 296`, `Community 297`, `Community 298`, `Community 299`, `Community 300`, `Community 301`, `Community 302`, `Community 303`, `Community 304`, `Community 305`, `Community 306`, `Community 307`, `Community 308`, `Community 309`, `Community 310`, `Community 311`, `Community 312`, `Community 313`, `Community 343`, `Community 346`, `Community 352`, `Community 354`, `Community 361`, `Community 368`, `Community 370`, `Community 372`, `Community 373`, `Community 375`, `Community 376`, `Community 377`, `Community 379`, `Community 381`, `Community 382`, `Community 383`, `Community 385`, `Community 386`, `Community 387`, `Community 389`, `Community 390`, `Community 391`, `Community 392`, `Community 393`, `Community 394`?**
-  _High betweenness centrality (0.008) - this node is a cross-community bridge._
-- **Why does `useAuth()` connect `Community 0` to `Community 3`, `Community 195`, `Community 7`, `Community 263`, `Community 9`, `Community 362`, `Community 10`, `Community 204`, `Community 11`, `Community 215`, `Community 380`, `Community 220`?**
-  _High betweenness centrality (0.005) - this node is a cross-community bridge._
-- **Why does `supabase` connect `Community 4` to `Community 0`, `Community 1`, `Community 3`, `Community 195`, `Community 5`, `Community 7`, `Community 263`, `Community 9`, `Community 362`, `Community 10`, `Community 11`, `Community 204`, `Community 206`, `Community 273`, `Community 215`, `Community 380`, `Community 217`, `Community 220`?**
-  _High betweenness centrality (0.004) - this node is a cross-community bridge._
+- **Why does `Security-Related Skills Report` connect `Community 62` to `Community 101`, `Community 185`, `Community 199`, `Community 200`, `Community 201`, `Community 202`, `Community 203`, `Community 208`, `Community 209`, `Community 210`, `Community 211`, `Community 212`, `Community 213`, `Community 216`, `Community 219`, `Community 222`, `Community 223`, `Community 224`, `Community 225`, `Community 226`, `Community 227`, `Community 228`, `Community 229`, `Community 230`, `Community 231`, `Community 232`, `Community 233`, `Community 234`, `Community 237`, `Community 239`, `Community 243`, `Community 244`, `Community 245`, `Community 246`, `Community 247`, `Community 248`, `Community 249`, `Community 250`, `Community 251`, `Community 252`, `Community 253`, `Community 254`, `Community 255`, `Community 256`, `Community 257`, `Community 259`, `Community 261`, `Community 263`, `Community 264`, `Community 266`, `Community 268`, `Community 270`, `Community 271`, `Community 272`, `Community 273`, `Community 274`, `Community 277`, `Community 278`, `Community 279`, `Community 280`, `Community 281`, `Community 283`, `Community 284`, `Community 286`, `Community 287`, `Community 288`, `Community 289`, `Community 290`, `Community 291`, `Community 292`, `Community 293`, `Community 294`, `Community 295`, `Community 296`, `Community 297`, `Community 298`, `Community 299`, `Community 300`, `Community 301`, `Community 302`, `Community 303`, `Community 304`, `Community 305`, `Community 306`, `Community 307`, `Community 308`, `Community 309`, `Community 310`, `Community 311`, `Community 312`, `Community 313`, `Community 343`, `Community 346`, `Community 352`, `Community 361`, `Community 370`, `Community 373`, `Community 375`, `Community 376`, `Community 377`, `Community 381`, `Community 382`, `Community 383`, `Community 385`, `Community 389`, `Community 390`, `Community 392`, `Community 393`, `Community 394`, `Community 397`, `Community 398`, `Community 399`, `Community 400`, `Community 402`, `Community 404`, `Community 406`?**
+  _High betweenness centrality (0.006) - this node is a cross-community bridge._
+- **Why does `supabase` connect `Community 4` to `Community 0`, `Community 1`, `Community 3`, `Community 195`, `Community 5`, `Community 7`, `Community 9`, `Community 362`, `Community 10`, `Community 11`, `Community 204`, `Community 206`, `Community 215`, `Community 217`, `Community 380`?**
+  _High betweenness centrality (0.003) - this node is a cross-community bridge._
+- **Why does `useAuth()` connect `Community 0` to `Community 3`, `Community 195`, `Community 4`, `Community 7`, `Community 9`, `Community 362`, `Community 10`, `Community 204`, `Community 11`, `Community 215`, `Community 380`?**
+  _High betweenness centrality (0.003) - this node is a cross-community bridge._
 - **What connects `schemaVersion`, `updatedAt`, `entries` to the rest of the system?**
-  _1990 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _2036 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.07549361207897794 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06901960784313725 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**
-  _Cohesion score 0.10541310541310542 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.09655172413793103 - nodes in this community are weakly interconnected._
 - **Should `Community 2` be split into smaller, more focused modules?**
   _Cohesion score 0.058823529411764705 - nodes in this community are weakly interconnected._

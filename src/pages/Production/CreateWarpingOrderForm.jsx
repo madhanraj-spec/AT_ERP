@@ -867,6 +867,28 @@ export default function CreateWarpingOrderForm() {
               Allot quantities for each warp colour and count for this warping order form. Allotted quantities cannot exceed remaining stock (received from dyeing minus used).
             </p>
 
+            {/* Block Stats Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
+              <div style={{ backgroundColor: 'var(--surface-current)', border: '1.5px solid var(--border-current)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Order Qty</span>
+                <span style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--text-current)' }}>
+                  {selectedOrder ? Number(selectedOrder.total_quantity).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '0.0'} <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
+                </span>
+              </div>
+              <div style={{ backgroundColor: 'var(--surface-current)', border: '1.5px solid var(--border-current)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Production Qty</span>
+                <span style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--text-current)' }}>
+                  {selectedOrder?.technical_specs?.production_quantity ? Number(selectedOrder.technical_specs.production_quantity).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '0.0'} <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
+                </span>
+              </div>
+              <div style={{ backgroundColor: 'rgba(128, 0, 0, 0.04)', border: '1.5px solid rgba(128, 0, 0, 0.15)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: '800', color: '#800000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>WOF Qty (Entered)</span>
+                <span style={{ fontSize: '1.5rem', fontWeight: '900', color: '#800000' }}>
+                  {wofQty ? Number(wofQty).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '0.0'} <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#800000' }}>Mtrs</span>
+                </span>
+              </div>
+            </div>
+
             {allotments.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)', backgroundColor: '#fdf8f8', borderRadius: '8px', border: '1px dashed #e8b4b4' }}>
                 <Package size={32} style={{ marginBottom: '0.75rem', opacity: 0.5 }} />

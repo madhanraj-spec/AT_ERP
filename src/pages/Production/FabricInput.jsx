@@ -372,7 +372,7 @@ function getWvofStatusBadge(wvofOrStatus) {
     case 'start_date_exceeded':
       return { label: 'Start Date Exceeded', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     case 'stopped':
-      return { label: 'Stopped', bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' };
+      return { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
     case 'on_process':
       return { label: 'On Process', bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' };
     case 'weft_yarn_allotted':
@@ -404,7 +404,7 @@ function getStatusColorForWeaving(wvofOrStatus) {
     case 'start_date_exceeded':
       return { bg: '#fee2e2', border: '#ef4444', text: '#b91c1c', label: 'Start Date Exceeded' };
     case 'stopped':
-      return { bg: '#f1f5f9', border: '#94a3b8', text: '#475569', label: 'Stopped' };
+      return { bg: '#fff7ed', border: '#f97316', text: '#c2410c', label: 'Stopped' };
     case 'on_process':
       return { bg: '#dbeafe', border: '#3b82f6', text: '#1d4ed8', label: 'On Process' };
     case 'weft_yarn_allotted':
@@ -954,10 +954,10 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
                     : '?'
                   }
                   {' → '}
-                  {wof.status === 'completed' || wof.status === 'late_complete'
+                  {['completed', 'late_complete', 'stopped'].includes(wof.status)
                     ? (wof.process_completed_at
                         ? new Date(wof.process_completed_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-                        : 'Completed'
+                        : (wof.status === 'stopped' ? 'Stopped' : 'Completed')
                       )
                     : 'Running (Today)'
                   }
@@ -987,7 +987,17 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
                 padding: '1px 8px', borderRadius: '10px',
                 fontSize: '0.6rem', fontWeight: '700'
               }}>
-                {tooltipType === 'planned' ? 'Planned' : tooltipType === 'actual' ? (['completed', 'late_complete'].includes(wof.status) ? 'Completed' : 'On Process') : sc.label}
+                {tooltipType === 'planned' 
+                  ? 'Planned' 
+                  : tooltipType === 'actual' 
+                    ? (['completed', 'late_complete'].includes(wof.status) 
+                        ? 'Completed' 
+                        : wof.status === 'stopped' 
+                          ? (wof.wvofdc_number ? 'Stopped (Permanent)' : 'Stopped (Temporary)')
+                          : 'On Process'
+                      ) 
+                    : sc.label
+                }
               </span>
               {hasExceededPlannedEnd(wof) && (
                 <span style={{
@@ -2370,6 +2380,15 @@ export default function FabricInput({ defaultView = 'menu' }) {
         alert(`Please enter a valid quantity for Roll ${rollQuantities[i].id}`);
         return;
       }
+    }
+
+    const totalProduced = (selectedWvof.production_logs || []).reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0);
+    const alreadyGenerated = (selectedWvof.fabric_rolls || []).reduce((sum, roll) => sum + (parseFloat(roll.qty) || 0), 0);
+    const newQty = rollQuantities.reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
+
+    if (alreadyGenerated + newQty > totalProduced) {
+      alert(`Cannot generate QR: Total QR quantity (${(alreadyGenerated + newQty).toFixed(2)} m) exceeds Weaving Production Logs (${totalProduced.toFixed(2)} m). Remaining quantity allowed: ${(totalProduced - alreadyGenerated).toFixed(2)} m.`);
+      return;
     }
 
     setIsSavingRolls(true);
@@ -6687,7 +6706,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
             const pText = '#854d0e';
 
             // 2. Actual Bar
-            const showActual = !!wof.process_started_at || wof.status === 'on_process' || wof.status === 'completed' || wof.status === 'late_complete';
+            const showActual = !!wof.process_started_at || ['on_process', 'completed', 'late_complete', 'stopped'].includes(wof.status);
             let actualBar = null;
             let aBg = '';
             let aBorder = '';
@@ -6695,7 +6714,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
 
             if (showActual) {
               const actualStartStr = getLocalDateString(wof.process_started_at) || wof.start_date || todayStr;
-              const actualEndStr = ['completed', 'late_complete'].includes(wof.status)
+              const actualEndStr = ['completed', 'late_complete', 'stopped'].includes(wof.status)
                 ? (getLocalDateString(wof.process_completed_at) || getLocalDateString(wof.updated_at) || todayStr)
                 : todayStr;
 
@@ -6706,6 +6725,10 @@ export default function FabricInput({ defaultView = 'menu' }) {
                 aBg = '#dcfce7';
                 aBorder = '#22c55e';
                 aText = '#166534';
+              } else if (statusVal === 'stopped') {
+                aBg = '#fff7ed';
+                aBorder = '#f97316';
+                aText = '#c2410c';
               } else if (statusVal === 'late_complete' || statusVal === 'late' || statusVal === 'start_date_exceeded') {
                 aBg = '#fee2e2';
                 aBorder = '#ef4444';
@@ -6835,7 +6858,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
               const pText = '#854d0e';
 
               // Actual Bar
-              const showActual = !!wvof.process_started_at || wvof.status === 'on_process' || wvof.status === 'completed' || wvof.status === 'late_complete';
+              const showActual = !!wvof.process_started_at || ['on_process', 'completed', 'late_complete', 'stopped'].includes(wvof.status);
               let actualBar = null;
               let aBg = '';
               let aBorder = '';
@@ -6843,7 +6866,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
 
               if (showActual) {
                 const actualStartStr = getLocalDateString(wvof.process_started_at) || wvof.start_date || todayStr;
-                const actualEndStr = ['completed', 'late_complete'].includes(wvof.status)
+                const actualEndStr = ['completed', 'late_complete', 'stopped'].includes(wvof.status)
                   ? (getLocalDateString(wvof.process_completed_at) || getLocalDateString(wvof.updated_at) || todayStr)
                   : todayStr;
 
@@ -6854,6 +6877,10 @@ export default function FabricInput({ defaultView = 'menu' }) {
                   aBg = '#dcfce7';
                   aBorder = '#22c55e';
                   aText = '#166534';
+                } else if (statusVal === 'stopped') {
+                  aBg = '#fff7ed';
+                  aBorder = '#f97316';
+                  aText = '#c2410c';
                 } else if (statusVal === 'late_complete' || statusVal === 'late' || statusVal === 'start_date_exceeded') {
                   aBg = '#fee2e2';
                   aBorder = '#ef4444';
@@ -7270,90 +7297,139 @@ export default function FabricInput({ defaultView = 'menu' }) {
 
                 {/* 2. Greige Fabric Rolls Section */}
                 <div style={{ flex: 1.2, borderTop: '1px solid var(--border-current)', paddingTop: '1.25rem', display: 'flex', flexDirection: 'column' }}>
-                  {isGeneratingRolls ? (
-                    /* Render Rolls Generator Form */
-                    <form onSubmit={handleSaveRollLabels} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.72rem', color: '#800000', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          🏷️ Generate Fabric Roll Labels
-                        </span>
-                        <button 
-                          type="button"
-                          onClick={() => { setIsGeneratingRolls(false); setRollCountInput(''); setRollQuantities([]); }}
-                          style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer' }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                  {isGeneratingRolls ? ( (() => {
+                    const newQtySum = rollQuantities.reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
+                    const isExceeded = qrGeneratedQty + newQtySum > totalProduced;
+                    const remaining = Math.max(0, totalProduced - qrGeneratedQty);
 
-                      <div className="input-group" style={{ marginBottom: '0.25rem' }}>
-                        <label className="input-label" style={{ fontSize: '0.68rem', fontWeight: '700' }}>How many rolls cut from loom?</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="20"
-                          placeholder="e.g. 3"
-                          className="input-field"
-                          style={{ padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
-                          value={rollCountInput}
-                          onChange={(e) => handleRollCountChange(e.target.value)}
-                          required
-                        />
-                      </div>
-
-                      {rollQuantities.length > 0 && (
-                        <div style={{ flex: 1, maxHeight: '110px', overflowY: 'auto', border: '1px solid var(--border-current)', borderRadius: '6px', padding: '0.5rem', backgroundColor: '#f8fafc' }}>
-                          <span style={{ fontSize: '0.62rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', display: 'block', marginBottom: '0.4rem' }}>
-                            Roll IDs & Quantities (Meters)
+                    return (
+                      <form onSubmit={handleSaveRollLabels} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.72rem', color: '#800000', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            🏷️ Generate Fabric Roll Labels
                           </span>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                            {rollQuantities.map((item, idx) => (
-                              <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                                <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', fontWeight: '700', color: '#1e293b' }}>
-                                  #{idx + 1}: {item.id.split('/').pop()}
-                                </span>
-                                <input
-                                  type="number"
-                                  min="0.1"
-                                  step="0.1"
-                                  placeholder="Meters"
-                                  className="input-field"
-                                  style={{ width: '120px', padding: '0.25rem 0.4rem', fontSize: '0.72rem', boxSizing: 'border-box' }}
-                                  value={item.qty}
-                                  onChange={(e) => {
-                                    const updated = [...rollQuantities];
-                                    updated[idx].qty = e.target.value;
-                                    setRollQuantities(updated);
-                                  }}
-                                  required
-                                />
-                              </div>
-                            ))}
-                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => { setIsGeneratingRolls(false); setRollCountInput(''); setRollQuantities([]); }}
+                            style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
                         </div>
-                      )}
 
-                      <button
-                        type="submit"
-                        className="btn btn-primary"
-                        disabled={isSavingRolls || rollQuantities.length === 0}
-                        style={{
-                          width: '100%', padding: '0.5rem',
-                          fontWeight: '700', fontSize: '0.78rem', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
-                          backgroundColor: '#800000', border: 'none', borderRadius: '6px', color: 'white',
-                          transition: 'background-color 0.2s'
-                        }}
-                        onMouseEnter={(e) => { if(!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = '#991b1b'; }}
-                        onMouseLeave={(e) => { if(!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = '#800000'; }}
-                      >
-                        {isSavingRolls ? (
-                          <><Loader size={12} className="spin" /> Saving & Printing...</>
-                        ) : (
-                          <><Printer size={12} /> Generate & Print Labels</>
+                        <div className="input-group" style={{ marginBottom: '0.25rem' }}>
+                          <label className="input-label" style={{ fontSize: '0.68rem', fontWeight: '700' }}>How many rolls cut from loom?</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            placeholder="e.g. 3"
+                            className="input-field"
+                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.78rem' }}
+                            value={rollCountInput}
+                            onChange={(e) => handleRollCountChange(e.target.value)}
+                            required
+                          />
+                        </div>
+
+                        {rollQuantities.length > 0 && (
+                          <div style={{ flex: 1, maxHeight: '110px', overflowY: 'auto', border: '1px solid var(--border-current)', borderRadius: '6px', padding: '0.5rem', backgroundColor: '#f8fafc' }}>
+                            <span style={{ fontSize: '0.62rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', display: 'block', marginBottom: '0.4rem' }}>
+                              Roll IDs & Quantities (Meters)
+                            </span>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                              {rollQuantities.map((item, idx) => (
+                                <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                                  <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', fontWeight: '700', color: '#1e293b' }}>
+                                    #{idx + 1}: {item.id.split('/').pop()}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="0.1"
+                                    step="0.1"
+                                    placeholder="Meters"
+                                    className="input-field"
+                                    style={{ width: '120px', padding: '0.25rem 0.4rem', fontSize: '0.72rem', boxSizing: 'border-box' }}
+                                    value={item.qty}
+                                    onChange={(e) => {
+                                      const updated = [...rollQuantities];
+                                      updated[idx].qty = e.target.value;
+                                      setRollQuantities(updated);
+                                    }}
+                                    required
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         )}
-                      </button>
-                    </form>
+
+                        {rollQuantities.length > 0 && (
+                          <div style={{
+                            padding: '0.6rem',
+                            borderRadius: '6px',
+                            border: `1px solid ${isExceeded ? '#fca5a5' : '#cbd5e1'}`,
+                            backgroundColor: isExceeded ? '#fef2f2' : '#f8fafc',
+                            fontSize: '0.68rem',
+                            lineHeight: '1.45',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '2px'
+                          }}>
+                            <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between' }}>
+                              <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Weaving Prod Logs:</span>
+                              <span style={{ fontWeight: '700', color: '#1e293b' }}>{totalProduced.toLocaleString()} m</span>
+                            </div>
+                            <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between' }}>
+                              <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Already QR Generated:</span>
+                              <span style={{ fontWeight: '700', color: '#1e293b' }}>{qrGeneratedQty.toLocaleString()} m</span>
+                            </div>
+                            <div style={{ display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between' }}>
+                              <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>New Rolls Total:</span>
+                              <span style={{ fontWeight: '750', color: isExceeded ? '#dc2626' : '#047857' }}>{newQtySum.toLocaleString()} m</span>
+                            </div>
+                            <div style={{ borderTop: '1px dashed #cbd5e1', margin: '4px 0', paddingTop: '4px', display: 'flex', justifySelf: 'stretch', justifyContent: 'space-between' }}>
+                              <span style={{ fontWeight: '700', color: isExceeded ? '#dc2626' : '#1e293b' }}>
+                                {isExceeded ? 'Exceeded Limit By:' : 'Remaining Allowed Qty:'}
+                              </span>
+                              <span style={{ fontWeight: '800', color: isExceeded ? '#dc2626' : '#059669' }}>
+                                {isExceeded 
+                                  ? `${(qrGeneratedQty + newQtySum - totalProduced).toLocaleString()} m` 
+                                  : `${remaining.toLocaleString()} m`
+                                }
+                              </span>
+                            </div>
+                            {isExceeded && (
+                              <div style={{ color: '#b91c1c', fontSize: '0.6rem', fontWeight: '750', marginTop: '2px', display: 'flex', gap: '2px', alignItems: 'center' }}>
+                                <span>⚠️ Total QR quantity exceeds Weaving Production Logs!</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          className="btn btn-primary"
+                          disabled={isSavingRolls || rollQuantities.length === 0 || isExceeded}
+                          style={{
+                            width: '100%', padding: '0.5rem',
+                            fontWeight: '700', fontSize: '0.78rem', cursor: isExceeded ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+                            backgroundColor: isExceeded ? '#cbd5e1' : '#800000', border: 'none', borderRadius: '6px', color: isExceeded ? '#64748b' : 'white',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => { if(!e.currentTarget.disabled && !isExceeded) e.currentTarget.style.backgroundColor = '#991b1b'; }}
+                          onMouseLeave={(e) => { if(!e.currentTarget.disabled && !isExceeded) e.currentTarget.style.backgroundColor = '#800000'; }}
+                        >
+                          {isSavingRolls ? (
+                            <><Loader size={12} className="spin" /> Saving & Printing...</>
+                          ) : (
+                            <><Printer size={12} /> Generate & Print Labels</>
+                          )}
+                        </button>
+                      </form>
+                    )
+                  })()
                   ) : (
                     /* Render Rolls Registry List */
                     <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>

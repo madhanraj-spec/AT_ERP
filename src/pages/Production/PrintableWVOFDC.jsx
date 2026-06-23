@@ -153,7 +153,7 @@ function PrintableWVOFDC({ wvof, order, producedQty }) {
             </div>
             <div>
               <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#888', fontWeight: '700', display: 'block' }}>Target Quantity</label>
-              <div style={{ fontWeight: '700' }}>{Number(wvof.qty).toLocaleString()} Mtrs</div>
+              <div style={{ fontWeight: '700' }}>{Number(wvof.original_qty || wvof.qty).toLocaleString()} Mtrs</div>
             </div>
             <div>
               <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#888', fontWeight: '700', display: 'block' }}>Produced Quantity</label>
@@ -177,8 +177,16 @@ function PrintableWVOFDC({ wvof, order, producedQty }) {
             </div>
             <div>
               <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#888', fontWeight: '700', display: 'block' }}>Status during completion</label>
-              <div style={{ fontWeight: '700', color: wvof.status === 'late_complete' ? '#b91c1c' : '#166534' }}>
-                {wvof.status === 'late_complete' ? 'Completed Late' : 'Completed'}
+              <div style={{ 
+                fontWeight: '700', 
+                color: wvof.status === 'stopped' 
+                  ? '#c2410c' 
+                  : (wvof.status === 'late_complete' ? '#b91c1c' : '#166534') 
+              }}>
+                {wvof.status === 'stopped' 
+                  ? 'Stopped' 
+                  : (wvof.status === 'late_complete' ? 'Completed Late' : 'Completed')
+                }
               </div>
             </div>
           </div>

@@ -16,16 +16,19 @@ function getLocalDateString(dateInput) {
 function getSofStatusBadge(sof) {
   const status = sof.status;
   const todayStr = getLocalDateString(new Date());
+  const isFinished = status === 'completed' || (status === 'stopped' && !!sof.sofdc_number);
 
-  if (status === 'completed') {
+  if (isFinished) {
     const actualEndStr = sof.process_completed_at
       ? getLocalDateString(sof.process_completed_at)
       : (getLocalDateString(sof.updated_at) || todayStr);
 
     if (sof.end_date && actualEndStr > sof.end_date) {
-      return { label: 'Late Completed', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
+      return { label: status === 'completed' ? 'Late Completed' : 'Stopped Late', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
-    return { label: 'Completed', bg: '#dcfce7', color: '#166534', border: '#86efac' };
+    return status === 'completed'
+      ? { label: 'Completed', bg: '#dcfce7', color: '#166534', border: '#86efac' }
+      : { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
   }
 
   switch (status) {

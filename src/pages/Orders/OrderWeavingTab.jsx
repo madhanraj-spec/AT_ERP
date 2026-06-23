@@ -82,7 +82,7 @@ function getWvofStatusBadge(wvofOrStatus) {
     case 'start_date_exceeded':
       return { label: 'Start Date Exceeded', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     case 'stopped':
-      return { label: 'Stopped', bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' };
+      return { label: 'Stopped', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' };
     case 'on_process':
       return { label: 'On Process', bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' };
     case 'weft_yarn_allotted':
@@ -136,13 +136,33 @@ function OrderWeavingTab({ order }) {
   const overallWeftSummary = React.useMemo(() => {
     if (!order) return [];
     const summary = {};
+    const weftReqs = (order?.yarn_requirements || []).filter(y => y.type === 'weft');
 
-    const ensureKey = (countId, color) => {
+    const findWeftKey = (countId, color) => {
+      const cleanColor = String(color || '').trim().toLowerCase();
+      const match = weftReqs.find(yr => {
+        const yrCountId = yr.countId || yr.count_id || '';
+        const yrColor = yr.color || yr.colour || '';
+        return String(yrCountId) === String(countId) && 
+               String(yrColor).trim().toLowerCase() === cleanColor;
+      });
+      if (match) {
+        const matchCountId = match.countId || match.count_id || '';
+        const matchColor = match.color || match.colour || '';
+        return `${matchCountId}-${matchColor}`;
+      }
+      return null;
+    };
+
+    // 1. Initialize with order's weft requirements
+    weftReqs.forEach(yr => {
+      const countId = yr.countId || yr.count_id || '';
+      const color = yr.color || yr.colour || '';
       const key = `${countId}-${color}`;
       if (!summary[key]) {
         summary[key] = {
           countId,
-          countValue: '',
+          countValue: yr.countValue || '',
           colour: color,
           required: 0,
           received: 0,
@@ -150,17 +170,7 @@ function OrderWeavingTab({ order }) {
           returned: 0
         };
       }
-      return key;
-    };
-
-    // 1. Initialize with order's weft requirements
-    const weftReqs = (order?.yarn_requirements || []).filter(y => y.type === 'weft');
-    weftReqs.forEach(yr => {
-      const countId = yr.countId || yr.count_id || '';
-      const color = yr.color || yr.colour || '';
-      const key = ensureKey(countId, color);
-      summary[key].required = parseFloat(yr.kg || 0);
-      summary[key].countValue = yr.countValue || '';
+      summary[key].required += parseFloat(yr.kg || 0);
     });
 
     // 2. Add dyed receipts matching weft colors/counts (exclude excess)
@@ -170,8 +180,10 @@ function OrderWeavingTab({ order }) {
 
       const countId = item.yarn_count_id || '';
       const color = item.colour || '';
-      const key = ensureKey(countId, color);
-      summary[key].received += parseFloat(item.quantity_kg || 0);
+      const key = findWeftKey(countId, color);
+      if (key) {
+        summary[key].received += parseFloat(item.quantity_kg || 0);
+      }
     });
 
     // 3. Add dyed deliveries matching count/colour
@@ -179,8 +191,10 @@ function OrderWeavingTab({ order }) {
       if (item.process_type === 'weaving' || item.yarn_type === 'weft') {
         const countId = item.yarn_count_id || '';
         const color = item.colour || '';
-        const key = ensureKey(countId, color);
-        summary[key].delivered += parseFloat(item.quantity_kg || 0);
+        const key = findWeftKey(countId, color);
+        if (key) {
+          summary[key].delivered += parseFloat(item.quantity_kg || 0);
+        }
       }
     });
 
@@ -190,12 +204,15 @@ function OrderWeavingTab({ order }) {
       if (isExcess && item.yarn_type === 'weft') {
         const countId = item.yarn_count_id || '';
         const color = item.colour || '';
-        const key = ensureKey(countId, color);
-        summary[key].returned += parseFloat(item.quantity_kg || 0);
+        const key = findWeftKey(countId, color);
+        if (key) {
+          summary[key].returned += parseFloat(item.quantity_kg || 0);
+        }
       }
     });
 
-  }, [order, dyri, dydi]) || [];
+    return Object.values(summary);
+  }, [order, dyri, dydi]);
 
   const totalWeavedQty = React.useMemo(() => {
     return wvofs.reduce((sum, wv) => {
