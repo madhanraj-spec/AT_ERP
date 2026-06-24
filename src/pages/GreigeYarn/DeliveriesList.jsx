@@ -307,8 +307,6 @@ export default function DeliveriesList() {
 
   const tabs = [
     { key: 'dyeing', label: 'Dyeing Order Forms', count: dyeingForms.length },
-    { key: 'warping', label: 'Warping Order Forms', count: 0 },
-    { key: 'weaving', label: 'Weaving Order Forms', count: 0 },
   ];
 
   return (
@@ -327,7 +325,7 @@ export default function DeliveriesList() {
               Greige Yarn Deliveries
             </h1>
             <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.875rem' }}>
-              Deliver greige yarn to dyeing, warping, and weaving order forms
+              Deliver greige yarn to dyeing order forms
             </p>
           </div>
           <button
@@ -798,23 +796,6 @@ export default function DeliveriesList() {
           )
         )}
 
-        {/* Warping Tab */}
-        {activeTab === 'warping' && (
-          <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted-current)' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🧵</div>
-            <h3>Warping Order Forms</h3>
-            <p>Warping order form delivery module coming soon.</p>
-          </div>
-        )}
-
-        {/* Weaving Tab */}
-        {activeTab === 'weaving' && (
-          <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted-current)' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🪡</div>
-            <h3>Weaving Order Forms</h3>
-            <p>Weaving order form delivery module coming soon.</p>
-          </div>
-        )}
       </div>
     </div>
   );

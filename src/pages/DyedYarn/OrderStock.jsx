@@ -1160,10 +1160,10 @@ export default function OrderStock() {
                                                         <th style={thStyle}>Colour</th>
                                                         <th style={thStyle}>Count</th>
                                                         <th style={numericThStyle}>Qty Allotted (kg)</th>
-                                                        <th style={numericThStyle}>Qty Received (kg)</th>
                                                         <th style={numericThStyle}>Qty Delivered (kg)</th>
+                                                        <th style={numericThStyle}>Balance Qty to Deliver (kg)</th>
+                                                        <th style={numericThStyle}>Used Qty (kg)</th>
                                                         <th style={numericThStyle}>Qty Returned (kg)</th>
-                                                        <th style={numericThStyle}>Qty Balance (kg)</th>
                                                       </tr>
                                                     </thead>
                                                     <tbody>
@@ -1172,17 +1172,6 @@ export default function OrderStock() {
                                                         const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (a.countValue || '—');
                                                         
                                                         const allottedThisWof = parseFloat(a.allotted_qty || a.kg || a.allottedQty || 0);
-
-                                                        // Dyed yarn received from partner dyeing (exclude production returns)
-                                                        const receivedItems = dyri.filter(item => {
-                                                          const isExcess = item.is_excess || item.receipt?.source_type === 'production';
-                                                          if (isExcess) return false;
-                                                          const matchCount = (item.yarn_count_id && a.countId && item.yarn_count_id === a.countId) || 
-                                                                             (item.yarn_count?.count_value === a.countValue);
-                                                          const matchColour = (item.colour === a.colour);
-                                                          return matchCount && matchColour;
-                                                        });
-                                                        const receivedQty = receivedItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
 
                                                         // Dyed yarn returned from warping (production returns matching this WOF's number)
                                                         const returnedItems = dyri.filter(item => {
@@ -1206,17 +1195,18 @@ export default function OrderStock() {
                                                         });
                                                         const deliveredQty = deliveredItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
                                                         
-                                                        const qtyBalance = Math.max(0, deliveredQty - returnedQty);
+                                                        const balanceQtyToDeliver = Math.max(0, allottedThisWof - deliveredQty);
+                                                        const usedQty = Math.max(0, deliveredQty - returnedQty);
 
                                                         return (
                                                           <tr key={rIdx} style={{ borderBottom: '1px solid var(--border-current)' }}>
                                                             <td style={{ ...tdStyle, fontWeight: '700', color: 'var(--color-primary)' }}>{a.colour || '—'}</td>
                                                             <td style={tdStyle}>{countDisplay}</td>
                                                             <td style={numericTdStyle}>{allottedThisWof.toFixed(2)}</td>
-                                                            <td style={{ ...numericTdStyle, color: '#1d4ed8' }}>{receivedQty.toFixed(2)}</td>
                                                             <td style={{ ...numericTdStyle, color: '#047857' }}>{deliveredQty.toFixed(2)}</td>
+                                                            <td style={{ ...numericTdStyle, color: balanceQtyToDeliver > 0.01 ? '#b45309' : '#047857' }}>{balanceQtyToDeliver.toFixed(2)}</td>
+                                                            <td style={{ ...numericTdStyle, color: '#1d4ed8' }}>{usedQty.toFixed(2)}</td>
                                                             <td style={{ ...numericTdStyle, color: returnedQty > 0 ? '#7c3aed' : '#6b7280' }}>{returnedQty.toFixed(2)}</td>
-                                                            <td style={{ ...numericTdStyle, color: qtyBalance > 0.01 ? '#b45309' : '#047857' }}>{qtyBalance.toFixed(2)}</td>
                                                           </tr>
                                                         );
                                                       })}
@@ -1375,6 +1365,69 @@ export default function OrderStock() {
                                                   })}
                                                 </div>
                                               )}
+
+                                              {/* 3.5 Associated DYRR (Return Receipts) for this WOF */}
+                                              {(() => {
+                                                const wofDyrrs = [];
+                                                const seen = new Set();
+                                                dyri.forEach(item => {
+                                                  const isProdReturn = item.is_excess || item.receipt?.source_type === 'production';
+                                                  const isMatchingWof = item.receipt?.dof_number === w.wof_number;
+                                                  if (isProdReturn && isMatchingWof && item.receipt && !seen.has(item.receipt.id)) {
+                                                    seen.add(item.receipt.id);
+                                                    wofDyrrs.push(item.receipt);
+                                                  }
+                                                });
+
+                                                if (wofDyrrs.length === 0) return null;
+
+                                                return (
+                                                  <div style={{ marginTop: '1.5rem' }}>
+                                                    <h6 style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                      Associated Dyed Yarn Return Receipts (DYRR) ({wofDyrrs.length})
+                                                    </h6>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                                      {wofDyrrs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(r => {
+                                                        const totalReturnQty = dyri.filter(item => item.receipt_id === r.id).reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+                                                        return (
+                                                          <div
+                                                            key={r.id}
+                                                            onClick={() => setActiveModal({ type: 'dyrr', data: r })}
+                                                            style={{
+                                                              display: 'flex',
+                                                              justifyContent: 'space-between',
+                                                              alignItems: 'center',
+                                                              backgroundColor: '#fffbeb',
+                                                              border: '1px solid #fcd34d',
+                                                              borderRadius: '8px',
+                                                              padding: '0.65rem 0.85rem',
+                                                              cursor: 'pointer',
+                                                              transition: 'transform 0.15s, border-color 0.15s'
+                                                            }}
+                                                            className="hover-lift"
+                                                          >
+                                                            <div>
+                                                              <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#b45309', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                                {r.dyrr_number}
+                                                                <span style={{ padding: '1px 6px', borderRadius: '4px', fontSize: '0.55rem', fontWeight: '800', textTransform: 'uppercase', backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fcd34d' }}>
+                                                                  Return
+                                                                </span>
+                                                              </div>
+                                                              <div style={{ fontSize: '0.7rem', color: '#78716c', marginTop: '0.15rem' }}>
+                                                                {r.received_by || '—'} • {new Date(r.received_date || r.created_at).toLocaleDateString()}
+                                                              </div>
+                                                            </div>
+                                                            <div style={{ textAlign: 'right' }}>
+                                                              <div style={{ fontSize: '0.6rem', textTransform: 'uppercase', fontWeight: '800', color: '#94a3b8' }}>Total Returned</div>
+                                                              <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#b45309' }}>{totalReturnQty.toFixed(2)} kg</div>
+                                                            </div>
+                                                          </div>
+                                                        );
+                                                      })}
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })()}
 
                                               {/* 4. Collapsible WOFDC Delivery Receipt */}
                                               {w.status === 'completed' && (
@@ -1582,24 +1635,110 @@ export default function OrderStock() {
                                   else s[key].sentToWeaving += parseFloat(item.quantity_kg || 0);
                                 });
 
+                                // Deduct redyeing deliveries from receivedFromDyeing
+                                dydi.forEach(item => {
+                                  const isRedyeing = item.process_type === 'redyeing' || item.delivery?.delivery_type === 'redyeing';
+                                  if (isRedyeing) {
+                                    const type = item.yarn_type || 'warp';
+                                    const key = `${item.yarn_count_id}-${item.colour}-${type}`;
+                                    if (s[key]) {
+                                      s[key].receivedFromDyeing = Math.max(0, s[key].receivedFromDyeing - parseFloat(item.quantity_kg || 0));
+                                    }
+                                  }
+                                });
+
+                                // E. Yarn returns from WOFs/Weavings are already captured via DYRI production receipts
+                                // in Section C above (is_excess / source_type === 'production'). Adding wof.yarn_returns
+                                // here would double-count them. So we skip explicit yarn_returns accumulation.
+
                                 return Object.values(s).sort((a, b) => (a.type === 'warp' && b.type !== 'warp' ? -1 : a.type !== 'warp' && b.type === 'warp' ? 1 : 0));
                               })();
+
+                              const getAllAvailableLots = () => {
+                                const groups = {};
+                                dyri.forEach(item => {
+                                  const countId = item.yarn_count_id;
+                                  const colour = item.colour || '—';
+                                  const lot = item.lot_number || '—';
+                                  const loc = item.location?.location_name || '—';
+                                  const key = `${countId}||${colour}||${lot}||${loc}`;
+                                  if (!groups[key]) {
+                                    groups[key] = { countId, colour, lotNumber: lot, locationName: loc, received: 0, delivered: 0 };
+                                  }
+                                  groups[key].received += parseFloat(item.quantity_kg || 0);
+                                });
+
+                                dydi.forEach(item => {
+                                  const countId = item.yarn_count_id;
+                                  const colour = item.colour || '—';
+                                  const lot = item.lot_number || '—';
+                                  let loc = item.location?.location_name || '—';
+
+                                  if (loc === '—' && lot !== '—') {
+                                    const matchingReceipt = dyri.find(r => r.yarn_count_id === countId && r.colour === colour && (r.lot_number || '—') === lot);
+                                    if (matchingReceipt && matchingReceipt.location?.location_name) {
+                                      loc = matchingReceipt.location.location_name;
+                                    }
+                                  }
+
+                                  const key = `${countId}||${colour}||${lot}||${loc}`;
+                                  if (!groups[key]) {
+                                    groups[key] = { countId, colour, lotNumber: lot, locationName: loc, received: 0, delivered: 0 };
+                                  }
+                                  groups[key].delivered += parseFloat(item.quantity_kg || 0);
+                                });
+
+                                // Subtracting returns from delivered is skipped here because returns are already counted in dyri
+                                // (with is_excess: true / source_type: 'production'), which increases groups[key].received.
+                                // Subtracting them again here would double-count the available stock balance.
+
+                                return Object.values(groups)
+                                  .map(g => ({
+                                    ...g,
+                                    balance: g.received - g.delivered
+                                  }))
+                                  .filter(g => g.balance > 0.001)
+                                  .sort((a, b) => {
+                                    if (a.colour !== b.colour) return a.colour.localeCompare(b.colour);
+                                    if (a.countId !== b.countId) return a.countId - b.countId;
+                                    return a.lotNumber.localeCompare(b.lotNumber);
+                                  });
+                              };
 
                               // ── Inventory breakdown per row ──
                               const getInventory = (row) => {
                                 const groups = {};
-                                dyri.filter(i => i.yarn_count_id === row.countId && i.colour === row.colour && (i.yarn_type || 'warp') === row.type)
-                                  .forEach(i => {
+                                const matchingReceipts = dyri.filter(i => i.yarn_count_id === row.countId && i.colour === row.colour && (i.yarn_type || 'warp') === row.type);
+                                
+                                matchingReceipts.forEach(i => {
                                     const k = `${i.lot_number || '—'}||${i.location?.location_name || '—'}`;
                                     if (!groups[k]) groups[k] = { lot: i.lot_number || '—', loc: i.location?.location_name || '—', received: 0, delivered: 0 };
                                     groups[k].received += parseFloat(i.quantity_kg || 0);
                                   });
+
                                 dydi.filter(i => i.yarn_count_id === row.countId && i.colour === row.colour && (i.yarn_type || (i.process_type === 'warping' ? 'warp' : 'weft')) === row.type)
                                   .forEach(i => {
-                                    const k = `${i.lot_number || '—'}||${i.location?.location_name || '—'}`;
-                                    if (!groups[k]) groups[k] = { lot: i.lot_number || '—', loc: i.location?.location_name || '—', received: 0, delivered: 0 };
+                                    const lot = i.lot_number || '—';
+                                    let loc = i.location?.location_name || '—';
+
+                                    // If the delivery item doesn't have a storage location (like redyeing deliveries),
+                                    // look up the location from matchingReceipts of the same lot.
+                                    if (loc === '—' && lot !== '—') {
+                                      const matchingReceipt = matchingReceipts.find(r => (r.lot_number || '—') === lot);
+                                      if (matchingReceipt && matchingReceipt.location?.location_name) {
+                                        loc = matchingReceipt.location.location_name;
+                                      }
+                                    }
+
+                                    const k = `${lot}||${loc}`;
+                                    if (!groups[k]) groups[k] = { lot: lot, loc: loc, received: 0, delivered: 0 };
                                     groups[k].delivered += parseFloat(i.quantity_kg || 0);
                                   });
+
+                                // Subtracting returns from delivered is skipped here because returns are already counted in matchingReceipts
+                                // (with is_excess: true / source_type: 'production'), which increases groups[k].received.
+                                // Subtracting them again here would double-count the available stock balance.
+
                                 return Object.values(groups).map(g => ({ ...g, balance: g.received - g.delivered })).filter(g => g.balance > 0.001);
                               };
 

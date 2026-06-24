@@ -225,7 +225,7 @@ export default function CreateWarpingOrderForm() {
       // 2. Fetch dyed yarn delivery items
       const { data: deliveryData } = await supabase
         .from('dyed_yarn_delivery_items')
-        .select('id, production_form_id, yarn_count_id, quantity_kg, colour, lot_number, process_type')
+        .select('id, production_form_id, yarn_count_id, quantity_kg, colour, lot_number, process_type, delivery:dyed_yarn_deliveries(delivery_type)')
         .eq('order_id', selectedOrder.id);
       setDydi(deliveryData || []);
 
@@ -255,6 +255,17 @@ export default function CreateWarpingOrderForm() {
         if (isExcess) return sum;
         return sum + parseFloat(item.quantity_kg || 0);
       }, 0);
+
+      // Subtract redyeing delivery items
+      const redyeingQty = dydi.reduce((sum, item) => {
+        const itemCountId = item.yarn_count_id || '';
+        if (itemCountId !== countId || item.colour !== colour) return sum;
+        const isRedyeing = item.process_type === 'redyeing' || item.delivery?.delivery_type === 'redyeing';
+        if (!isRedyeing) return sum;
+        return sum + parseFloat(item.quantity_kg || 0);
+      }, 0);
+
+      const netReceivedQty = Math.max(0, receivedQty - redyeingQty);
 
       // Calculate total used (delivered - returned qty of each WOF)
       const completedWofIds = new Set();
@@ -307,7 +318,7 @@ export default function CreateWarpingOrderForm() {
         countValue: y.countValue || '',
         colour,
         required_qty: parseFloat(y.kg || 0),
-        received_qty: receivedQty,
+        received_qty: netReceivedQty,
         used_qty: totalUsed,
         allotted_qty: '',
       };

@@ -395,13 +395,25 @@ export default function DeliverDyedYarn() {
       });
 
       validDeliveries.forEach(d => {
+        let resolvedLocId = d.location_id;
+        if (!resolvedLocId && d.lot_number) {
+          const matchingReceipt = receipts.find(r => 
+            r.yarn_count_id === d.yarn_count_id && 
+            r.colour === d.colour && 
+            (r.lot_number || '—') === d.lot_number
+          );
+          if (matchingReceipt) {
+            resolvedLocId = matchingReceipt.location_id;
+          }
+        }
+
         const dofId = d.source_receipt?.dof_id || '';
-        const key = `${d.yarn_count_id}-${d.colour}-${d.lot_number || ''}-${d.location_id || ''}-${dofId}`;
+        const key = `${d.yarn_count_id}-${d.colour}-${d.lot_number || ''}-${resolvedLocId || ''}-${dofId}`;
         if (stockMap[key]) {
           stockMap[key].available -= parseFloat(d.quantity_kg || 0);
         } else {
           // Fallback for legacy deliveries: subtract from any matching stockMap key
-          const fallbackKey = Object.keys(stockMap).find(k => k.startsWith(`${d.yarn_count_id}-${d.colour}-${d.lot_number || ''}-${d.location_id || ''}-`));
+          const fallbackKey = Object.keys(stockMap).find(k => k.startsWith(`${d.yarn_count_id}-${d.colour}-${d.lot_number || ''}-${resolvedLocId || ''}-`));
           if (fallbackKey) {
             stockMap[fallbackKey].available -= parseFloat(d.quantity_kg || 0);
           }

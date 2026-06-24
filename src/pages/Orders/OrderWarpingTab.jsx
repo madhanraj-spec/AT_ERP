@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader, ChevronDown, ChevronRight, Eye } from 'lucide-react';
+import { Loader, ChevronDown, ChevronRight, Eye, Calculator, Printer } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PrintableWOF from '../Production/PrintableWOF';
 import PrintableWOFDC from '../Production/PrintableWOFDC';
 import DYDRDetail from '../../components/DYDRDetail';
+import DYRRDetail from '../../components/DYRRDetail';
+import DyedReceiptPrintModal from '../DyedYarn/DyedReceiptPrintModal';
 import { printDydr } from '../../utils/printDydr';
 
 function getLocalDateString(dateInput) {
@@ -77,6 +79,29 @@ function OrderWarpingTab({ order }) {
   const [expandedWofdcId, setExpandedWofdcId] = useState(null);
   const [dyri, setDyri] = useState([]);
   const [dydi, setDydi] = useState([]);
+  const [expandedYarnKeys, setExpandedYarnKeys] = useState(new Set());
+  const [expandedFormKeys, setExpandedFormKeys] = useState(new Set());
+  const [printDyrr, setPrintDyrr] = useState(null);
+
+  const handleToggleYarnExpand = (key) => {
+    const next = new Set(expandedYarnKeys);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    setExpandedYarnKeys(next);
+  };
+
+  const handleToggleFormExpand = (key) => {
+    const next = new Set(expandedFormKeys);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    setExpandedFormKeys(next);
+  };
 
   const overallWarpSummary = React.useMemo(() => {
     const summary = {};
@@ -130,13 +155,17 @@ function OrderWarpingTab({ order }) {
       }
     });
 
-    // 3. Add dyed deliveries matching count/colour
+    // 3. Add dyed deliveries matching count/colour (exclude redyeing and subtract from received)
     dydi.forEach(item => {
-      if (item.process_type === 'warping' || item.yarn_type === 'warp') {
-        const countId = item.yarn_count_id || '';
-        const color = item.colour || '';
-        const key = findWarpKey(countId, color);
-        if (key) {
+      const isRedyeing = item.process_type === 'redyeing' || item.delivery?.delivery_type === 'redyeing';
+      const countId = item.yarn_count_id || '';
+      const color = item.colour || '';
+      const key = findWarpKey(countId, color);
+
+      if (key) {
+        if (isRedyeing) {
+          summary[key].received = Math.max(0, summary[key].received - parseFloat(item.quantity_kg || 0));
+        } else if (item.process_type === 'warping' || item.yarn_type === 'warp') {
           summary[key].delivered += parseFloat(item.quantity_kg || 0);
         }
       }
@@ -164,7 +193,7 @@ function OrderWarpingTab({ order }) {
     // 1. Fetch Receipts (dyed_yarn_receipt_items) with receipt relation for source_type filtering
     const { data: receiptData } = await supabase
       .from('dyed_yarn_receipt_items')
-      .select('*, yarn_count:master_yarn_counts(count_value, material, product_type), receipt:dyed_yarn_receipts(source_type)')
+      .select('*, yarn_count:master_yarn_counts(count_value, material, product_type), location:master_locations(location_name), receipt:dyed_yarn_receipts(id, dyrr_number, dof_id, dof_number, received_date, vehicle_no, dc_number, received_by, remarks, source_type)')
       .eq('order_id', order.id);
     setDyri(receiptData || []);
 
@@ -342,6 +371,7 @@ function OrderWarpingTab({ order }) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border-current)' }}>
+                    <th style={{ width: '40px', padding: '0.75rem 1rem' }}></th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'left' }}>Count</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'left' }}>Colour</th>
                     <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty Required (kg)</th>
@@ -353,7 +383,7 @@ function OrderWarpingTab({ order }) {
                 <tbody>
                   {overallWarpSummary.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
                         No warp yarn requirements specified for this order.
                       </td>
                     </tr>
@@ -363,15 +393,248 @@ function OrderWarpingTab({ order }) {
                       const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (row.countValue || '—');
                       const used = row.delivered - row.returned;
                       const available = Math.max(0, row.received - used);
+                      const yarnKey = `${row.countId}-${row.colour}`;
+                      const isYarnExpanded = expandedYarnKeys.has(yarnKey);
+
                       return (
-                        <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>{countDisplay}</td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '700', color: 'var(--color-primary)' }}>{row.colour}</td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600' }}>{row.required.toFixed(2)}</td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600', color: '#1d4ed8' }}>{row.received.toFixed(2)}</td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{used.toFixed(2)}</td>
-                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '700', color: available > 0.01 ? '#b45309' : '#047857' }}>{available.toFixed(2)}</td>
-                        </tr>
+                        <React.Fragment key={idx}>
+                          <tr 
+                            onClick={() => handleToggleYarnExpand(yarnKey)} 
+                            style={{ cursor: 'pointer', borderBottom: '1px solid var(--border-current)', transition: 'background-color 0.15s' }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <td style={{ textAlign: 'center', padding: '0.75rem 1rem' }}>
+                              {isYarnExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            </td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>{countDisplay}</td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '700', color: 'var(--color-primary)' }}>{row.colour}</td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600' }}>{row.required.toFixed(2)}</td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600', color: '#1d4ed8' }}>{row.received.toFixed(2)}</td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{used.toFixed(2)}</td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '700', color: available > 0.01 ? '#b45309' : '#047857' }}>{available.toFixed(2)}</td>
+                          </tr>
+                          {isYarnExpanded && (
+                            <tr style={{ backgroundColor: '#fafafa' }}>
+                              <td colSpan="7" style={{ padding: '1rem 1.5rem', borderLeft: '3px solid #800000', borderBottom: '1px solid var(--border-current)' }}>
+                                {(() => {
+                                  const matchingWofs = wofs.filter(wof => {
+                                    const hasAllotment = (wof.colour_allotments || []).some(a => a.countId === row.countId && a.colour === row.colour);
+                                    const wofDeliveries = dydrsByWof[wof.id] || [];
+                                    const hasDelivery = wofDeliveries.some(dItem => 
+                                      dItem.yarn_count_id === row.countId && 
+                                      dItem.colour === row.colour
+                                    );
+                                    return hasAllotment || hasDelivery;
+                                  });
+
+                                  if (matchingWofs.length === 0) {
+                                    return (
+                                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic', padding: '0.5rem 0' }}>
+                                        No warping order forms associated with this yarn count and colour.
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div>
+                                      <h6 style={{ margin: '0 0 0.8rem 0', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#475569' }}>
+                                        Warping Order Forms for {row.colour}
+                                      </h6>
+                                      <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#fff' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                                          <thead>
+                                            <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #cbd5e1', textAlign: 'left' }}>
+                                              <th style={{ width: '32px' }}></th>
+                                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '750', color: 'var(--text-muted-current)', fontSize: '0.65rem', textTransform: 'uppercase' }}>Date</th>
+                                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '750', color: 'var(--text-muted-current)', fontSize: '0.65rem', textTransform: 'uppercase' }}>WOF</th>
+                                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '750', color: 'var(--text-muted-current)', fontSize: '0.65rem', textTransform: 'uppercase' }}>In House or Job Work</th>
+                                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '750', color: 'var(--text-muted-current)', fontSize: '0.65rem', textTransform: 'uppercase' }}>Partner Name</th>
+                                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '750', color: 'var(--text-muted-current)', fontSize: '0.65rem', textTransform: 'uppercase' }}>Machine</th>
+                                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '750', color: 'var(--text-muted-current)', fontSize: '0.65rem', textTransform: 'uppercase', textAlign: 'right' }}>Allotted Qty (kg)</th>
+                                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '750', color: 'var(--text-muted-current)', fontSize: '0.65rem', textTransform: 'uppercase', textAlign: 'right' }}>Delivered (kg)</th>
+                                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '750', color: 'var(--text-muted-current)', fontSize: '0.65rem', textTransform: 'uppercase', textAlign: 'right' }}>Used (kg)</th>
+                                              <th style={{ padding: '0.5rem 0.75rem', fontWeight: '750', color: 'var(--text-muted-current)', fontSize: '0.65rem', textTransform: 'uppercase', textAlign: 'right' }}>Returned Qty (kg)</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {matchingWofs.map((wof) => {
+                                              const allottedQty = (wof.colour_allotments || [])
+                                                .filter(a => a.countId === row.countId && a.colour === row.colour)
+                                                .reduce((sum, a) => sum + parseFloat(a.allotted_qty || a.kg || a.allottedQty || 0), 0);
+
+                                              const wofDeliveries = dydrsByWof[wof.id] || [];
+                                              const deliveredQty = wofDeliveries
+                                                .filter(d => d.yarn_count_id === row.countId && d.colour === row.colour)
+                                                .reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+
+                                              const returnedQty = wof.yarn_returns
+                                                ? (wof.yarn_returns || [])
+                                                    .filter(r => (r.yarn_count_id === row.countId || r.countId === row.countId) && r.colour === row.colour)
+                                                    .reduce((sum, r) => sum + parseFloat(r.quantity_returned || 0), 0)
+                                                : 0;
+
+                                              const usedQty = deliveredQty - returnedQty;
+
+                                              const inHouseOrJobWorkLabel = wof.wof_type === 'in_house' ? 'In-House' : 'Job Work';
+                                              const partnerNameDisplay = wof.partner?.partner_name || (wof.wof_type === 'in_house' ? '—' : wof.partner_name || '—');
+                                              const machineNameDisplay = wof.machine?.machine_name || wof.machine_name || '—';
+                                              const formattedDate = wof.created_at 
+                                                ? new Date(wof.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                : '—';
+
+                                              const formKey = `${row.countId}-${row.colour}-warp-${wof.id}`;
+                                              const isFormExpanded = expandedFormKeys.has(formKey);
+
+                                              return (
+                                                <React.Fragment key={wof.id}>
+                                                  <tr 
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleToggleFormExpand(formKey);
+                                                    }} 
+                                                    style={{ borderBottom: '1px solid #e2e8f0', cursor: 'pointer', backgroundColor: isFormExpanded ? '#fdf8f8' : '#fff' }}
+                                                  >
+                                                    <td style={{ textAlign: 'center', padding: '0.5rem 0.75rem', color: '#94a3b8' }}>
+                                                      {isFormExpanded ? <ChevronDown size={13} style={{ color: 'var(--color-primary)' }} /> : <ChevronRight size={13} style={{ color: 'var(--text-muted-current)' }} />}
+                                                    </td>
+                                                    <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-current)' }}>{formattedDate}</td>
+                                                    <td style={{ padding: '0.5rem 0.75rem', color: '#800000', fontWeight: '700', fontFamily: 'monospace' }}>{wof.wof_number}</td>
+                                                    <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-current)' }}>{inHouseOrJobWorkLabel}</td>
+                                                    <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-current)' }}>{partnerNameDisplay}</td>
+                                                    <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-current)' }}>{machineNameDisplay}</td>
+                                                    <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-current)', textAlign: 'right', fontWeight: '600' }}>{allottedQty.toFixed(2)}</td>
+                                                    <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-current)', textAlign: 'right', fontWeight: '600' }}>{deliveredQty.toFixed(2)}</td>
+                                                    <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-current)', textAlign: 'right', fontWeight: '600' }}>{usedQty.toFixed(2)}</td>
+                                                    <td style={{ padding: '0.5rem 0.75rem', color: 'var(--text-current)', textAlign: 'right', fontWeight: '600' }}>{returnedQty.toFixed(2)}</td>
+                                                  </tr>
+                                                  {isFormExpanded && (
+                                                    <tr style={{ backgroundColor: '#fffdfd' }}>
+                                                      <td colSpan="10" style={{ padding: '0.75rem 1.25rem', borderLeft: '3px dashed var(--color-primary)', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <div style={{ maxWidth: '850px' }}>
+                                                          <h6 style={{ margin: '0 0 0.5rem 0', fontSize: '0.72rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                            <Calculator size={13} />
+                                                            Lot & Delivery Details (Level 2 Breakdown)
+                                                          </h6>
+                                                          <div style={{ border: '1px solid #fca5a5', borderRadius: '6px', overflow: 'hidden' }}>
+                                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
+                                                              <thead>
+                                                                <tr style={{ backgroundColor: '#fef2f2', borderBottom: '1px solid #fca5a5', textAlign: 'left' }}>
+                                                                  <th style={{ padding: '0.3rem 0.4rem', fontWeight: '700', color: '#7f1d1d', fontSize: '0.68rem' }}>DYDR</th>
+                                                                  <th style={{ padding: '0.3rem 0.4rem', fontWeight: '700', color: '#7f1d1d', fontSize: '0.68rem' }}>Colour</th>
+                                                                  <th style={{ padding: '0.3rem 0.4rem', fontWeight: '700', color: '#7f1d1d', fontSize: '0.68rem' }}>Count</th>
+                                                                  <th style={{ padding: '0.3rem 0.4rem', fontWeight: '700', color: '#7f1d1d', fontSize: '0.68rem' }}>Lot</th>
+                                                                  <th style={{ padding: '0.3rem 0.4rem', fontWeight: '700', color: '#7f1d1d', fontSize: '0.68rem', textAlign: 'right' }}>Allotted</th>
+                                                                  <th style={{ padding: '0.3rem 0.4rem', fontWeight: '700', color: '#7f1d1d', fontSize: '0.68rem', textAlign: 'right' }}>Delivered</th>
+                                                                  <th style={{ padding: '0.3rem 0.4rem', fontWeight: '700', color: '#7f1d1d', fontSize: '0.68rem', textAlign: 'right' }}>Used</th>
+                                                                  <th style={{ padding: '0.3rem 0.4rem', fontWeight: '700', color: '#7f1d1d', fontSize: '0.68rem', textAlign: 'right' }}>Returned</th>
+                                                                </tr>
+                                                              </thead>
+                                                              <tbody>
+                                                                {(() => {
+                                                                  const matchingDydi = wofDeliveries.filter(d => 
+                                                                    d.yarn_count_id === row.countId && 
+                                                                    d.colour === row.colour
+                                                                  );
+
+                                                                  const formatCount = (countId) => {
+                                                                    const yc = yarnCounts.find(y => y.id === countId);
+                                                                    return yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : '—';
+                                                                  };
+
+                                                                  const level2TdStyle = { padding: '0.3rem 0.4rem', color: '#451a03', fontSize: '0.68rem' };
+                                                                  const level2NumericTdStyle = { ...level2TdStyle, textAlign: 'right', fontWeight: '600' };
+
+                                                                  if (matchingDydi.length === 0) {
+                                                                    return (
+                                                                      <tr>
+                                                                        <td style={level2TdStyle}>—</td>
+                                                                        <td style={{ ...level2TdStyle, fontWeight: '700', color: 'var(--color-primary)' }}>{row.colour}</td>
+                                                                        <td style={level2TdStyle}>{formatCount(row.countId)}</td>
+                                                                        <td style={level2TdStyle}>—</td>
+                                                                        <td style={level2NumericTdStyle}>{allottedQty.toFixed(2)}</td>
+                                                                        <td style={level2NumericTdStyle}>0.00</td>
+                                                                        <td style={level2NumericTdStyle}>0.00</td>
+                                                                        <td style={level2NumericTdStyle}>0.00</td>
+                                                                      </tr>
+                                                                    );
+                                                                  }
+
+                                                                  // Build rows for matching deliveries
+                                                                  const rows = matchingDydi.map((item, dIdx) => {
+                                                                    const lotReturn = wof.yarn_returns 
+                                                                      ? (wof.yarn_returns || []).find(r => 
+                                                                          (r.yarn_count_id === item.yarn_count_id || r.countId === item.yarn_count_id) && 
+                                                                          r.colour === item.colour && 
+                                                                          (r.lot_number || '—') === (item.lot_number || '—')
+                                                                        )
+                                                                      : null;
+
+                                                                    const retVal = lotReturn ? parseFloat(lotReturn.quantity_returned || 0) : 0;
+                                                                    const delVal = parseFloat(item.quantity_kg || 0);
+                                                                    const usdVal = wof.yarn_returns ? (delVal - retVal) : delVal;
+
+                                                                    return (
+                                                                      <tr key={item.id} style={{ borderBottom: '1px solid #fee2e2', backgroundColor: '#fff' }}>
+                                                                        <td style={{ ...level2TdStyle, fontWeight: '700', color: '#800000' }}>{item.delivery?.dydr_number || '—'}</td>
+                                                                        <td style={level2TdStyle}>{item.colour}</td>
+                                                                        <td style={level2TdStyle}>{formatCount(item.yarn_count_id)}</td>
+                                                                        <td style={{ ...level2TdStyle, fontWeight: '600' }}>{item.lot_number || '—'}</td>
+                                                                        <td style={level2NumericTdStyle}>{delVal.toFixed(2)}</td>
+                                                                        <td style={level2NumericTdStyle}>{delVal.toFixed(2)}</td>
+                                                                        <td style={level2NumericTdStyle}>{usdVal.toFixed(2)}</td>
+                                                                        <td style={{ ...level2NumericTdStyle, color: retVal > 0 ? '#b91c1c' : '#451a03' }}>{retVal.toFixed(2)}</td>
+                                                                      </tr>
+                                                                    );
+                                                                  });
+
+                                                                  // Append unmatched returns if any
+                                                                  const unmatchedReturns = wof.yarn_returns
+                                                                    ? (wof.yarn_returns || []).filter(r => 
+                                                                        (r.yarn_count_id === row.countId || r.countId === row.countId) && 
+                                                                        r.colour === row.colour &&
+                                                                        !matchingDydi.some(d => (d.lot_number || '—') === r.lot_number)
+                                                                      )
+                                                                    : [];
+
+                                                                  unmatchedReturns.forEach((r, uIdx) => {
+                                                                    const retVal = parseFloat(r.quantity_returned || 0);
+                                                                    rows.push(
+                                                                      <tr key={`unmatched-${uIdx}`} style={{ borderBottom: '1px solid #fee2e2', backgroundColor: '#fff' }}>
+                                                                        <td style={level2TdStyle}>— (Return Only)</td>
+                                                                        <td style={level2TdStyle}>{r.colour}</td>
+                                                                        <td style={level2TdStyle}>{r.count_display || formatCount(row.countId)}</td>
+                                                                        <td style={{ ...level2TdStyle, fontWeight: '600' }}>{r.lot_number || '—'}</td>
+                                                                        <td style={level2NumericTdStyle}>—</td>
+                                                                        <td style={level2NumericTdStyle}>0.00</td>
+                                                                        <td style={level2NumericTdStyle}>{(-retVal).toFixed(2)}</td>
+                                                                        <td style={{ ...level2NumericTdStyle, color: '#b91c1c' }}>{retVal.toFixed(2)}</td>
+                                                                      </tr>
+                                                                    );
+                                                                  });
+
+                                                                  return rows;
+                                                                })()}
+                                                              </tbody>
+                                                            </table>
+                                                          </div>
+                                                        </div>
+                                                      </td>
+                                                    </tr>
+                                                  )}
+                                                </React.Fragment>
+                                              );
+                                            })}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })
                   )}
@@ -402,6 +665,11 @@ function OrderWarpingTab({ order }) {
                     const badge = getWofStatusBadge(wof);
                     const allotments = wof.colour_allotments || [];
                     const associatedDydrs = dydrsByWof[wof.id] || [];
+                    const associatedDyrrs = dyri.filter(item => {
+                      const isProdReturn = item.is_excess || item.receipt?.source_type === 'production';
+                      const isMatchingWof = item.receipt?.dof_number === wof.wof_number;
+                      return isProdReturn && isMatchingWof;
+                    });
                     const yarnBadge = getYarnStatusBadge(allotments, associatedDydrs);
                     const isExpanded = expandedWofId === wof.id;
 
@@ -475,6 +743,8 @@ function OrderWarpingTab({ order }) {
                                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty Received (kg)</th>
                                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty Delivered (kg)</th>
                                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty Balance (kg)</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty Used (kg)</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty Returned (kg)</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -493,7 +763,18 @@ function OrderWarpingTab({ order }) {
                                               const matchColour = (item.colour === a.colour);
                                               return matchCount && matchColour;
                                             });
-                                            const receivedQty = receivedItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+                                            
+                                            // Subtract redyeing delivery items
+                                            const redyeingItems = dydi.filter(item => {
+                                              const isRedyeing = item.process_type === 'redyeing' || item.delivery?.delivery_type === 'redyeing';
+                                              if (!isRedyeing) return false;
+                                              const matchCount = (item.yarn_count_id && a.countId && item.yarn_count_id === a.countId) || 
+                                                                 (item.yarn_count?.count_value === a.countValue);
+                                              const matchColour = (item.colour === a.colour);
+                                              return matchCount && matchColour;
+                                            });
+                                            const redyeingQty = redyeingItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+                                            const receivedQty = Math.max(0, receivedItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0) - redyeingQty);
 
                                             // Deliveries to this specific WOF
                                             const deliveredItems = associatedDydrs.filter(d => {
@@ -505,6 +786,13 @@ function OrderWarpingTab({ order }) {
                                             const deliveredQty = deliveredItems.reduce((s, it) => s + parseFloat(it.quantity_kg || 0), 0);
                                             const balance = Math.max(0, allottedQty - deliveredQty);
 
+                                            // Return & Used calculations
+                                            const isWofdcGenerated = wof.status === 'completed' || (wof.status === 'stopped' && !!wof.wofdc_number);
+                                            const returnedQty = isWofdcGenerated && wof.yarn_returns
+                                              ? (wof.yarn_returns || []).filter(r => (r.yarn_count_id === a.countId || r.countId === a.countId) && r.colour === a.colour).reduce((sum, r) => sum + parseFloat(r.quantity_returned || 0), 0)
+                                              : 0;
+                                            const usedQty = isWofdcGenerated ? Math.max(0, deliveredQty - returnedQty) : deliveredQty;
+
                                             return (
                                               <tr key={i} style={{ borderBottom: '1px solid var(--border-current)' }}>
                                                 <td style={{ padding: '0.6rem 0.75rem', fontWeight: '600', color: 'var(--color-primary)' }}>{a.colour || '—'}</td>
@@ -513,6 +801,8 @@ function OrderWarpingTab({ order }) {
                                                 <td style={{ padding: '0.6rem 0.75rem', fontWeight: '600', color: '#1d4ed8', textAlign: 'right' }}>{receivedQty.toFixed(2)}</td>
                                                 <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#047857', textAlign: 'right' }}>{deliveredQty.toFixed(2)}</td>
                                                 <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: balance > 0.01 ? '#b45309' : '#047857', textAlign: 'right' }}>{balance.toFixed(2)}</td>
+                                                <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#111827', textAlign: 'right' }}>{isWofdcGenerated ? usedQty.toFixed(2) : '—'}</td>
+                                                <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#7f1d1d', textAlign: 'right' }}>{isWofdcGenerated ? returnedQty.toFixed(2) : '—'}</td>
                                               </tr>
                                             );
                                           })}
@@ -561,6 +851,76 @@ function OrderWarpingTab({ order }) {
                                           key={gDydr.id} 
                                           dydr={gDydr} 
                                           onPrint={(d) => printDydr(d, yarnCounts)} 
+                                        />
+                                      ));
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div style={{ marginBottom: '1.5rem' }}>
+                                <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                  Associated Dyed Yarn Return Receipts (DYRR)
+                                </h4>
+                                {associatedDyrrs.length === 0 ? (
+                                  <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.8rem', fontStyle: 'italic' }}>
+                                    No DYRR return receipts have been created for this warping order form yet.
+                                  </p>
+                                ) : (
+                                  <div>
+                                    {(() => {
+                                      const groupedDyrrMap = {};
+                                      associatedDyrrs.forEach(item => {
+                                        const rec = item.receipt;
+                                        if (!rec) return;
+                                        if (!groupedDyrrMap[rec.id]) {
+                                          groupedDyrrMap[rec.id] = {
+                                            id: rec.id,
+                                            dyrr_number: rec.dyrr_number,
+                                            received_date: rec.received_date,
+                                            received_by: rec.received_by,
+                                            vehicle_no: rec.vehicle_no,
+                                            dc_number: rec.dc_number,
+                                            remarks: rec.remarks,
+                                            source_type: rec.source_type,
+                                            dof_number: rec.dof_number,
+                                            items: []
+                                          };
+                                        }
+                                        groupedDyrrMap[rec.id].items.push(item);
+                                      });
+                                      const groupedDyrrList = Object.values(groupedDyrrMap);
+                                      return groupedDyrrList.map(gDyrr => (
+                                        <DYRRDetail 
+                                          key={gDyrr.id} 
+                                          dyrr={gDyrr} 
+                                          onPrint={(d) => {
+                                            const printObj = {
+                                              receiptNumber: d.dyrr_number,
+                                              dyrr_number: d.dyrr_number,
+                                              created_at: d.received_date,
+                                              date: d.received_date ? new Date(d.received_date).toLocaleDateString() : '',
+                                              source: 'production',
+                                              source_type: 'production_return',
+                                              partner_name: 'N/A',
+                                              dof_number: d.dof_number,
+                                              dc_number: d.dc_number,
+                                              vehicle_no: d.vehicle_no,
+                                              received_by: d.received_by,
+                                              remarks: d.remarks,
+                                              items: d.items.map(item => ({
+                                                orderNo: order.order_number,
+                                                design: `${order.design_no} / ${order.design_name || ''}`,
+                                                count: item.yarn_count?.count_value,
+                                                colour: item.colour,
+                                                yarn_type: item.yarn_type || 'warp',
+                                                lot_number: item.lot_number,
+                                                location: item.location?.location_name || '—',
+                                                quantity_kg: item.quantity_kg
+                                              }))
+                                            };
+                                            setPrintDyrr(printObj);
+                                          }} 
                                         />
                                       ));
                                     })()}
@@ -745,6 +1105,14 @@ function OrderWarpingTab({ order }) {
             <PrintableWOF wof={printWof} order={printWof.order} machineName={printWof.machine?.machine_name || printWof.machine_name} partnerName={printWof.partner?.partner_name || printWof.partner_name} yarnCounts={yarnCounts} />
           </div>
         </div>
+      )}
+
+      {/* Print DYRR Modal */}
+      {printDyrr && (
+        <DyedReceiptPrintModal 
+          receipt={printDyrr} 
+          onClose={() => setPrintDyrr(null)} 
+        />
       )}
     </div>
   );

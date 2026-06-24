@@ -816,7 +816,6 @@ export default function MovementTracking() {
                     <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Wt/Cone</th>
                     <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', borderBottom: '1px solid var(--border-current)', textAlign: 'right', color: '#16a34a' }}>Total (kg)</th>
                     <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Location</th>
-                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Status</th>
                     <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Action</th>
                   </>)}
                   {activeTab === 'output' && (<>
@@ -927,7 +926,7 @@ export default function MovementTracking() {
                 {/* ── Production Input ── */}
                 {activeTab === 'input_prod' && (
                   groupedProductionReceipts.length === 0
-                    ? <tr><td colSpan={12} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>No incoming production receipts found</td></tr>
+                    ? <tr><td colSpan={11} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>No incoming production receipts found</td></tr>
                     : groupedProductionReceipts.map(group => {
                         const statusVal = group.rawReceipts[0]?.finance_approval_status || 'pending';
                         const isApproved = statusVal === 'approved';
@@ -972,44 +971,26 @@ export default function MovementTracking() {
                               <td style={{ ...tdPad, fontWeight: 'bold', color: '#16a34a', textAlign: 'right', borderBottom: itemBorder }}>{Number(item.total_weight || 0).toFixed(1)}</td>
                               <td style={{ ...tdPad, minWidth: '85px', whiteSpace: 'normal', borderBottom: itemBorder }} title={item.location_name}>{item.location_name}</td>
                               {isFirst && (
-                                <>
-                                  <td rowSpan={rowSpan} style={{ ...tdPad, borderBottom: groupBorder }}>
-                                    <span style={{
+                                <td rowSpan={rowSpan} style={{ ...tdPad, textAlign: 'right', borderBottom: groupBorder }}>
+                                  <button 
+                                    onClick={() => setSelectedReceipt(group.rawReceipts[0])} 
+                                    style={{
+                                      backgroundColor: '#e0f2fe',
+                                      color: '#0369a1',
+                                      border: '1px solid #bae6fd',
+                                      padding: '3px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '0.7rem',
+                                      fontWeight: '600',
+                                      cursor: 'pointer',
                                       display: 'inline-flex',
                                       alignItems: 'center',
-                                      gap: '3px',
-                                      backgroundColor: isApproved ? '#dcfce7' : '#fef3c7',
-                                      color: isApproved ? '#166534' : '#92400e',
-                                      padding: '2px 6px',
-                                      borderRadius: '3px',
-                                      fontSize: '0.65rem',
-                                      fontWeight: '700',
-                                      whiteSpace: 'nowrap',
-                                    }}>
-                                      {isApproved ? '✓ APPROVED' : '⏳ PENDING'}
-                                    </span>
-                                  </td>
-                                  <td rowSpan={rowSpan} style={{ ...tdPad, textAlign: 'right', borderBottom: groupBorder }}>
-                                    <button 
-                                      onClick={() => setSelectedReceipt(group.rawReceipts[0])} 
-                                      style={{
-                                        backgroundColor: '#e0f2fe',
-                                        color: '#0369a1',
-                                        border: '1px solid #bae6fd',
-                                        padding: '3px 6px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.7rem',
-                                        fontWeight: '600',
-                                        cursor: 'pointer',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '2px'
-                                      }}
-                                    >
-                                      View
-                                    </button>
-                                  </td>
-                                </>
+                                      gap: '2px'
+                                    }}
+                                  >
+                                    View
+                                  </button>
+                                </td>
                               )}
                             </tr>
                           );

@@ -274,7 +274,10 @@ export default function DeliverYarn() {
         const defaultMill = availableMills[0]?.id || '';
         const availableLocs = locations.filter(l => {
           const key = `${defaultMill || 'null'}_${l.id}`;
-          return (sMap[key] || 0) > 0.01;
+          const nullKey = `null_${l.id}`;
+          const millStock = sMap[key] || 0;
+          const nullStock = defaultMill !== '' ? (sMap[nullKey] || 0) : 0;
+          return (millStock + nullStock) > 0.01;
         });
         const defaultLoc = availableLocs[0]?.id || '';
 
@@ -343,7 +346,10 @@ export default function DeliverYarn() {
         const defaultMill = availableMills[0]?.id || '';
         const availableLocs = locations.filter(l => {
           const key = `${defaultMill || 'null'}_${l.id}`;
-          return (sMap[key] || 0) > 0.01;
+          const nullKey = `null_${l.id}`;
+          const millStock = sMap[key] || 0;
+          const nullStock = defaultMill !== '' ? (sMap[nullKey] || 0) : 0;
+          return (millStock + nullStock) > 0.01;
         });
         const defaultLoc = availableLocs[0]?.id || '';
 
@@ -420,7 +426,10 @@ export default function DeliverYarn() {
     const defaultMill = availableMills[0]?.id || '';
     const availableLocs = locations.filter(l => {
       const key = `${defaultMill || 'null'}_${l.id}`;
-      return (sMap[key] || 0) > 0.01;
+      const nullKey = `null_${l.id}`;
+      const millStock = sMap[key] || 0;
+      const nullStock = defaultMill !== '' ? (sMap[nullKey] || 0) : 0;
+      return (millStock + nullStock) > 0.01;
     });
     const defaultLoc = availableLocs[0]?.id || '';
 
@@ -461,7 +470,10 @@ export default function DeliverYarn() {
         const sMap = locStock[item.countId] || {};
         const availableLocs = locations.filter(l => {
           const key = `${value || 'null'}_${l.id}`;
-          return (sMap[key] || 0) > 0.01;
+          const nullKey = `null_${l.id}`;
+          const millStock = sMap[key] || 0;
+          const nullStock = value !== '' ? (sMap[nullKey] || 0) : 0;
+          return (millStock + nullStock) > 0.01;
         });
         updated.location_id = availableLocs[0]?.id || '';
       }
@@ -551,7 +563,9 @@ export default function DeliverYarn() {
     for (const [comboKey, qty] of Object.entries(allocatedByCombo)) {
       const [countId, keySuffix] = comboKey.split('_key_');
       const [millId, locationId] = keySuffix.split('_');
-      const availableInLoc = (locStock[countId] || {})[`${millId}_${locationId}`] || 0;
+      const millStock = (locStock[countId] || {})[`${millId}_${locationId}`] || 0;
+      const nullStock = millId !== 'null' ? ((locStock[countId] || {})[`null_${locationId}`] || 0) : 0;
+      const availableInLoc = millStock + nullStock;
       if (qty > availableInLoc + 0.001) {
         const item = items.find(i => i.countId === countId);
         const loc = locations.find(l => l.id === locationId);
@@ -640,14 +654,16 @@ export default function DeliverYarn() {
       }
 
       const key = `${item.spinning_mill_id || 'null'}_${item.location_id}`;
-      const comboKey = `${item.countId}_${key}`;
+      const comboKey = `${item.countId}_key_${key}`;
       allocatedByCombo[comboKey] = (allocatedByCombo[comboKey] || 0) + qty;
     }
 
     for (const [comboKey, qty] of Object.entries(allocatedByCombo)) {
-      const [countId, millId, locationId] = comboKey.split('_');
-      const key = `${millId}_${locationId}`;
-      const availableInLoc = (locStock[countId] || {})[key] || 0;
+      const [countId, keySuffix] = comboKey.split('_key_');
+      const [millId, locationId] = keySuffix.split('_');
+      const millStock = (locStock[countId] || {})[`${millId}_${locationId}`] || 0;
+      const nullStock = millId !== 'null' ? ((locStock[countId] || {})[`null_${locationId}`] || 0) : 0;
+      const availableInLoc = millStock + nullStock;
       if (qty > availableInLoc + 0.001) {
         const item = allAllocItems.find(i => i.countId === countId);
         const loc = locations.find(l => l.id === locationId);
@@ -700,16 +716,62 @@ export default function DeliverYarn() {
       if (receiptErr) throw receiptErr;
 
       // 3) Insert line items
-      const lineItems = logisticsModal.items.map(item => ({
-        receipt_id: receiptData.id,
-        yarn_count_id: item.countId,
-        colour: item.colour,
-        quantity_kg: item.quantity_kg,
-        location_id: item.location_id || null,
-        spinning_mill_id: item.spinning_mill_id || null,
-        order_id: item.orderId || null,
-        yarn_type: item.type,
-      }));
+      const lineItems = [];
+      logisticsModal.items.forEach(item => {
+        const qty = item.quantity_kg;
+        const countId = item.countId;
+        const millId = item.spinning_mill_id || 'null';
+        const locationId = item.location_id;
+        
+        // Find available stock for this mill in this location from locStock
+        const sMap = locStock[countId] || {};
+        const millStockKey = `${millId}_${locationId}`;
+        const millStock = sMap[millStockKey] || 0;
+        
+        if (millId !== 'null' && qty > millStock + 0.001) {
+          // Splitting is needed because quantity exceeds the mill's own stock at this location
+          const fromMill = Math.max(0, millStock);
+          const fromNull = Math.max(0, qty - fromMill);
+          
+          if (fromMill > 0.001) {
+            lineItems.push({
+              receipt_id: receiptData.id,
+              yarn_count_id: countId,
+              colour: item.colour,
+              quantity_kg: fromMill,
+              location_id: locationId || null,
+              spinning_mill_id: item.spinning_mill_id || null,
+              order_id: item.orderId || null,
+              yarn_type: item.type,
+            });
+          }
+          if (fromNull > 0.001) {
+            lineItems.push({
+              receipt_id: receiptData.id,
+              yarn_count_id: countId,
+              colour: item.colour,
+              quantity_kg: fromNull,
+              location_id: locationId || null,
+              spinning_mill_id: null, // Production Returns
+              order_id: item.orderId || null,
+              yarn_type: item.type,
+            });
+          }
+        } else {
+          // No split needed
+          lineItems.push({
+            receipt_id: receiptData.id,
+            yarn_count_id: countId,
+            colour: item.colour,
+            quantity_kg: qty,
+            location_id: locationId || null,
+            spinning_mill_id: item.spinning_mill_id || null,
+            order_id: item.orderId || null,
+            yarn_type: item.type,
+          });
+        }
+      });
+
       const { error: itemsErr } = await supabase
         .from('greige_yarn_delivery_items')
         .insert(lineItems);
@@ -1036,7 +1098,10 @@ export default function DeliverYarn() {
                           const selectedMillId = item.spinning_mill_id || 'null';
                           const availableLocs = locations.filter(l => {
                             const key = `${selectedMillId}_${l.id}`;
-                            return (sMap[key] || 0) > 0.01;
+                            const nullKey = `null_${l.id}`;
+                            const millStock = sMap[key] || 0;
+                            const nullStock = selectedMillId !== 'null' ? (sMap[nullKey] || 0) : 0;
+                            return (millStock + nullStock) > 0.01;
                           });
 
                           const groupKey = `${item.orderId || 'null'}_${item.countId}_${item.colour}_${item.type}`;
@@ -1077,7 +1142,7 @@ export default function DeliverYarn() {
                                     width: '100%',
                                     padding: '6px 12px',
                                     borderColor: isOverAlloc ? '#dc2626' : 'var(--border-current)',
-                                    backgroundColor: isOverAlloc ? '#fef2f2' : 'inherit',
+                                    backgroundColor: isOverAlloc ? '#fef2f2' : '#fff',
                                     color: isOverAlloc ? '#b91c1c' : 'inherit',
                                     fontWeight: isOverAlloc ? 'bold' : 'normal'
                                   }}
@@ -1113,7 +1178,10 @@ export default function DeliverYarn() {
                                   <option value="">Select Location</option>
                                   {availableLocs.map(loc => {
                                     const key = `${selectedMillId}_${loc.id}`;
-                                    const stockAtLoc = sMap[key] || 0;
+                                    const nullKey = `null_${loc.id}`;
+                                    const millStock = sMap[key] || 0;
+                                    const nullStock = selectedMillId !== 'null' ? (sMap[nullKey] || 0) : 0;
+                                    const stockAtLoc = millStock + nullStock;
                                     return (
                                       <option key={loc.id} value={loc.id}>
                                         {loc.location_name} ({stockAtLoc.toFixed(2)} kg)
@@ -1445,12 +1513,6 @@ function GYDRReceiptModal({ receiptId, dof, orders, allReceipts, onClose }) {
               <div style={{ width: '180px', borderTop: '1px solid #000', paddingTop: '8px', marginTop: '40px' }}>
                 <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>Received By</p>
                 <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#888' }}>Signature</p>
-              </div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ width: '180px', borderTop: '1px solid #000', paddingTop: '8px', marginTop: '40px' }}>
-                <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>Authorised Signatory</p>
-                <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#888' }}>Managing Partner</p>
               </div>
             </div>
           </div>

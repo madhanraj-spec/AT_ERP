@@ -34,7 +34,7 @@ export default function DyedDeliveryPrintModal({ delivery, wof, weaving, onClose
   const designName = linkedOrder.design_name || '';
 
   return (
-    <div style={{
+    <div className="print-overlay" style={{
       position: 'fixed',
       top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0,0,0,0.6)',
@@ -85,7 +85,7 @@ export default function DyedDeliveryPrintModal({ delivery, wof, weaving, onClose
         </div>
 
         {/* Printable Invoice Body */}
-        <div id="printable-dydr" style={{ padding: '3.5rem', color: '#000', backgroundColor: '#fff', minHeight: '100%' }}>
+        <div id="printable-dydr" className="printable-content" style={{ padding: '3.5rem', color: '#000', backgroundColor: '#fff', minHeight: '100%' }}>
           
           {/* Company Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem', borderBottom: '3px solid #7f1d1d', paddingBottom: '1.5rem' }}>
@@ -203,15 +203,48 @@ export default function DyedDeliveryPrintModal({ delivery, wof, weaving, onClose
       
       <style>{`
         @media print {
-          @page { margin: 15mm; }
-          body * { visibility: hidden; }
-          #printable-dydr, #printable-dydr * { visibility: visible; }
-          #printable-dydr {
-            position: absolute; left: 0; top: 0; width: 100%; padding: 0;
+          @page { margin: 10mm; }
+          html, body, #root, .app-layout-container, .main-content-wrapper, .main-content {
+            height: auto !important;
+            overflow: visible !important;
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
-          .no-print { display: none !important; }
+          body * {
+            visibility: hidden;
+          }
+          .print-overlay {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
+            background: transparent !important;
+          }
+          .print-modal-container, .print-modal-container * {
+            visibility: visible;
+          }
           .print-modal-container {
-            box-shadow: none !important; border: none !important; position: absolute; left: 0; top: 0; width: 100%;
+            position: relative !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+            box-shadow: none !important;
+            border: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border-radius: 0 !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .printable-content {
+            padding: 0 !important;
           }
         }
       `}</style>

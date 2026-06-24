@@ -42,6 +42,8 @@ export default function ReceiptForm() {
   const [fetchedItems, setFetchedItems] = useState([]);
   const [searched, setSearched] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [dofGydrs, setDofGydrs] = useState([]);
+  const [selectedGydrId, setSelectedGydrId] = useState('');
 
   const [saving, setSaving] = useState(false);
 
@@ -59,6 +61,8 @@ export default function ReceiptForm() {
     setSearching(true);
     setSearched(false);
     setFetchedItems([]);
+    setDofGydrs([]);
+    setSelectedGydrId('');
     try {
       const docNo = formData.order_form_no.trim();
       let matchedDoc = null;
@@ -109,31 +113,22 @@ export default function ReceiptForm() {
 
       // Fetch sent items and already returned items
       if (docType === 'dof') {
-        const { data: deliveryReceipts } = await supabase
+        const { data: deliveryReceipts, error: gydrErr } = await supabase
           .from('greige_yarn_delivery_receipts')
-          .select('id')
-          .eq('dof_id', matchedDoc.id);
+          .select('id, gydr_number, created_at')
+          .eq('dof_id', matchedDoc.id)
+          .order('created_at', { ascending: false });
         
-        const receiptIds = deliveryReceipts?.map(r => r.id) || [];
-        if (receiptIds.length > 0) {
-          const { data: delItems } = await supabase
-            .from('greige_yarn_delivery_items')
-            .select(`
-              *,
-              orders (order_number),
-              master_yarn_counts (count_value, material, product_type)
-            `)
-            .in('receipt_id', receiptIds);
-          sentItems = delItems || [];
+        if (gydrErr) throw gydrErr;
+
+        if (!deliveryReceipts || deliveryReceipts.length === 0) {
+          alert("No deliveries found for this order form.");
+          setSearching(false);
+          return;
         }
 
-        const { data: retItems } = await supabase
-          .from('greige_yarn_receipts')
-          .select('*')
-          .eq('receipt_type', 'production')
-          .eq('order_form_no', matchedDoc.dof_number);
-        returnedItems = retItems || [];
-
+        setDofGydrs(deliveryReceipts);
+        setSearched(true);
       } else {
         const { data: delItems } = await supabase
           .from('dyed_yarn_delivery_items')
@@ -152,56 +147,138 @@ export default function ReceiptForm() {
           .eq('receipt_type', 'production')
           .eq('order_form_no', docNumberField);
         returnedItems = retItems || [];
-      }
 
-      const aggregated = {};
-      sentItems.forEach(item => {
-        const key = `${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}-${item.order_id}`;
-        if (!aggregated[key]) {
-          aggregated[key] = {
-            yarn_count_id: item.yarn_count_id,
-            colour: item.colour,
-            yarn_type: item.yarn_type || 'warp',
-            order_id: item.order_id,
-            order_number: item.orders?.order_number || '-',
-            count_label: item.master_yarn_counts
-              ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} (${item.master_yarn_counts.product_type || ''})`
-              : 'Unknown',
-            quantity_sent: 0,
-            already_returned: 0
-          };
+        const aggregated = {};
+        sentItems.forEach(item => {
+          const key = `${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}-${item.order_id}`;
+          if (!aggregated[key]) {
+            aggregated[key] = {
+              yarn_count_id: item.yarn_count_id,
+              colour: item.colour,
+              yarn_type: item.yarn_type || 'warp',
+              order_id: item.order_id,
+              order_number: item.orders?.order_number || '-',
+              count_label: item.master_yarn_counts
+                ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} (${item.master_yarn_counts.product_type || ''})`
+                : 'Unknown',
+              quantity_sent: 0,
+              already_returned: 0
+            };
+          }
+          aggregated[key].quantity_sent += parseFloat(item.quantity_kg || 0);
+        });
+
+        returnedItems.forEach(item => {
+          const key = `${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}-${item.order_id}`;
+          if (aggregated[key]) {
+            aggregated[key].already_returned += parseFloat(item.total_weight || 0);
+          }
+        });
+
+        const finalItems = Object.values(aggregated).map(item => ({
+          ...item,
+          net_sent: Math.max(0, item.quantity_sent - item.already_returned),
+          bag_weight: '',
+          bag_count: '',
+          cone_weight: '',
+          cone_count: '',
+          location_id: '',
+          verification_weight: '',
+          returned_qty: ''
+        }));
+
+        if (finalItems.length === 0) {
+          alert("No deliveries found for this order form.");
+        } else {
+          setFetchedItems(finalItems);
+          setSearched(true);
         }
-        aggregated[key].quantity_sent += parseFloat(item.quantity_kg || 0);
-      });
-
-      returnedItems.forEach(item => {
-        const key = `${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}-${item.order_id}`;
-        if (aggregated[key]) {
-          aggregated[key].already_returned += parseFloat(item.total_weight || 0);
-        }
-      });
-
-      const finalItems = Object.values(aggregated).map(item => ({
-        ...item,
-        net_sent: Math.max(0, item.quantity_sent - item.already_returned),
-        bag_weight: '',
-        bag_count: '',
-        cone_weight: '',
-        cone_count: '',
-        location_id: '',
-        verification_weight: '',
-        returned_qty: ''
-      }));
-
-      if (finalItems.length === 0) {
-        alert("No deliveries found for this order form.");
-      } else {
-        setFetchedItems(finalItems);
-        setSearched(true);
       }
     } catch (err) {
       console.error(err);
       alert("Error searching document: " + err.message);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleGydrSelect = async (gydrId) => {
+    setSelectedGydrId(gydrId);
+    if (!gydrId) {
+      setFetchedItems([]);
+      return;
+    }
+    setSearching(true);
+    setFetchedItems([]);
+    try {
+      // 1. Fetch items delivered in this GYDR
+      const { data: delItems, error: delErr } = await supabase
+        .from('greige_yarn_delivery_items')
+        .select(`
+          *,
+          orders (order_number),
+          master_yarn_counts (count_value, material, product_type),
+          spinning_mill:master_partners!spinning_mill_id (partner_name)
+        `)
+        .eq('receipt_id', gydrId);
+
+      if (delErr) throw delErr;
+
+      // 2. Fetch already returned items for this specific GYDR
+      const { data: retItems, error: retErr } = await supabase
+        .from('greige_yarn_receipts')
+        .select('*')
+        .eq('receipt_type', 'production')
+        .eq('gydr_id', gydrId);
+
+      if (retErr) throw retErr;
+
+      const itemsList = delItems || [];
+      const returnsList = retItems || [];
+
+      // Map each delivery item to a return item entry
+      const finalItems = itemsList.map(item => {
+        // Sum returns for this specific delivery item by matching count, color, mill, order, and type
+        const alreadyReturned = returnsList
+          .filter(r => 
+            r.yarn_count_id === item.yarn_count_id &&
+            r.colour === item.colour &&
+            r.spinning_mill_id === item.spinning_mill_id &&
+            r.order_id === item.order_id &&
+            r.yarn_type === item.yarn_type
+          )
+          .reduce((sum, r) => sum + parseFloat(r.total_weight || 0), 0);
+
+        const netSent = Math.max(0, parseFloat(item.quantity_kg || 0) - alreadyReturned);
+
+        return {
+          id: item.id,
+          yarn_count_id: item.yarn_count_id,
+          colour: item.colour,
+          yarn_type: item.yarn_type || 'warp',
+          order_id: item.order_id,
+          spinning_mill_id: item.spinning_mill_id,
+          mill_name: item.spinning_mill?.partner_name || 'Unknown Mill',
+          order_number: item.orders?.order_number || '-',
+          count_label: item.master_yarn_counts
+            ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} (${item.master_yarn_counts.product_type || ''})`
+            : 'Unknown',
+          quantity_sent: parseFloat(item.quantity_kg || 0),
+          already_returned: alreadyReturned,
+          net_sent: netSent,
+          returned_qty: '',
+          location_id: ''
+        };
+      });
+
+      if (finalItems.length === 0) {
+        alert("No items found in this delivery receipt.");
+      } else {
+        setFetchedItems(finalItems);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error loading GYDR details: " + err.message);
     } finally {
       setSearching(false);
     }
@@ -471,7 +548,10 @@ export default function ReceiptForm() {
             rate_per_kg: 0,
             location_id: item.location_id,
             vehicle_no: formData.vehicle_no,
-            received_by: formData.received_by
+            received_by: formData.received_by,
+            spinning_mill_id: item.spinning_mill_id || null,
+            gydr_id: selectedGydrId || null,
+            gydr_no: dofGydrs.find(g => g.id === selectedGydrId)?.gydr_number || null
           };
         });
       }
@@ -553,43 +633,66 @@ export default function ReceiptForm() {
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
-              <div className="input-group" style={{ flex: 1 }}>
-                <label className="input-label">Production Order Form No.</label>
-                <input 
-                  type="text" 
-                  name="order_form_no" 
-                  className="input-field" 
-                  value={formData.order_form_no} 
-                  onChange={handleChange} 
-                  placeholder="e.g. AT/2026/DOF/00002"
-                  required 
-                  disabled={searched && fetchedItems.length > 0}
-                  style={{ fontFamily: 'monospace' }}
-                />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label className="input-label">Production Order Form No.</label>
+                  <input 
+                    type="text" 
+                    name="order_form_no" 
+                    className="input-field" 
+                    value={formData.order_form_no} 
+                    onChange={handleChange} 
+                    placeholder="e.g. AT/2026/DOF/00002"
+                    required 
+                    disabled={searched}
+                    style={{ fontFamily: 'monospace' }}
+                  />
+                </div>
+                {searched ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ height: '42px', padding: '0 1.5rem', fontWeight: 'bold' }}
+                    onClick={() => {
+                      setSearched(false);
+                      setDofGydrs([]);
+                      setSelectedGydrId('');
+                      setFetchedItems([]);
+                    }}
+                  >
+                    Clear & Search Again
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ height: '42px', padding: '0 1.5rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: searching ? 0.7 : 1 }}
+                    disabled={searching || !formData.order_form_no}
+                    onClick={handleSearchDoc}
+                  >
+                    {searching ? 'Fetching...' : 'Fetch Sent Yarn'}
+                  </button>
+                )}
               </div>
-              {searched && fetchedItems.length > 0 ? (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  style={{ height: '42px', padding: '0 1.5rem', fontWeight: 'bold' }}
-                  onClick={() => {
-                    setSearched(false);
-                    setFetchedItems([]);
-                  }}
-                >
-                  Clear & Search Again
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  style={{ height: '42px', padding: '0 1.5rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: searching ? 0.7 : 1 }}
-                  disabled={searching || !formData.order_form_no}
-                  onClick={handleSearchDoc}
-                >
-                  {searching ? 'Fetching...' : 'Fetch Sent Yarn'}
-                </button>
+              
+              {searched && dofGydrs.length > 0 && (
+                <div className="input-group" style={{ marginTop: '0.5rem' }}>
+                  <label className="input-label">Select Delivery Receipt (GYDR)</label>
+                  <select
+                    className="input-field"
+                    value={selectedGydrId}
+                    onChange={(e) => handleGydrSelect(e.target.value)}
+                    required
+                  >
+                    <option value="">Select GYDR...</option>
+                    {dofGydrs.map(g => (
+                      <option key={g.id} value={g.id}>
+                        {g.gydr_number} ({new Date(g.created_at).toLocaleDateString()})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
           )}
@@ -804,11 +907,16 @@ export default function ReceiptForm() {
                   <AlertCircle size={32} style={{ margin: '0 auto 0.75rem', display: 'block', opacity: 0.5 }} />
                   <p style={{ margin: 0 }}>Please enter a Production Order Form No. and click "Fetch Sent Yarn" above.</p>
                 </div>
+              ) : (dofGydrs.length > 0 && !selectedGydrId) ? (
+                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', border: '1px dashed var(--border-current)', borderRadius: '8px' }}>
+                  <AlertCircle size={32} style={{ margin: '0 auto 0.75rem', display: 'block', opacity: 0.5 }} />
+                  <p style={{ margin: 0 }}>Please select a Delivery Receipt (GYDR) from the dropdown above.</p>
+                </div>
               ) : fetchedItems.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '3rem', color: '#991b1b', backgroundColor: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px' }}>
                   <AlertCircle size={32} style={{ margin: '0 auto 0.75rem', display: 'block' }} />
                   <p style={{ margin: 0, fontWeight: 'bold' }}>No Sent Yarn Found</p>
-                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem' }}>No deliveries of greige or dyed yarn were found for this order form.</p>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem' }}>No deliveries of greige or dyed yarn were found for this order form/delivery receipt.</p>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -824,6 +932,7 @@ export default function ReceiptForm() {
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', fontSize: '0.85rem' }}>
                             <div><strong>Order:</strong> <span style={{ color: 'var(--color-primary)' }}>{item.order_number}</span></div>
                             <div><strong>Yarn Count:</strong> {item.count_label}</div>
+                            {item.mill_name && <div><strong>Spinning Mill:</strong> <span style={{ fontWeight: '600' }}>{item.mill_name}</span></div>}
                             <div><strong>Yarn Type:</strong> <span style={{ textTransform: 'capitalize' }}>{item.yarn_type}</span></div>
                             <div><strong>Colour:</strong> <span style={{ fontWeight: '600' }}>{item.colour}</span></div>
                             <div><strong>Qty Sent:</strong> {item.quantity_sent.toFixed(2)} kg</div>

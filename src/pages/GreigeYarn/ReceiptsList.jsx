@@ -517,24 +517,24 @@ export default function ReceiptsList() {
                 <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Wt/Bag</th>
                 <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Wt/Cone</th>
                 <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Total Wt</th>
-                <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Rate/KG</th>
+                {activeTab === 'spinning' && <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Rate/KG</th>}
                 {activeTab === 'spinning' && <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Inv Value</th>}
-                <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Status</th>
+                {activeTab === 'spinning' && <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Status</th>}
                 <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={activeTab === 'spinning' ? 16 : 13} style={{ textAlign: 'center', padding: '2rem', fontSize: '0.8rem' }}>Loading receipts...</td></tr>
+                <tr><td colSpan={activeTab === 'spinning' ? 15 : 11} style={{ textAlign: 'center', padding: '2rem', fontSize: '0.8rem' }}>Loading receipts...</td></tr>
               ) : receipts.length === 0 ? (
                 <tr>
-                  <td colSpan={activeTab === 'spinning' ? 16 : 13} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
+                  <td colSpan={activeTab === 'spinning' ? 15 : 11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
                     No receipts found for this category.
                   </td>
                 </tr>
               ) : filteredReceipts.length === 0 ? (
                 <tr>
-                  <td colSpan={activeTab === 'spinning' ? 16 : 13} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontWeight: '500', fontSize: '0.8rem' }}>
+                  <td colSpan={activeTab === 'spinning' ? 15 : 11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontWeight: '500', fontSize: '0.8rem' }}>
                     No receipts match the selected filters.
                   </td>
                 </tr>
@@ -610,7 +610,9 @@ export default function ReceiptsList() {
                             <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{Number(item.cone_weight || 0).toFixed(2)}</td>
                             <td style={{ ...tdPad, textAlign: 'right', fontWeight: '600', borderBottom: itemBorder }}>{Number(item.total_weight).toFixed(1)}</td>
                             
-                            <td style={{ ...tdPad, textAlign: 'right', whiteSpace: 'nowrap', borderBottom: itemBorder }}>₹{Number(item.rate_per_kg || 0).toFixed(0)}</td>
+                            {activeTab === 'spinning' && (
+                              <td style={{ ...tdPad, textAlign: 'right', whiteSpace: 'nowrap', borderBottom: itemBorder }}>₹{Number(item.rate_per_kg || 0).toFixed(0)}</td>
+                            )}
                             
                             {isFirst && (
                               <>
@@ -620,22 +622,24 @@ export default function ReceiptsList() {
                                   </td>
                                 )}
                                 
-                                <td rowSpan={rowSpan} style={{ ...tdPad, borderBottom: groupBorder }}>
-                                  <span style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '3px',
-                                    backgroundColor: isApproved ? '#dcfce7' : '#fef3c7',
-                                    color: isApproved ? '#166534' : '#92400e',
-                                    padding: '2px 6px',
-                                    borderRadius: '3px',
-                                    fontSize: '0.65rem',
-                                    fontWeight: '700',
-                                    whiteSpace: 'nowrap',
-                                  }}>
-                                    {isApproved ? '✓ APPROVED' : '⏳ PENDING'}
-                                  </span>
-                                </td>
+                                {activeTab === 'spinning' && (
+                                  <td rowSpan={rowSpan} style={{ ...tdPad, borderBottom: groupBorder }}>
+                                    <span style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      backgroundColor: isApproved ? '#dcfce7' : '#fef3c7',
+                                      color: isApproved ? '#166534' : '#92400e',
+                                      padding: '2px 6px',
+                                      borderRadius: '3px',
+                                      fontSize: '0.65rem',
+                                      fontWeight: '700',
+                                      whiteSpace: 'nowrap',
+                                    }}>
+                                      {isApproved ? '✓ APPROVED' : '⏳ PENDING'}
+                                    </span>
+                                  </td>
+                                )}
                                 
                                 <td rowSpan={rowSpan} style={{ ...tdPad, textAlign: 'right', borderBottom: groupBorder }}>
                                   <button 

@@ -277,7 +277,7 @@ export default function StockInventory() {
           .from('dyed_yarn_delivery_items')
           .select(`
             *,
-            delivery:dyed_yarn_deliveries(dydr_number, delivered_date, delivered_by, vehicle_no, remarks),
+            delivery:dyed_yarn_deliveries(dydr_number, delivered_date, delivered_by, vehicle_no, remarks, delivery_type, dof_number),
             location:master_locations(location_name),
             source_receipt:dyed_yarn_receipts(dof_id, dof_number)
           `),
@@ -390,8 +390,14 @@ export default function StockInventory() {
             (i.lot_number || '—') === lotNumber
           );
 
-          const dyedReceived = matchingDyri.reduce((s, i) => s + parseFloat(i.quantity_kg || 0), 0);
-          const dyedDelivered = matchingDydi.reduce((s, i) => s + parseFloat(i.quantity_kg || 0), 0);
+          const matchingRedyeing = matchingDydi.filter(i => i.process_type === 'redyeing' || i.delivery?.delivery_type === 'redyeing');
+          const matchingNormalDydi = matchingDydi.filter(i => i.process_type !== 'redyeing' && i.delivery?.delivery_type !== 'redyeing');
+
+          const dyedReceived = Math.max(0, 
+            matchingDyri.reduce((s, i) => s + parseFloat(i.quantity_kg || 0), 0) - 
+            matchingRedyeing.reduce((s, i) => s + parseFloat(i.quantity_kg || 0), 0)
+          );
+          const dyedDelivered = matchingNormalDydi.reduce((s, i) => s + parseFloat(i.quantity_kg || 0), 0);
           const balance = dyedReceived - dyedDelivered;
 
           totalDofInventoryBalance += balance;
@@ -403,10 +409,21 @@ export default function StockInventory() {
             if (!locationBalances[locName]) locationBalances[locName] = { received: 0, delivered: 0 };
             locationBalances[locName].received += parseFloat(i.quantity_kg || 0);
           });
-          matchingDydi.forEach(i => {
+          matchingNormalDydi.forEach(i => {
             const locName = i.location?.location_name || '—';
             if (!locationBalances[locName]) locationBalances[locName] = { received: 0, delivered: 0 };
             locationBalances[locName].delivered += parseFloat(i.quantity_kg || 0);
+          });
+          matchingRedyeing.forEach(i => {
+            let locName = i.location?.location_name || '—';
+            if (locName === '—' && i.lot_number) {
+              const matchingReceipt = matchingDyri.find(r => (r.lot_number || '—') === i.lot_number);
+              if (matchingReceipt && matchingReceipt.location?.location_name) {
+                locName = matchingReceipt.location.location_name;
+              }
+            }
+            if (!locationBalances[locName]) locationBalances[locName] = { received: 0, delivered: 0 };
+            locationBalances[locName].received = Math.max(0, locationBalances[locName].received - parseFloat(i.quantity_kg || 0));
           });
 
           // List locations with active stock
@@ -520,6 +537,9 @@ export default function StockInventory() {
               targetFormNo = weaving.weaving_number;
               targetMachine = '—';
             }
+          } else if (item.process_type === 'redyeing' || delivery.delivery_type === 'redyeing') {
+            targetFormNo = delivery.dof_number || '—';
+            targetMachine = '—';
           }
 
           dydrGroups[delivery.dydr_number].targetFormNo = targetFormNo;

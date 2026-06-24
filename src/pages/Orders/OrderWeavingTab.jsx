@@ -186,13 +186,17 @@ function OrderWeavingTab({ order }) {
       }
     });
 
-    // 3. Add dyed deliveries matching count/colour
+    // 3. Add dyed deliveries matching count/colour (exclude redyeing and subtract from received)
     (dydi || []).forEach(item => {
-      if (item.process_type === 'weaving' || item.yarn_type === 'weft') {
-        const countId = item.yarn_count_id || '';
-        const color = item.colour || '';
-        const key = findWeftKey(countId, color);
-        if (key) {
+      const isRedyeing = item.process_type === 'redyeing' || item.delivery?.delivery_type === 'redyeing';
+      const countId = item.yarn_count_id || '';
+      const color = item.colour || '';
+      const key = findWeftKey(countId, color);
+
+      if (key) {
+        if (isRedyeing) {
+          summary[key].received = Math.max(0, summary[key].received - parseFloat(item.quantity_kg || 0));
+        } else if (item.process_type === 'weaving' || item.yarn_type === 'weft') {
           summary[key].delivered += parseFloat(item.quantity_kg || 0);
         }
       }

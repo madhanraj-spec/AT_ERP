@@ -9,6 +9,8 @@ import { generateWeavingNumbersBulk, insertWeavingOrdersWithRetry } from '../../
 
 import PrintableWOFDC from './PrintableWOFDC';
 import DYDRDetail from '../../components/DYDRDetail';
+import DYRRDetail from '../../components/DYRRDetail';
+import DyedReceiptPrintModal from '../DyedYarn/DyedReceiptPrintModal';
 import { printDydr } from '../../utils/printDydr';
 
 function getLocalDateString(dateInput) {
@@ -92,8 +94,10 @@ export default function WarpingOrderForms() {
   const [expandedWofId, setExpandedWofId] = useState(null);
   const [activeDetailTab, setActiveDetailTab] = useState('yarn');
   const [dydrsByWof, setDydrsByWof] = useState({}); // { wofId: [dydrItems] }
+  const [dyrrsByWof, setDyrrsByWof] = useState({}); // { wofId: [dyrrItems] }
   const [loadingDydrs, setLoadingDydrs] = useState(false);
   const [printWof, setPrintWof] = useState(null);
+  const [printDyrr, setPrintDyrr] = useState(null);
   const [expandedWofdcId, setExpandedWofdcId] = useState(null);
 
   // Completion form states for job work warping
@@ -1122,36 +1126,78 @@ export default function WarpingOrderForms() {
     } else {
       setExpandedWofId(wofId);
       setActiveDetailTab('yarn');
-      if (!dydrsByWof[wofId]) {
+      
+      const wof = wofs.find(w => w.id === wofId);
+      if (!wof) return;
+
+      if (!dydrsByWof[wofId] || !dyrrsByWof[wofId]) {
         setLoadingDydrs(true);
-        const { data, error } = await supabase
-          .from('dyed_yarn_delivery_items')
-          .select(`
-            id,
-            yarn_count_id,
-            quantity_kg,
-            no_of_bags,
-            cone_weight,
-            colour,
-            lot_number,
-            yarn_count:master_yarn_counts(count_value, material, product_type),
-            delivery:dyed_yarn_deliveries(
-              id,
-              dydr_number,
-              delivered_date,
-              delivered_by,
-              vehicle_no,
-              remarks
-            )
-          `)
-          .eq('production_form_id', wofId);
-        
-        if (!error && data) {
-          setDydrsByWof(prev => ({ ...prev, [wofId]: data }));
-        } else {
-          setDydrsByWof(prev => ({ ...prev, [wofId]: [] }));
+        try {
+          const [dydrRes, receiptsRes] = await Promise.all([
+            supabase
+              .from('dyed_yarn_delivery_items')
+              .select(`
+                id,
+                yarn_count_id,
+                quantity_kg,
+                no_of_bags,
+                cone_weight,
+                colour,
+                lot_number,
+                yarn_count:master_yarn_counts(count_value, material, product_type),
+                delivery:dyed_yarn_deliveries(
+                  id,
+                  dydr_number,
+                  delivered_date,
+                  delivered_by,
+                  vehicle_no,
+                  remarks
+                )
+              `)
+              .eq('production_form_id', wofId),
+            
+            supabase
+              .from('dyed_yarn_receipts')
+              .select('id')
+              .eq('dof_number', wof.wof_number)
+          ]);
+
+          let fetchedDydrItems = dydrRes.data || [];
+          let fetchedDyrrItems = [];
+
+          if (receiptsRes.data && receiptsRes.data.length > 0) {
+            const receiptIds = receiptsRes.data.map(r => r.id);
+            const { data: dyrrItemsData } = await supabase
+              .from('dyed_yarn_receipt_items')
+              .select(`
+                id,
+                yarn_count_id,
+                quantity_kg,
+                colour,
+                lot_number,
+                yarn_count:master_yarn_counts(count_value, material, product_type),
+                receipt:dyed_yarn_receipts(
+                  id,
+                  dyrr_number,
+                  received_date,
+                  vehicle_no,
+                  dc_number,
+                  received_by,
+                  remarks,
+                  source_type
+                )
+              `)
+              .in('receipt_id', receiptIds);
+            fetchedDyrrItems = dyrrItemsData || [];
+          }
+
+          setDydrsByWof(prev => ({ ...prev, [wofId]: fetchedDydrItems }));
+          setDyrrsByWof(prev => ({ ...prev, [wofId]: fetchedDyrrItems }));
+        } catch (err) {
+          console.error('Error fetching delivery/receipt details:', err);
+        } finally {
+          setLoadingDydrs(false);
         }
-        setLoadingDydrs(false);
       }
     }
   };
@@ -1458,6 +1504,7 @@ export default function WarpingOrderForms() {
 
       // Build yarn returns from delivered items
       const returns = (dydrItems || []).map(item => ({
+        yarn_count_id: item.yarn_count_id,
         colour: item.colour || '—',
         count_display: item.yarn_count ? `${item.yarn_count.count_value} ${item.yarn_count.material} ${item.yarn_count.product_type}` : '—',
         lot_number: item.lot_number || '—',
@@ -2322,7 +2369,7 @@ export default function WarpingOrderForms() {
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                                       <thead>
                                         <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
-                                          {['Colour', 'Yarn Count', 'Required Qty (kg)', 'Allotted (This WOF) (kg)', 'Dyed Yarn Delivered (kg)', 'Balance to Deliver (kg)'].map(h => (
+                                          {['Colour', 'Yarn Count', 'Required Qty (kg)', 'Allotted (This WOF) (kg)', 'Dyed Yarn Delivered (kg)', 'Used Qty (kg)', 'Returned Qty (kg)', 'Balance to Deliver (kg)'].map(h => (
                                             <th key={h} style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>{h}</th>
                                           ))}
                                         </tr>
@@ -2343,6 +2390,14 @@ export default function WarpingOrderForms() {
                                           });
                                           const deliveredQty = deliveredItems.reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
                                           
+                                          // Yarn returns for this count & colour
+                                          const returnedQty = wof.yarn_returns
+                                            ? (wof.yarn_returns || [])
+                                                .filter(r => (r.yarn_count_id === a.countId || r.countId === a.countId) && r.colour === a.colour)
+                                                .reduce((sum, r) => sum + parseFloat(r.quantity_returned || 0), 0)
+                                            : 0;
+
+                                          const usedQty = deliveredQty - returnedQty;
                                           const requiredQty = parseFloat(a.required_qty || 0);
                                           const balanceToDeliver = Math.max(0, allottedThisWof - deliveredQty);
 
@@ -2352,7 +2407,9 @@ export default function WarpingOrderForms() {
                                               <td style={{ padding: '0.6rem 0.75rem' }}>{countDisplay}</td>
                                               <td style={{ padding: '0.6rem 0.75rem', fontWeight: '600' }}>{requiredQty.toFixed(2)}</td>
                                               <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#800000' }}>{allottedThisWof.toFixed(2)}</td>
-                                              <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#047857' }}>{deliveredQty.toFixed(2)}</td>
+                                              <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#0284c7' }}>{deliveredQty.toFixed(2)}</td>
+                                              <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#d97706' }}>{usedQty.toFixed(2)}</td>
+                                              <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: returnedQty > 0 ? '#b91c1c' : '#475569' }}>{returnedQty.toFixed(2)}</td>
                                               <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: balanceToDeliver > 0.01 ? '#b45309' : '#047857' }}>
                                                 {balanceToDeliver.toFixed(2)}
                                               </td>
@@ -2366,7 +2423,7 @@ export default function WarpingOrderForms() {
                               </div>
 
                               {/* 2. DYDR Deliveries */}
-                              <div>
+                              <div style={{ marginBottom: '1.5rem' }}>
                                 <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                   Associated Dyed Yarn Delivery Receipts (DYDR)
                                 </h4>
@@ -2410,6 +2467,54 @@ export default function WarpingOrderForms() {
                                           key={gDydr.id} 
                                           dydr={gDydr} 
                                           onPrint={(d) => printDydr(d, yarnCounts)} 
+                                        />
+                                      ));
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* 3. DYRR Receipts (Production Returns) */}
+                              <div>
+                                <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                  Associated Dyed Yarn Return Receipts (DYRR)
+                                </h4>
+                                {loadingDydrs ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
+                                    <Loader size={14} className="spin" /> Loading associated returns…
+                                  </div>
+                                ) : !dyrrsByWof[wof.id] || dyrrsByWof[wof.id].length === 0 ? (
+                                  <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.8rem', fontStyle: 'italic' }}>
+                                    No DYRR return receipts have been created for this warping order form yet.
+                                  </p>
+                                ) : (
+                                  <div>
+                                    {(() => {
+                                      const groupedMap = {};
+                                      (dyrrsByWof[wof.id] || []).forEach(item => {
+                                        const receipt = item.receipt;
+                                        if (!receipt) return;
+                                        if (!groupedMap[receipt.id]) {
+                                          groupedMap[receipt.id] = {
+                                            id: receipt.id,
+                                            dyrr_number: receipt.dyrr_number,
+                                            received_date: receipt.received_date,
+                                            received_by: receipt.received_by,
+                                            vehicle_no: receipt.vehicle_no,
+                                            dc_number: receipt.dc_number,
+                                            remarks: receipt.remarks,
+                                            source_type: receipt.source_type,
+                                            items: []
+                                          };
+                                        }
+                                        groupedMap[receipt.id].items.push(item);
+                                      });
+                                      const groupedList = Object.values(groupedMap);
+                                      return groupedList.map(gDyrr => (
+                                        <DYRRDetail 
+                                          key={gDyrr.id} 
+                                          dyrr={gDyrr} 
+                                          onPrint={(d) => setPrintDyrr(d)} 
                                         />
                                       ));
                                     })()}
@@ -4268,6 +4373,13 @@ export default function WarpingOrderForms() {
             </div>
           </div>
         </div>
+      )}
+
+      {printDyrr && (
+        <DyedReceiptPrintModal 
+          receipt={printDyrr} 
+          onClose={() => setPrintDyrr(null)} 
+        />
       )}
     </div>
   );

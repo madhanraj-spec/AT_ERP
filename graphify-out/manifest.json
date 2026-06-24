@@ -215,8 +215,8 @@
     "semantic_hash": ""
   },
   "src/App.jsx": {
-    "mtime": 1781767568.463589,
-    "ast_hash": "3b742fe70bde4dc59a2a0e48f6ef4d33",
+    "mtime": 1782280395.9756255,
+    "ast_hash": "992cfeec4f17257f927de6afc6afc6bb",
     "semantic_hash": ""
   },
   "src/components/DYDRDetail.jsx": {
@@ -235,7 +235,7 @@
     "semantic_hash": ""
   },
   "src/contexts/AuthContext.jsx": {
-    "mtime": 1780471933.9812865,
+    "mtime": 1782282862.4724143,
     "ast_hash": "0c07f3ae5142c583b17f76e52a442617",
     "semantic_hash": ""
   },
@@ -265,43 +265,43 @@
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/Dashboard.jsx": {
-    "mtime": 1780723822.805225,
-    "ast_hash": "fc6e256722a2e85d30649351f58ad0da",
+    "mtime": 1782280380.7285645,
+    "ast_hash": "c351d975eaa5625945928093c1cd7d13",
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/DeliverYarn.jsx": {
-    "mtime": 1782201518.9038527,
-    "ast_hash": "a1eaeba6f9f8805985951470bbf51b4f",
+    "mtime": 1782284579.0620627,
+    "ast_hash": "7ea8d0f0b1a2f9223745e5e0f73e9162",
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/DyedDeliveryPrintModal.jsx": {
-    "mtime": 1781076870.525735,
-    "ast_hash": "6943fd219c866c4993b992d337f3abc2",
+    "mtime": 1782279076.7706547,
+    "ast_hash": "55616f1351960c14e551119125645d3f",
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/DyedReceiptPrintModal.jsx": {
-    "mtime": 1780558515.8610466,
-    "ast_hash": "13aa5d48c08dcaf8bcbe6cced20e528f",
+    "mtime": 1782279035.1429248,
+    "ast_hash": "a6c2c81b01157e8a576f64e3f55d6025",
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/MovementLog.jsx": {
-    "mtime": 1781076979.8735158,
-    "ast_hash": "3e5703620c8dc69464776cd5580a745f",
+    "mtime": 1782280593.5917792,
+    "ast_hash": "107ad16e3b107db3ec15cfce2898563c",
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/OrderStock.jsx": {
-    "mtime": 1782188124.0734692,
-    "ast_hash": "c5a0cb62ac693c18a787b59de4a847c0",
+    "mtime": 1782291023.3160884,
+    "ast_hash": "b059919e88784631ecb5912dcec64617",
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/ReceiveYarn.jsx": {
-    "mtime": 1781675774.1895397,
-    "ast_hash": "9da188a20475bc8be568f2bc1380a524",
+    "mtime": 1782281646.8041737,
+    "ast_hash": "d6b29ba976dec8f8c36f0a8765dd4049",
     "semantic_hash": ""
   },
   "src/pages/DyedYarn/StockInventory.jsx": {
-    "mtime": 1781188604.541781,
-    "ast_hash": "87e2040c4849caf55e33345848c10f06",
+    "mtime": 1782284593.1780677,
+    "ast_hash": "f9e16b498215bdac6685f33ee178a905",
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/Dashboard.jsx": {
@@ -310,18 +310,18 @@
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/DeliverYarn.jsx": {
-    "mtime": 1782188126.9386487,
-    "ast_hash": "2a9162eea274af7702646188c9700cdd",
+    "mtime": 1782276495.4690359,
+    "ast_hash": "dd19f3a190cd5c51598aed5b5306fb36",
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/DeliveriesList.jsx": {
-    "mtime": 1781158161.8692064,
-    "ast_hash": "117b2ed15b4322af59be1c125c3127ea",
+    "mtime": 1782273445.965105,
+    "ast_hash": "38a4910b3c39adb6c4443c827a23b66e",
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/MovementTracking.jsx": {
-    "mtime": 1781332746.5685322,
-    "ast_hash": "37efb90d1411f527a8923623a1841fa7",
+    "mtime": 1782275282.6476483,
+    "ast_hash": "d94da5dd74be13bbe433fe1285e9ad59",
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/NewDelivery.jsx": {
@@ -330,18 +330,18 @@
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/ReceiptForm.jsx": {
-    "mtime": 1781156490.1093018,
-    "ast_hash": "c2cd87d129b94a4a26bc009ec973aa89",
+    "mtime": 1782276108.5888557,
+    "ast_hash": "821f62dd2acdbcd91c7a95fc87f6dc85",
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/ReceiptPrintModal.jsx": {
-    "mtime": 1781157108.6156769,
-    "ast_hash": "a420b9af0f1a4f7758823bc9cbb81007",
+    "mtime": 1782279184.0596201,
+    "ast_hash": "2d35760e79c37fd9046978e6e8f69e66",
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/ReceiptsList.jsx": {
-    "mtime": 1781332666.2211092,
-    "ast_hash": "11d8635d19701cbcc9399e278df6c89f",
+    "mtime": 1782276914.810996,
+    "ast_hash": "af551f065352711e70eae38b6979bfaa",
     "semantic_hash": ""
   },
   "src/pages/GreigeYarn/StockManagement.jsx": {
@@ -385,13 +385,13 @@
     "semantic_hash": ""
   },
   "src/pages/Merchandiser/DyeingFormsList.jsx": {
-    "mtime": 1781503918.98363,
-    "ast_hash": "d3ba5a6cddd5ee0a11546098ace09cf0",
+    "mtime": 1782280493.302146,
+    "ast_hash": "678a5d45dfdaefae4065e27904cec743",
     "semantic_hash": ""
   },
   "src/pages/Orders/Management.jsx": {
-    "mtime": 1782188800.8272827,
-    "ast_hash": "c8f7dd0fdf432174a51469bd4b60741f",
+    "mtime": 1782283341.1466491,
+    "ast_hash": "09dd1d59ca94dfc45e65647bbdb3b84e",
     "semantic_hash": ""
   },
   "src/pages/Orders/OrderSizingTab.jsx": {
@@ -400,13 +400,13 @@
     "semantic_hash": ""
   },
   "src/pages/Orders/OrderWarpingTab.jsx": {
-    "mtime": 1782189225.262624,
-    "ast_hash": "d49c25e615bd47f07f59d35c398dff1f",
+    "mtime": 1782287272.0901732,
+    "ast_hash": "3fea347d14f93a0012b6499587b14cf9",
     "semantic_hash": ""
   },
   "src/pages/Orders/OrderYarnUsageTab.jsx": {
-    "mtime": 1782188126.9427204,
-    "ast_hash": "2e19c115cc1812c09d2c5e717f3a42f1",
+    "mtime": 1782290948.0701222,
+    "ast_hash": "11303f5f34e7d041e2918357853ac7f6",
     "semantic_hash": ""
   },
   "src/pages/Production/Board.jsx": {
@@ -415,8 +415,8 @@
     "semantic_hash": ""
   },
   "src/pages/Production/CreateWarpingOrderForm.jsx": {
-    "mtime": 1782188994.529829,
-    "ast_hash": "2417899b182eefed2d606f40229b2700",
+    "mtime": 1782284169.1130896,
+    "ast_hash": "4bfca2b494b50c2188d636258e909628",
     "semantic_hash": ""
   },
   "src/pages/Production/PrintableSOF.jsx": {
@@ -440,8 +440,8 @@
     "semantic_hash": ""
   },
   "src/pages/Production/WarpingOrderForms.jsx": {
-    "mtime": 1782201601.969627,
-    "ast_hash": "3a4a4570a6a62d4d29704bd5a58c8424",
+    "mtime": 1782288756.5884714,
+    "ast_hash": "e1d343c10ab3df61c416b0f499e02219",
     "semantic_hash": ""
   },
   "src/pages/Production/WarpingSizing.jsx": {
@@ -450,8 +450,8 @@
     "semantic_hash": ""
   },
   "src/utils/printDydr.js": {
-    "mtime": 1780648825.2678218,
-    "ast_hash": "a1a81451bcc157b09b752a929b819658",
+    "mtime": 1782280368.1575978,
+    "ast_hash": "6227810120bca7ba77809fda6975339a",
     "semantic_hash": ""
   },
   "vercel.json": {
@@ -550,8 +550,8 @@
     "semantic_hash": ""
   },
   "src/pages/Orders/OrderWeavingTab.jsx": {
-    "mtime": 1782203650.9857676,
-    "ast_hash": "4eb40d64b0806a27c966f230ec5bbf5a",
+    "mtime": 1782280524.2700417,
+    "ast_hash": "9690f9553a2c40d8c56623e889fdba5d",
     "semantic_hash": ""
   },
   "database/migration_add_planned_daily_production_to_weaving.sql": {
@@ -1757,6 +1757,76 @@
   "database/migration_add_original_qty_to_weaving_orders.sql": {
     "mtime": 1782202258.613907,
     "ast_hash": "ee9eaa320f9d31c09584bd6573153f36",
+    "semantic_hash": ""
+  },
+  "scratch/check_greige_stock.js": {
+    "mtime": 1782275488.839935,
+    "ast_hash": "938781e6d4d0877fd6881b71c61af713",
+    "semantic_hash": ""
+  },
+  "database/migration_add_gydr_to_receipts.sql": {
+    "mtime": 1782276046.0640407,
+    "ast_hash": "366dadddc7650dbf18855deccbd5c62b",
+    "semantic_hash": ""
+  },
+  "scratch/inspect_receipts_columns.js": {
+    "mtime": 1782276016.8660035,
+    "ast_hash": "db01754b7d77970e4e8fa7c8fb1a7836",
+    "semantic_hash": ""
+  },
+  "src/pages/GreigeYarn/GYDRPrintModal.jsx": {
+    "mtime": 1782279200.3536248,
+    "ast_hash": "ba22ea30e2baf3cdb627e217f19d1036",
+    "semantic_hash": ""
+  },
+  "database/migration_add_redyeing_to_deliveries.sql": {
+    "mtime": 1782280356.918215,
+    "ast_hash": "72b2b7e63faafe9615e7feb469fa9ac8",
+    "semantic_hash": ""
+  },
+  "src/pages/DyedYarn/Redyeing.jsx": {
+    "mtime": 1782280418.4673085,
+    "ast_hash": "31e82b794dd883f3274818d3054e0660",
+    "semantic_hash": ""
+  },
+  "scratch/inspect_dof.js": {
+    "mtime": 1782281563.8364468,
+    "ast_hash": "53b8397e756ae0509262465ca59a9283",
+    "semantic_hash": ""
+  },
+  "scratch/inspect_dydr.js": {
+    "mtime": 1782281111.4205894,
+    "ast_hash": "bbdb49a725efa7595f45a1bb2f4642a0",
+    "semantic_hash": ""
+  },
+  "scratch_check_records.js": {
+    "mtime": 1782283753.9283257,
+    "ast_hash": "1068b814e7902c440e943cf53ffc755b",
+    "semantic_hash": ""
+  },
+  "scratch/trace_all.js": {
+    "mtime": 1782284497.377792,
+    "ast_hash": "9e8e303fd120720a6e290bf4c42ea2c0",
+    "semantic_hash": ""
+  },
+  "scratch/trace_lot2.js": {
+    "mtime": 1782284441.3860765,
+    "ast_hash": "30ce5be70f412e2b99bcfdd768808aad",
+    "semantic_hash": ""
+  },
+  "scratch/trace_receipt_items.js": {
+    "mtime": 1782284508.368159,
+    "ast_hash": "298fa4e1eff5df353c945dc6780530a4",
+    "semantic_hash": ""
+  },
+  "src/components/DYRRDetail.jsx": {
+    "mtime": 1782287201.011384,
+    "ast_hash": "9b77f633de2f148047fc74d4a9f99ed8",
+    "semantic_hash": ""
+  },
+  "scratch/list_orders.js": {
+    "mtime": 1782290796.8382227,
+    "ast_hash": "bfbec4c9fcad759f72f1bd08491ffe15",
     "semantic_hash": ""
   }
 }

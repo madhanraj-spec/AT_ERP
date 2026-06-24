@@ -42,7 +42,7 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
   const isSpinning = receipt.receipt_type === 'spinning_mill';
 
   return (
-    <div style={{
+    <div className="print-overlay" style={{
       position: 'fixed',
       top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0,0,0,0.5)',
@@ -53,7 +53,7 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
       padding: '2rem'
     }}>
       <div 
-        className="print-container"
+        className="print-modal-container"
         style={{
           backgroundColor: '#fff',
           borderRadius: '8px',
@@ -91,7 +91,7 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
         </div>
 
         {/* Printable Invoice Body */}
-        <div style={{ padding: '3rem', color: '#000', backgroundColor: '#fff', flex: 1 }}>
+        <div className="printable-content" style={{ padding: '3rem', color: '#000', backgroundColor: '#fff', flex: 1 }}>
           {loading ? (
             <div style={{ textAlign: 'center', padding: '3rem' }}>
               <Loader size={24} className="spin" style={{ margin: '0 auto 1rem', display: 'block' }} color="var(--color-primary)" />
@@ -129,7 +129,15 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
                       <p style={{ margin: '0 0 0.25rem 0' }}><strong>Invoice Date:</strong> {receipt.invoice_date}</p>
                     </>
                   ) : (
-                    <p style={{ margin: '0 0 0.25rem 0' }}><strong>Order Form No:</strong> {receipt.order_form_no}</p>
+                    <>
+                      <p style={{ margin: '0 0 0.25rem 0' }}><strong>Order Form No:</strong> {receipt.order_form_no}</p>
+                      {receipt.master_partners?.partner_name && (
+                        <p style={{ margin: '0 0 0.25rem 0' }}><strong>Mill Name:</strong> {receipt.master_partners.partner_name}</p>
+                      )}
+                      {receipt.gydr_no && (
+                        <p style={{ margin: '0 0 0.25rem 0' }}><strong>Delivery Ref (GYDR):</strong> {receipt.gydr_no}</p>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -182,7 +190,9 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
                           <tr style={{ borderBottom: '1px solid #eee' }}>
                             <td style={{ padding: '0.5rem' }}>
                               <strong>{countLabel}</strong>
-                              <div style={{ fontSize: '0.85rem', color: '#555' }}>Production Return (Stored in: {locationLabel})</div>
+                              <div style={{ fontSize: '0.85rem', color: '#555' }}>
+                                Production Return {item.master_partners?.partner_name ? `[ Mill: ${item.master_partners.partner_name} ]` : ''} (Stored in: {locationLabel})
+                              </div>
                             </td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>-</td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>-</td>
@@ -236,23 +246,48 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
       {/* Global CSS injected just for print to hide non-print elements */}
       <style>{`
         @media print {
+          @page { margin: 10mm; }
+          html, body, #root, .app-layout-container, .main-content-wrapper, .main-content {
+            height: auto !important;
+            overflow: visible !important;
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
           body * {
             visibility: hidden;
           }
-          .print-container, .print-container * {
+          .print-overlay {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
+            background: transparent !important;
+          }
+          .print-modal-container, .print-modal-container * {
             visibility: visible;
           }
-          .print-container {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            overflow: visible;
-            box-shadow: none;
+          .print-modal-container {
+            position: relative !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+            box-shadow: none !important;
+            border: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border-radius: 0 !important;
           }
           .no-print {
             display: none !important;
+          }
+          .printable-content {
+            padding: 0 !important;
           }
         }
       `}</style>

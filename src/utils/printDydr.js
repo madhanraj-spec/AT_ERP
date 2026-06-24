@@ -101,7 +101,13 @@ export function printDydr(dydr, yarnCounts = []) {
           <div class="card">
             <p class="card-title">Delivery Details</p>
             <div class="info-row">
-              <span class="info-label">${dydr.target_process === 'weaving' ? 'Weaving Order' : 'Warping Form (WOF)'}:</span>
+              <span class="info-label">${
+                dydr.target_process === 'weaving' 
+                  ? 'Weaving Order' 
+                  : dydr.target_process === 'redyeing'
+                  ? 'Dyeing Order (DOF)'
+                  : 'Warping Form (WOF)'
+              }:</span>
               <span class="info-value">${dydr.doc_no || '—'}</span>
             </div>
             ${dydr.machine_name ? `

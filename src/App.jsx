@@ -36,6 +36,7 @@ import DeliverDyedYarn from './pages/DyedYarn/DeliverYarn';
 import DyedYarnMovement from './pages/DyedYarn/MovementLog';
 import DyedYarnOrders from './pages/DyedYarn/OrderStock';
 import StockInventory from './pages/DyedYarn/StockInventory';
+import AllotToRedyeing from './pages/DyedYarn/Redyeing';
 import FourPointInspection from './pages/Inspection/FourPointInspection';
 import UnwashedInspection from './pages/Inspection/UnwashedInspection';
 import WashedInspection from './pages/Inspection/WashedInspection';
@@ -111,6 +112,7 @@ function AppRoutes() {
             <Route path="/dyed-yarn/movement" element={<DyedYarnMovement />} />
             <Route path="/dyed-yarn/orders" element={<DyedYarnOrders />} />
             <Route path="/dyed-yarn/inventory" element={<StockInventory />} />
+            <Route path="/dyed-yarn/redyeing" element={<AllotToRedyeing />} />
 
             {/* Production Routes */}
             <Route path="/production">

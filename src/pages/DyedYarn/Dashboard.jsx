@@ -38,6 +38,14 @@ export default function DyedYarnDashboard() {
       path: '/dyed-yarn/deliver'
     },
     {
+      title: 'Allot to Redyeing',
+      icon: <Repeat size={24} color="#dc2626" />, 
+      iconBg: '#fff5f5',
+      description: 'Send received dyed yarn back to the dyeing unit for redyeing since it failed the quality check.',
+      linkText: 'Allot to Redyeing',
+      path: '/dyed-yarn/redyeing'
+    },
+    {
       title: 'Track Yarn Movement',
       icon: <History size={24} color="#0d9488" />, 
       iconBg: '#f0fdfa',

@@ -3,6 +3,10 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Plus, Loader, CheckCircle, Clock, XCircle, Eye, Filter, ChevronDown, ChevronUp, Search, X, ClipboardList, MoveHorizontal, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import ReceiptPrintModal from '../GreigeYarn/ReceiptPrintModal';
+import DyedReceiptPrintModal from '../DyedYarn/DyedReceiptPrintModal';
+import GYDRPrintModal from '../GreigeYarn/GYDRPrintModal';
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers for Expected Delivery Dates & Warning Alerts
@@ -95,141 +99,7 @@ function ModalWrapper({ title, onClose, children }) {
   );
 }
 
-function GYDRDetailModal({ data, yarnCounts, onClose }) {
-  const { receipt, items } = data;
-  const formatYarn = (id) => {
-    const y = yarnCounts.find(c => c.id === id);
-    return y ? `${y.count_value} ${y.material} ${y.product_type || ''}`.trim() : 'Unknown';
-  };
 
-  return (
-    <ModalWrapper title={`Greige Yarn Delivery Receipt: ${receipt.gydr_number}`} onClose={onClose}>
-      <div style={{ border: '2px solid var(--color-primary)', padding: '1.5rem', borderRadius: '8px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid var(--color-primary)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
-          <div>
-            <h2 style={{ margin: 0, color: 'var(--color-primary)', fontWeight: '900', fontSize: '1.25rem' }}>GREIGE DELIVERY RECEIPT</h2>
-            <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>Ashok Textiles · Greige Yarn Deliveries</p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontWeight: '800', fontSize: '1.1rem' }}>#{receipt.gydr_number}</div>
-            <div style={{ fontSize: '0.75rem', color: '#666' }}>Date: {new Date(receipt.created_at).toLocaleDateString()}</div>
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem', backgroundColor: '#f8fafc', padding: '0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
-          <div>
-            <p style={{ margin: '0.2rem 0' }}><strong>Delivered By:</strong> {receipt.delivered_by}</p>
-            <p style={{ margin: '0.2rem 0' }}><strong>Vehicle No:</strong> {receipt.vehicle_no || '-'}</p>
-          </div>
-          <div>
-            <p style={{ margin: '0.2rem 0' }}><strong>Remarks:</strong> {receipt.remarks || '-'}</p>
-          </div>
-        </div>
-
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-          <thead>
-            <tr style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}>
-              <th style={{ padding: '0.5rem', textAlign: 'left' }}>Yarn Count</th>
-              <th style={{ padding: '0.5rem', textAlign: 'left' }}>Colour</th>
-              <th style={{ padding: '0.5rem', textAlign: 'left' }}>Type</th>
-              <th style={{ padding: '0.5rem', textAlign: 'right' }}>Qty (kg)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items?.map((item, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem', fontWeight: '600' }}>{formatYarn(item.yarn_count_id)}</td>
-                <td style={{ padding: '0.5rem' }}>{item.colour}</td>
-                <td style={{ padding: '0.5rem', textTransform: 'capitalize' }}>{item.yarn_type || 'warp'}</td>
-                <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '700' }}>{parseFloat(item.quantity_kg).toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr style={{ backgroundColor: '#f8fafc', fontWeight: '800' }}>
-              <td colSpan="3" style={{ padding: '0.5rem', textAlign: 'right' }}>Total Weight:</td>
-              <td style={{ padding: '0.5rem', textAlign: 'right', color: 'var(--color-primary)' }}>
-                {items?.reduce((s, i) => s + parseFloat(i.quantity_kg || 0), 0).toFixed(2)} kg
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </ModalWrapper>
-  );
-}
-
-function DYRRDetailModal({ data, yarnCounts, locations, onClose }) {
-  const { receipt, items } = data;
-  const formatYarn = (id) => {
-    const y = yarnCounts.find(c => c.id === id);
-    return y ? `${y.count_value} ${y.material} ${y.product_type || ''}`.trim() : 'Unknown';
-  };
-  const formatLocation = (id) => {
-    const l = locations.find(loc => loc.id === id);
-    return l ? l.location_name : '-';
-  };
-
-  return (
-    <ModalWrapper title={`Dyed Yarn Receipt: ${receipt.dyrr_number}`} onClose={onClose}>
-      <div style={{ border: '2px solid #16a34a', padding: '1.5rem', borderRadius: '8px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #16a34a', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
-          <div>
-            <h2 style={{ margin: 0, color: '#16a34a', fontWeight: '900', fontSize: '1.25rem' }}>DYED RECEIPT</h2>
-            <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>Dyed Yarn Receipt</p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontWeight: '800', fontSize: '1.1rem' }}>#{receipt.dyrr_number}</div>
-            <div style={{ fontSize: '0.75rem', color: '#666' }}>Date: {new Date(receipt.created_at).toLocaleDateString()}</div>
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem', backgroundColor: '#f8fafc', padding: '0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
-          <div>
-            <p style={{ margin: '0.2rem 0' }}><strong>DC Number:</strong> {receipt.dc_number || '-'}</p>
-            <p style={{ margin: '0.2rem 0' }}><strong>Received By:</strong> {receipt.received_by}</p>
-          </div>
-          <div>
-            <p style={{ margin: '0.2rem 0' }}><strong>Vehicle No:</strong> {receipt.vehicle_no || '-'}</p>
-          </div>
-        </div>
-
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#16a34a', color: '#fff' }}>
-              <th style={{ padding: '0.5rem', textAlign: 'left' }}>Yarn Count</th>
-              <th style={{ padding: '0.5rem', textAlign: 'left' }}>Colour</th>
-              <th style={{ padding: '0.5rem', textAlign: 'left' }}>Type</th>
-              <th style={{ padding: '0.5rem', textAlign: 'left' }}>Lot Number</th>
-              <th style={{ padding: '0.5rem', textAlign: 'left' }}>Location</th>
-              <th style={{ padding: '0.5rem', textAlign: 'right' }}>Qty (kg)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items?.map((item, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem', fontWeight: '600' }}>{formatYarn(item.yarn_count_id)}</td>
-                <td style={{ padding: '0.5rem' }}>{item.colour}</td>
-                <td style={{ padding: '0.5rem', textTransform: 'capitalize' }}>{item.yarn_type || 'warp'}</td>
-                <td style={{ padding: '0.5rem' }}>{item.lot_number || '-'}</td>
-                <td style={{ padding: '0.5rem' }}>{formatLocation(item.location_id)}</td>
-                <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '700' }}>{parseFloat(item.quantity_kg).toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr style={{ backgroundColor: '#f8fafc', fontWeight: '800' }}>
-              <td colSpan="5" style={{ padding: '0.5rem', textAlign: 'right' }}>Total Weight:</td>
-              <td style={{ padding: '0.5rem', textAlign: 'right', color: '#16a34a' }}>
-                {items?.reduce((s, i) => s + parseFloat(i.quantity_kg || 0), 0).toFixed(2)} kg
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </ModalWrapper>
-  );
-}
 
 // Styles
 const subThStyle = { padding: '0.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: '#475569' };
@@ -259,12 +129,16 @@ export default function DyeingFormsList() {
   const [allGydrItems, setAllGydrItems] = useState([]);
   const [allDyrrItems, setAllDyrrItems] = useState([]);
   const [allReturns, setAllReturns] = useState([]);
+  const [allRedyeingItems, setAllRedyeingItems] = useState([]);
   const [yarnCounts, setYarnCounts] = useState([]);
   const [locations, setLocations] = useState([]);
 
   // Modals state
   const [activeGydrDetail, setActiveGydrDetail] = useState(null);
   const [activeDyrrDetail, setActiveDyrrDetail] = useState(null);
+  const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [selectedGydr, setSelectedGydr] = useState(null);
+  const [selectedDyrr, setSelectedDyrr] = useState(null);
   const [submittingDof, setSubmittingDof] = useState(null);
   const [billNo, setBillNo] = useState('');
   const [inputPrices, setInputPrices] = useState({});
@@ -293,7 +167,7 @@ export default function DyeingFormsList() {
         query = query.eq('created_by', profile.id);
       }
 
-      const [formsRes, receiptsRes, gydrsRes, gydrItemsRes, dyrrItemsRes, returnsRes, yarnRes, locRes] = await Promise.all([
+      const [formsRes, receiptsRes, gydrsRes, gydrItemsRes, dyrrItemsRes, returnsRes, yarnRes, locRes, redyeRes] = await Promise.all([
         query,
         supabase
           .from('dyed_yarn_receipts')
@@ -316,7 +190,11 @@ export default function DyeingFormsList() {
           .select('*'),
         supabase
           .from('master_locations')
-          .select('*')
+          .select('*'),
+        supabase
+          .from('dyed_yarn_delivery_items')
+          .select('*, delivery:dyed_yarn_deliveries(*)')
+          .eq('process_type', 'redyeing')
       ]);
 
       if (formsRes.error) throw formsRes.error;
@@ -354,6 +232,7 @@ export default function DyeingFormsList() {
       setAllReturns(returnsRes.data || []);
       setYarnCounts(yarnRes.data || []);
       setLocations(locRes.data || []);
+      setAllRedyeingItems(redyeRes.data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -441,29 +320,35 @@ export default function DyeingFormsList() {
   };
 
   const openGydrModal = async (gydr) => {
-    try {
-      const { data: items } = await supabase
-        .from('greige_yarn_delivery_items')
-        .select('*')
-        .eq('receipt_id', gydr.id);
-      setActiveGydrDetail({ receipt: gydr, items: items || [] });
-    } catch (err) {
-      console.error(err);
-      alert('Error fetching delivery details');
-    }
+    setSelectedGydr(gydr);
   };
 
   const openDyrrModal = async (dyrr) => {
     try {
-      const { data: items } = await supabase
+      const { data: items, error } = await supabase
         .from('dyed_yarn_receipt_items')
-        .select('*')
+        .select(`
+          *,
+          orders (*),
+          master_yarn_counts (*),
+          master_locations (*)
+        `)
         .eq('receipt_id', dyrr.id);
-      setActiveDyrrDetail({ receipt: dyrr, items: items || [] });
+      
+      if (error) throw error;
+
+      setSelectedDyrr({
+        ...dyrr,
+        items: items || []
+      });
     } catch (err) {
       console.error(err);
       alert('Error fetching dyed receipt details');
     }
+  };
+
+  const openGyrrPrintModal = (gyrr) => {
+    setSelectedReceipt(gyrr);
   };
 
   // Group allocations for the Submit for Finance Approval Modal
@@ -513,8 +398,8 @@ export default function DyeingFormsList() {
 
       const sentValue = Math.max(0, rawSentValue - returnedValue);
       
-      // Calculate received weight
-      const recValue = allDyrrItems
+      // Calculate received weight (subtracting redyeing returns)
+      const rawRecValue = allDyrrItems
         .filter(item => item.receipt?.dof_id === submittingDof.id && 
           item.yarn_count_id === alloc.countId && 
           item.colour === alloc.colour && 
@@ -522,6 +407,17 @@ export default function DyeingFormsList() {
           (item.order_id === alloc.orderId || !item.order_id)
         )
         .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+      const redyeValue = allRedyeingItems
+        .filter(item => item.delivery && (item.delivery.dof_id === submittingDof.id || (item.delivery.dof_number && item.delivery.dof_number === submittingDof.dof_number)) &&
+          item.yarn_count_id === alloc.countId && 
+          item.colour === alloc.colour && 
+          (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
+          (item.order_id === alloc.orderId || !item.order_id)
+        )
+        .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+      const recValue = Math.max(0, rawRecValue - redyeValue);
 
       groups[key].sentQty += sentValue;
       groups[key].recQty += recValue;
@@ -639,8 +535,8 @@ export default function DyeingFormsList() {
 
             const sentValue = Math.max(0, rawSentValue - returnedValue);
 
-            // Calculate received weight
-            const recValue = allDyrrItems
+            // Calculate received weight (subtracting redyeing returns)
+            const rawRecValue = allDyrrItems
               .filter(item => item.receipt && (item.receipt.dof_id === form.id || (item.receipt.dof_number && item.receipt.dof_number === form.dof_number)) && 
                 item.yarn_count_id === alloc.countId && 
                 item.colour === alloc.colour && 
@@ -648,6 +544,17 @@ export default function DyeingFormsList() {
                 (item.order_id === alloc.orderId || !item.order_id)
               )
               .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+            const redyeValue = allRedyeingItems
+              .filter(item => item.delivery && (item.delivery.dof_id === form.id || (item.delivery.dof_number && item.delivery.dof_number === form.dof_number)) &&
+                item.yarn_count_id === alloc.countId && 
+                item.colour === alloc.colour && 
+                (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
+                (item.order_id === alloc.orderId || !item.order_id)
+              )
+              .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+            const recValue = Math.max(0, rawRecValue - redyeValue);
 
             const balance = Math.max(0, sentValue - recValue);
             const shortagePct = sentValue > 0 ? ((sentValue - recValue) / sentValue) * 100 : 0;
@@ -1143,6 +1050,61 @@ export default function DyeingFormsList() {
                                         </div>
                                       </div>
 
+                                      {/* GYRR List */}
+                                      <div>
+                                        <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: '800', letterSpacing: '0.5px' }}>
+                                          Greige Yarn Return Receipts (GYRR)
+                                        </h5>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                          {(() => {
+                                            const formReturns = allReturns.filter(r => r.order_form_no === form.dof_number);
+                                            const uniqueReturns = [];
+                                            const seenReceiptNos = new Set();
+                                            formReturns.forEach(r => {
+                                              if (!seenReceiptNos.has(r.receipt_no)) {
+                                                seenReceiptNos.add(r.receipt_no);
+                                                uniqueReturns.push(r);
+                                              }
+                                            });
+
+                                            if (uniqueReturns.length === 0) {
+                                              return (
+                                                <div style={{ fontSize: '0.8rem', color: '#94a3b8', padding: '0.75rem', border: '1px dashed #e2e8f0', borderRadius: '6px', backgroundColor: '#fff', textAlign: 'center' }}>
+                                                  No return receipts found.
+                                                </div>
+                                              );
+                                            }
+
+                                            return uniqueReturns.map(r => (
+                                              <div 
+                                                key={r.id} 
+                                                onClick={() => openGyrrPrintModal(r)}
+                                                style={{ 
+                                                  padding: '0.75rem', 
+                                                  backgroundColor: '#fff', 
+                                                  border: '1px solid #e2e8f0', 
+                                                  borderRadius: '6px', 
+                                                  display: 'flex', 
+                                                  justifyContent: 'space-between', 
+                                                  alignItems: 'center', 
+                                                  cursor: 'pointer',
+                                                  transition: 'all 0.15s ease'
+                                                }}
+                                                className="hover-bg-slate"
+                                              >
+                                                <div>
+                                                  <div style={{ fontWeight: '700', fontSize: '0.8rem', color: 'var(--color-primary)' }}>{r.receipt_no}</div>
+                                                  <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>{new Date(r.created_at).toLocaleDateString()}</div>
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: '#475569', fontWeight: '500' }}>
+                                                  By: <strong>{r.received_by || 'N/A'}</strong>
+                                                </div>
+                                              </div>
+                                            ));
+                                          })()}
+                                        </div>
+                                      </div>
+
                                     </div>
 
                                   </div>
@@ -1424,6 +1386,61 @@ export default function DyeingFormsList() {
                                       </div>
                                     </div>
 
+                                    {/* GYRR List */}
+                                    <div>
+                                      <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: '800', letterSpacing: '0.5px' }}>
+                                        Greige Yarn Return Receipts (GYRR)
+                                      </h5>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        {(() => {
+                                          const formReturns = allReturns.filter(r => r.order_form_no === form.dof_number);
+                                          const uniqueReturns = [];
+                                          const seenReceiptNos = new Set();
+                                          formReturns.forEach(r => {
+                                            if (!seenReceiptNos.has(r.receipt_no)) {
+                                              seenReceiptNos.add(r.receipt_no);
+                                              uniqueReturns.push(r);
+                                            }
+                                          });
+
+                                          if (uniqueReturns.length === 0) {
+                                            return (
+                                              <div style={{ fontSize: '0.8rem', color: '#94a3b8', padding: '0.75rem', border: '1px dashed #e2e8f0', borderRadius: '6px', backgroundColor: '#fff', textAlign: 'center' }}>
+                                                No return receipts found.
+                                              </div>
+                                            );
+                                          }
+
+                                          return uniqueReturns.map(r => (
+                                            <div 
+                                              key={r.id} 
+                                              onClick={() => openGyrrPrintModal(r)}
+                                              style={{ 
+                                                padding: '0.75rem', 
+                                                backgroundColor: '#fff', 
+                                                border: '1px solid #e2e8f0', 
+                                                borderRadius: '6px', 
+                                                display: 'flex', 
+                                                justifyContent: 'space-between', 
+                                                alignItems: 'center', 
+                                                cursor: 'pointer',
+                                                transition: 'all 0.15s ease'
+                                              }}
+                                              className="hover-bg-slate"
+                                            >
+                                              <div>
+                                                <div style={{ fontWeight: '700', fontSize: '0.8rem', color: 'var(--color-primary)' }}>{r.receipt_no}</div>
+                                                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>{new Date(r.created_at).toLocaleDateString()}</div>
+                                              </div>
+                                              <div style={{ fontSize: '0.75rem', color: '#475569', fontWeight: '500' }}>
+                                                By: <strong>{r.received_by || 'N/A'}</strong>
+                                              </div>
+                                            </div>
+                                          ));
+                                        })()}
+                                      </div>
+                                    </div>
+
                                   </div>
 
                                 </div>
@@ -1562,20 +1579,23 @@ export default function DyeingFormsList() {
         </ModalWrapper>
       )}
 
-      {/* Detail Modals */}
-      {activeGydrDetail && (
-        <GYDRDetailModal
-          data={activeGydrDetail}
-          yarnCounts={yarnCounts}
-          onClose={() => setActiveGydrDetail(null)}
+      {/* Print Modals */}
+      {selectedGydr && (
+        <GYDRPrintModal
+          receipt={selectedGydr}
+          onClose={() => setSelectedGydr(null)}
         />
       )}
-      {activeDyrrDetail && (
-        <DYRRDetailModal
-          data={activeDyrrDetail}
-          yarnCounts={yarnCounts}
-          locations={locations}
-          onClose={() => setActiveDyrrDetail(null)}
+      {selectedReceipt && (
+        <ReceiptPrintModal
+          receipt={selectedReceipt}
+          onClose={() => setSelectedReceipt(null)}
+        />
+      )}
+      {selectedDyrr && (
+        <DyedReceiptPrintModal
+          receipt={selectedDyrr}
+          onClose={() => setSelectedDyrr(null)}
         />
       )}
     </div>

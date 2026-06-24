@@ -163,6 +163,7 @@ export default function ReceiveYarn() {
   const [allDyrrItems, setAllDyrrItems] = useState([]);
   const [allDyrrs, setAllDyrrs] = useState([]);
   const [allReturns, setAllReturns] = useState([]);
+  const [allRedyeingItems, setAllRedyeingItems] = useState([]);
   const [dofsLoading, setDofsLoading] = useState(false);
   const [expandedDofId, setExpandedDofId] = useState(null);
 
@@ -216,7 +217,7 @@ export default function ReceiveYarn() {
   const fetchAllDofsData = async () => {
     setDofsLoading(true);
     try {
-      const [dofsRes, ordersRes, gydiRes, dyriRes, dyrrsRes, returnsRes] = await Promise.all([
+      const [dofsRes, ordersRes, gydiRes, dyriRes, dyrrsRes, returnsRes, redyeRes] = await Promise.all([
         supabase
           .from('dyeing_order_forms')
           .select('*, dyeing_unit:master_partners(partner_name)')
@@ -225,7 +226,11 @@ export default function ReceiveYarn() {
         supabase.from('greige_yarn_delivery_items').select('*, receipt:greige_yarn_delivery_receipts(*)'),
         supabase.from('dyed_yarn_receipt_items').select('*, receipt:dyed_yarn_receipts(*)'),
         supabase.from('dyed_yarn_receipts').select('*'),
-        supabase.from('greige_yarn_receipts').select('*').eq('receipt_type', 'production')
+        supabase.from('greige_yarn_receipts').select('*').eq('receipt_type', 'production'),
+        supabase
+          .from('dyed_yarn_delivery_items')
+          .select('*, delivery:dyed_yarn_deliveries(*)')
+          .eq('process_type', 'redyeing')
       ]);
 
       setAllDofs(dofsRes.data || []);
@@ -236,6 +241,7 @@ export default function ReceiveYarn() {
       setAllDyrrItems(dyriData);
       setAllDyrrs(dyrrsData.filter(r => dyriData.some(item => item.receipt_id === r.id)));
       setAllReturns(returnsRes.data || []);
+      setAllRedyeingItems(redyeRes.data || []);
     } catch (err) {
       console.error('Error fetching all DOFs:', err);
     } finally {
@@ -319,6 +325,18 @@ export default function ReceiveYarn() {
           hMap[key] = (hMap[key] || 0) + parseFloat(item.quantity_kg);
         });
       }
+
+      // Fetch existing redyeing deliveries to subtract
+      const { data: redyeItems } = await supabase
+        .from('dyed_yarn_delivery_items')
+        .select('order_id, yarn_count_id, colour, quantity_kg, yarn_type, delivery:dyed_yarn_deliveries!inner(dof_id, delivery_type)')
+        .eq('delivery.dof_id', dof.id)
+        .eq('delivery.delivery_type', 'redyeing');
+
+      redyeItems?.forEach(item => {
+        const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}`;
+        hMap[key] = (hMap[key] || 0) - parseFloat(item.quantity_kg);
+      });
 
       const initialItems = dof.yarn_allocations.map(alloc => {
         const key = `${alloc.orderId}-${alloc.countId}-${alloc.colour}-${alloc.type}`;
@@ -454,6 +472,18 @@ export default function ReceiveYarn() {
           hMap[key] = (hMap[key] || 0) + parseFloat(item.quantity_kg);
         });
       }
+
+      // Fetch existing redyeing deliveries to subtract
+      const { data: redyeItems } = await supabase
+        .from('dyed_yarn_delivery_items')
+        .select('order_id, yarn_count_id, colour, quantity_kg, yarn_type, delivery:dyed_yarn_deliveries!inner(dof_id, delivery_type)')
+        .eq('delivery.dof_id', dof.id)
+        .eq('delivery.delivery_type', 'redyeing');
+
+      redyeItems?.forEach(item => {
+        const key = `${item.order_id}-${item.yarn_count_id}-${item.colour}-${item.yarn_type || 'warp'}`;
+        hMap[key] = (hMap[key] || 0) - parseFloat(item.quantity_kg);
+      });
 
       // 5. Map to Receipt Items
       const initialItems = dof.yarn_allocations.map(alloc => {
@@ -828,6 +858,140 @@ export default function ReceiveYarn() {
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1.5rem' }}>
+      <style>{`
+        .premium-input {
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          padding: 8px 12px;
+          outline: none;
+          font-family: inherit;
+          transition: all 0.2s ease-in-out;
+          background-color: #fff;
+          color: #1e293b;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+          width: 100%;
+        }
+        .premium-input:focus {
+          border-color: #7f1d1d;
+          box-shadow: 0 0 0 3px rgba(127, 29, 29, 0.15);
+        }
+        .premium-select {
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          padding: 8px 12px;
+          outline: none;
+          background-color: #fff;
+          color: #1e293b;
+          transition: all 0.2s ease-in-out;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+          cursor: pointer;
+          width: 100%;
+        }
+        .premium-select:focus {
+          border-color: #7f1d1d;
+          box-shadow: 0 0 0 3px rgba(127, 29, 29, 0.15);
+        }
+        .premium-row {
+          transition: background-color 0.2s ease;
+        }
+        .premium-row:hover {
+          background-color: rgba(248, 250, 252, 0.7);
+        }
+        .premium-btn {
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+        }
+        .premium-btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(127, 29, 29, 0.2);
+        }
+        .premium-btn:active:not(:disabled) {
+          transform: translateY(0);
+        }
+        .premium-toggle-btn {
+          transition: all 0.25s ease-in-out;
+        }
+        .premium-toggle-btn:hover {
+          transform: translateY(-1px);
+        }
+        .premium-toggle-btn:active {
+          transform: translateY(0);
+        }
+        .premium-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.25rem 0.6rem;
+          border-radius: 6px;
+          font-size: 0.72rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .premium-th {
+          padding: 1rem 0.75rem;
+          text-align: left;
+          font-size: 0.8rem;
+          font-weight: 800;
+          color: #475569;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          border-bottom: 2px solid #e2e8f0;
+        }
+        .premium-th-right {
+          text-align: right;
+        }
+        .premium-td {
+          padding: 0.875rem 0.75rem;
+          vertical-align: middle;
+          font-size: 0.875rem;
+          color: #334155;
+        }
+        .premium-td-right {
+          text-align: right;
+        }
+        .premium-group-header {
+          background: linear-gradient(135deg, #7f1d1d, #991b1b);
+          color: #fff;
+          padding: 8px 16px;
+          border-radius: 8px;
+          font-size: 0.9rem;
+          font-weight: 900;
+          box-shadow: 0 4px 6px rgba(127,29,29,0.15);
+          letter-spacing: 0.5px;
+        }
+        .premium-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background-color: rgba(15, 23, 42, 0.4);
+          backdrop-filter: blur(8px);
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          animation: fadeIn 0.25s ease-out;
+        }
+        .premium-modal-card {
+          background-color: #fff;
+          border-radius: 16px;
+          padding: 2.5rem;
+          width: 520px;
+          box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+          border: 1px solid #f1f5f9;
+          animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { transform: translateY(20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+      `}</style>
       {printData && (
         <DyedReceiptPrintModal 
           receipt={printData} 
@@ -848,20 +1012,81 @@ export default function ReceiveYarn() {
         </div>
 
         {/* Source Toggle */}
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-          <button onClick={() => { setSourceType('partner'); setReceiptItems([]); }} style={{ flex: 1, padding: '1rem', borderRadius: '12px', border: '2px solid', borderColor: sourceType === 'partner' ? 'var(--color-primary)' : '#eee', backgroundColor: sourceType === 'partner' ? 'var(--color-primary-light)' : '#fff', cursor: 'pointer' }}>
-            <div style={{ fontWeight: '800', color: sourceType === 'partner' ? 'var(--color-primary)' : '#666' }}>Receive from Partner</div>
+        <div style={{ display: 'flex', gap: '1.25rem', marginBottom: '2rem' }}>
+          <button 
+            onClick={() => { setSourceType('partner'); setReceiptItems([]); }} 
+            className="premium-toggle-btn"
+            style={{ 
+              flex: 1, 
+              padding: '1.25rem', 
+              borderRadius: '12px', 
+              border: '1px solid', 
+              borderColor: sourceType === 'partner' ? '#7f1d1d' : '#e2e8f0', 
+              background: sourceType === 'partner' ? 'linear-gradient(135deg, #7f1d1d, #991b1b)' : '#fff', 
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              boxShadow: sourceType === 'partner' ? '0 10px 15px -3px rgba(127, 29, 29, 0.2)' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+              transform: sourceType === 'partner' ? 'scale(1.02)' : 'scale(1)'
+            }}
+          >
+            <Users size={24} color={sourceType === 'partner' ? '#fff' : '#475569'} />
+            <div style={{ fontWeight: '800', fontSize: '1rem', color: sourceType === 'partner' ? '#fff' : '#475569' }}>Receive from Partner (Dyeing Unit)</div>
+            <div style={{ fontSize: '0.75rem', color: sourceType === 'partner' ? '#fecaca' : '#94a3b8' }}>Process deliveries back from external dyeing partners</div>
           </button>
-          <button onClick={() => { setSourceType('production'); setReceiptItems([]); setSelectedProductionForm(null); setProductionFormNumber(''); }} style={{ flex: 1, padding: '1rem', borderRadius: '12px', border: '2px solid', borderColor: sourceType === 'production' ? 'var(--color-primary)' : '#eee', backgroundColor: sourceType === 'production' ? 'var(--color-primary-light)' : '#fff', cursor: 'pointer' }}>
-            <div style={{ fontWeight: '800', color: sourceType === 'production' ? 'var(--color-primary)' : '#666' }}>Receive from Production</div>
+          
+          <button 
+            onClick={() => { setSourceType('production'); setReceiptItems([]); setSelectedProductionForm(null); setProductionFormNumber(''); }} 
+            className="premium-toggle-btn"
+            style={{ 
+              flex: 1, 
+              padding: '1.25rem', 
+              borderRadius: '12px', 
+              border: '1px solid', 
+              borderColor: sourceType === 'production' ? '#7f1d1d' : '#e2e8f0', 
+              background: sourceType === 'production' ? 'linear-gradient(135deg, #7f1d1d, #991b1b)' : '#fff', 
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              boxShadow: sourceType === 'production' ? '0 10px 15px -3px rgba(127, 29, 29, 0.2)' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+              transform: sourceType === 'production' ? 'scale(1.02)' : 'scale(1)'
+            }}
+          >
+            <Factory size={24} color={sourceType === 'production' ? '#fff' : '#475569'} />
+            <div style={{ fontWeight: '800', fontSize: '1rem', color: sourceType === 'production' ? '#fff' : '#475569' }}>Receive from Production (Internal returns)</div>
+            <div style={{ fontSize: '0.75rem', color: sourceType === 'production' ? '#fecaca' : '#94a3b8' }}>Receive excess/unused dyed yarn from warping or weaving</div>
           </button>
         </div>
 
         {sourceType === 'partner' && (
-          <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem', border: '1px solid #eee' }}>
-            <form onSubmit={handleSearchDof} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem', maxWidth: '600px' }}>
-              <input type="text" className="form-input" placeholder="Enter DOF Number..." value={dofNumber} onChange={e => setDofNumber(e.target.value)} style={{ fontWeight: '800' }} />
-              <button disabled={fetching} type="submit" className="btn btn-primary">{fetching ? <Loader size={18} className="spin" /> : 'Fetch Details'}</button>
+          <div className="glass-panel" style={{ padding: '1.75rem', marginBottom: '2.5rem', border: '1px solid #e2e8f0', borderRadius: '16px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.05)', backgroundColor: '#fff' }}>
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Search Dyeing Order Form</h3>
+            <form onSubmit={handleSearchDof} style={{ display: 'flex', gap: '0.75rem', maxWidth: '600px' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input 
+                  type="text" 
+                  className="premium-input" 
+                  placeholder="Enter DOF Number (e.g. AT/2026/DOF/00001)..." 
+                  value={dofNumber} 
+                  onChange={e => setDofNumber(e.target.value)} 
+                  style={{ fontWeight: '800', paddingLeft: '38px', height: '42px', fontSize: '0.9rem' }} 
+                />
+              </div>
+              <button 
+                disabled={fetching} 
+                type="submit" 
+                className="btn btn-primary premium-btn"
+                style={{ height: '42px', padding: '0 2rem', backgroundColor: '#7f1d1d', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: '800', cursor: 'pointer' }}
+              >
+                {fetching ? <Loader size={18} className="spin" /> : 'Fetch Details'}
+              </button>
             </form>
 
             {!selectedDof && (
@@ -908,7 +1133,7 @@ export default function ReceiveYarn() {
                         const sentValue = Math.max(0, rawSentValue - returnedValue);
 
                         // Dyed Received for this allocation
-                        const recValue = allDyrrItems
+                        const rawRecValue = allDyrrItems
                           .filter(item => item.receipt?.dof_id === dof.id && 
                             item.yarn_count_id === alloc.countId && 
                             item.colour === alloc.colour && 
@@ -916,6 +1141,17 @@ export default function ReceiveYarn() {
                             (item.order_id === alloc.orderId || !item.order_id)
                           )
                           .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+                        const redyeValue = allRedyeingItems
+                          .filter(item => item.delivery?.dof_id === dof.id &&
+                            item.yarn_count_id === alloc.countId &&
+                            item.colour === alloc.colour &&
+                            (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
+                            (item.order_id === alloc.orderId || !item.order_id)
+                          )
+                          .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+                        const recValue = Math.max(0, rawRecValue - redyeValue);
 
                         const matchedOrder = allOrders.find(o => o.id === alloc.orderId);
 
@@ -1140,14 +1376,15 @@ export default function ReceiveYarn() {
               }}>
                 {/* Card 1: DOF Details */}
                 <div style={{ 
-                  backgroundColor: activeDofAlert ? activeDofAlert.bgColor : 'var(--surface-current, #fff)', 
-                  border: activeDofAlert ? `1px solid ${activeDofAlert.borderColor}` : '1px solid var(--border-current, #eee)', 
+                  backgroundColor: '#fff', 
+                  border: '1px solid #e2e8f0', 
+                  borderTop: '4px solid #7f1d1d',
                   borderRadius: '12px', 
                   padding: '1.5rem',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
                 }}>
                   <h4 style={{ 
-                    margin: '0 0 1rem 0', 
+                    margin: '0 0 1.25rem 0', 
                     fontSize: '0.9rem', 
                     fontWeight: '900', 
                     color: '#7f1d1d', 
@@ -1157,56 +1394,34 @@ export default function ReceiveYarn() {
                     alignItems: 'center',
                     gap: '0.5rem'
                   }}>
-                    <FileText size={16} /> Dyeing Order Form Details
+                    <FileText size={18} /> Dyeing Order Form Details
                   </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.875rem' }}>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', fontSize: '0.875rem' }}>
                     <div>
-                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>DOF NUMBER</div>
-                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{selectedDof.dof_number}</div>
+                      <div style={{ color: '#64748b', fontWeight: '700', fontSize: '0.72rem', letterSpacing: '0.5px' }}>DOF NUMBER</div>
+                      <div style={{ fontWeight: '800', color: '#0f172a', marginTop: '2px', fontSize: '1rem' }}>{selectedDof.dof_number}</div>
                     </div>
+                    
                     <div>
-                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>STATUS</div>
-                      <div style={{ marginTop: '2px', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{ color: '#64748b', fontWeight: '700', fontSize: '0.72rem', letterSpacing: '0.5px' }}>STATUS BADGES</div>
+                      <div style={{ marginTop: '4px', display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
                         {(() => {
                           const approvalBadge = getApprovalStatusBadge(selectedDof.status);
                           const yarnBadge = getYarnStatusBadge(selectedDof.status);
                           return (
                             <>
-                              <span style={{ 
-                                padding: '0.15rem 0.5rem', 
-                                borderRadius: '4px', 
-                                fontSize: '0.75rem', 
-                                fontWeight: '800',
-                                backgroundColor: approvalBadge.bg,
-                                color: approvalBadge.text,
-                                textTransform: 'uppercase'
-                              }}>
+                              <span className="premium-badge" style={{ backgroundColor: approvalBadge.bg, color: approvalBadge.text }}>
                                 {approvalBadge.label}
                               </span>
-                              <span style={{ 
-                                padding: '0.15rem 0.5rem', 
-                                borderRadius: '4px', 
-                                fontSize: '0.75rem', 
-                                fontWeight: '800',
-                                backgroundColor: yarnBadge.bg,
-                                color: yarnBadge.text,
-                                textTransform: 'uppercase'
-                              }}>
+                              <span className="premium-badge" style={{ backgroundColor: yarnBadge.bg, color: yarnBadge.text }}>
                                 {yarnBadge.label}
                               </span>
                             </>
                           );
                         })()}
                         {activeDofAlert && (
-                          <span style={{ 
-                            padding: '0.15rem 0.5rem', 
-                            borderRadius: '4px', 
-                            fontSize: '0.75rem', 
-                            fontWeight: '800',
-                            backgroundColor: activeDofAlert.bgColor,
-                            color: activeDofAlert.color,
-                            border: `1px solid ${activeDofAlert.borderColor}`
-                          }}>
+                          <span className="premium-badge" style={{ backgroundColor: activeDofAlert.bgColor, color: activeDofAlert.color, border: `1px solid ${activeDofAlert.borderColor}` }}>
                             {activeDofAlert.label}
                           </span>
                         )}
@@ -1226,17 +1441,17 @@ export default function ReceiveYarn() {
                       return (
                         <>
                           {uniqueOrders.length > 0 && (
-                            <div style={{ gridColumn: 'span 2' }}>
-                              <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>ASSOCIATED ORDERS</div>
-                              <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px', wordBreak: 'break-all', whiteSpace: 'normal' }}>
+                            <div style={{ gridColumn: 'span 2', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+                              <div style={{ color: '#64748b', fontWeight: '700', fontSize: '0.72rem', letterSpacing: '0.5px' }}>ASSOCIATED ORDERS</div>
+                              <div style={{ fontWeight: '800', color: '#334155', marginTop: '2px', wordBreak: 'break-all', whiteSpace: 'normal', fontSize: '0.85rem' }}>
                                 {uniqueOrders.join(', ')}
                               </div>
                             </div>
                           )}
                           {uniqueDesigns.length > 0 && (
-                            <div style={{ gridColumn: 'span 2' }}>
-                              <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>DESIGNS</div>
-                              <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px', wordBreak: 'break-all', whiteSpace: 'normal' }}>
+                            <div style={{ gridColumn: 'span 2', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+                              <div style={{ color: '#64748b', fontWeight: '700', fontSize: '0.72rem', letterSpacing: '0.5px' }}>DESIGNS</div>
+                              <div style={{ fontWeight: '800', color: '#334155', marginTop: '2px', wordBreak: 'break-all', whiteSpace: 'normal', fontSize: '0.85rem' }}>
                                 {uniqueDesigns.join(', ')}
                               </div>
                             </div>
@@ -1245,31 +1460,36 @@ export default function ReceiveYarn() {
                       );
                     })()}
 
-                    <div style={{ gridColumn: 'span 2' }}>
-                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>DYEING PARTNER</div>
-                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{selectedDof.dyeing_unit?.partner_name || 'N/A'}</div>
+                    <div style={{ gridColumn: 'span 2', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+                      <div style={{ color: '#64748b', fontWeight: '700', fontSize: '0.72rem', letterSpacing: '0.5px' }}>DYEING PARTNER</div>
+                      <div style={{ fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>{selectedDof.dyeing_unit?.partner_name || 'N/A'}</div>
                     </div>
-                    <div>
-                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>EXPECTED DELIVERY</div>
-                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{selectedDof.expected_delivery_date || 'N/A'}</div>
+                    
+                    <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+                      <div style={{ color: '#64748b', fontWeight: '700', fontSize: '0.72rem', letterSpacing: '0.5px' }}>EXPECTED DELIVERY</div>
+                      <div style={{ fontWeight: '800', color: '#334155', marginTop: '2px' }}>{selectedDof.expected_delivery_date || 'N/A'}</div>
                     </div>
-                    <div>
-                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>CREATED AT</div>
-                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>{new Date(selectedDof.created_at).toLocaleDateString()}</div>
+                    
+                    <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+                      <div style={{ color: '#64748b', fontWeight: '700', fontSize: '0.72rem', letterSpacing: '0.5px' }}>CREATED AT</div>
+                      <div style={{ fontWeight: '800', color: '#334155', marginTop: '2px' }}>{new Date(selectedDof.created_at).toLocaleDateString()}</div>
                     </div>
                   </div>
                 </div>
 
                 {/* Card 2: Associated GYDRs */}
                 <div style={{ 
-                  backgroundColor: 'var(--surface-current, #fff)', 
-                  border: '1px solid var(--border-current, #eee)', 
+                  backgroundColor: '#fff', 
+                  border: '1px solid #e2e8f0', 
+                  borderTop: '4px solid #7f1d1d',
                   borderRadius: '12px', 
                   padding: '1.5rem',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                  display: 'flex',
+                  flexDirection: 'column'
                 }}>
                   <h4 style={{ 
-                    margin: '0 0 1rem 0', 
+                    margin: '0 0 1.25rem 0', 
                     fontSize: '0.9rem', 
                     fontWeight: '900', 
                     color: '#7f1d1d', 
@@ -1279,34 +1499,39 @@ export default function ReceiveYarn() {
                     alignItems: 'center',
                     gap: '0.5rem'
                   }}>
-                    <Truck size={16} /> Associated Greige Deliveries (GYDR)
+                    <Truck size={18} /> Associated Greige Deliveries (GYDR)
                   </h4>
                   {associatedGydrs.length === 0 ? (
-                    <div style={{ color: '#64748b', fontSize: '0.875rem', padding: '1rem', backgroundColor: '#f8fafc', borderRadius: '8px', textAlign: 'center' }}>
+                    <div style={{ color: '#64748b', fontSize: '0.875rem', padding: '2rem 1rem', backgroundColor: '#f8fafc', borderRadius: '8px', textAlign: 'center', border: '1px dashed #e2e8f0', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       No greige yarn delivery receipts found for this DOF.
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '280px', overflowY: 'auto', paddingRight: '4px', flex: 1 }}>
                       {associatedGydrs.map((g, i) => (
                         <div key={i} style={{ 
-                          padding: '0.75rem', 
+                          padding: '0.75rem 1rem', 
                           backgroundColor: '#f8fafc', 
                           border: '1px solid #e2e8f0', 
                           borderRadius: '8px',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
-                          fontSize: '0.825rem'
-                        }}>
+                          fontSize: '0.825rem',
+                          transition: 'all 0.2s',
+                          cursor: 'default'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                        >
                           <div>
-                            <div style={{ fontWeight: '800', color: '#1e293b' }}>{g.gydr_number}</div>
+                            <div style={{ fontWeight: '800', color: '#7f1d1d' }}>{g.gydr_number}</div>
                             <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
                               Date: {new Date(g.created_at).toLocaleDateString()} | Veh: {g.vehicle_no || 'N/A'}
                             </div>
                           </div>
                           <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontWeight: '700', color: '#475569', fontSize: '0.75rem' }}>DELIVERED BY</div>
-                            <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.75rem' }}>{g.delivered_by}</div>
+                            <div style={{ fontWeight: '700', color: '#64748b', fontSize: '0.65rem', letterSpacing: '0.5px' }}>DELIVERED BY</div>
+                            <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.78rem' }}>{g.delivered_by}</div>
                           </div>
                         </div>
                       ))}
@@ -1319,17 +1544,26 @@ export default function ReceiveYarn() {
         )}
 
         {sourceType === 'production' && (
-          <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem', border: '1px solid #eee' }}>
-            <form onSubmit={handleSearchProductionForm} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1rem', maxWidth: '600px' }}>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="Enter WOF or Weaving Order Number..." 
-                value={productionFormNumber} 
-                onChange={e => setProductionFormNumber(e.target.value)} 
-                style={{ fontWeight: '800' }} 
-              />
-              <button disabled={fetching} type="submit" className="btn btn-primary" style={{ backgroundColor: '#7f1d1d' }}>
+          <div className="glass-panel" style={{ padding: '1.75rem', marginBottom: '2.5rem', border: '1px solid #e2e8f0', borderRadius: '16px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.05)', backgroundColor: '#fff' }}>
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Search Production Form (WOF or Weaving Order)</h3>
+            <form onSubmit={handleSearchProductionForm} style={{ display: 'flex', gap: '0.75rem', maxWidth: '600px' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input 
+                  type="text" 
+                  className="premium-input" 
+                  placeholder="Enter WOF or Weaving Order Number (e.g. AT/2026/WOF/00001)..." 
+                  value={productionFormNumber} 
+                  onChange={e => setProductionFormNumber(e.target.value)} 
+                  style={{ fontWeight: '800', paddingLeft: '38px', height: '42px', fontSize: '0.9rem' }} 
+                />
+              </div>
+              <button 
+                disabled={fetching} 
+                type="submit" 
+                className="btn btn-primary premium-btn" 
+                style={{ height: '42px', padding: '0 2rem', backgroundColor: '#7f1d1d', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: '800', cursor: 'pointer' }}
+              >
                 {fetching ? <Loader size={18} className="spin" /> : 'Fetch Details'}
               </button>
             </form>
@@ -1413,42 +1647,43 @@ export default function ReceiveYarn() {
         {(selectedDof || (sourceType === 'production' && selectedProductionForm)) && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             {Object.entries(groupedItemsByOrder()).map(([oid, group]) => (
-              <div key={oid} className="glass-panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid #eee' }}>
-                <div style={{ padding: '1.25rem 1.5rem', backgroundColor: '#fcfaf9', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <div style={{ backgroundColor: '#7f1d1d', color: '#fff', padding: '6px 14px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: '800' }}>
+              <div key={oid} className="glass-panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid #e2e8f0', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+                <div style={{ padding: '1.25rem 1.5rem', backgroundColor: '#fcfaf9', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <div className="premium-group-header">
                     ORDER: {group.info.number} {group.info.design && `· ${group.info.design}`}
                   </div>
                 </div>
                 
                 {group.warp.length > 0 && (
-                  <div style={{ padding: '1.25rem 1.5rem 0 1.5rem' }}>
-                    <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '900', color: '#7f1d1d', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <div style={{ padding: '1.5rem' }}>
+                    <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: '900', color: '#7f1d1d', textTransform: 'uppercase', letterSpacing: '0.5px', borderLeft: '4px solid #7f1d1d', paddingLeft: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Dna size={18} />
                       {sourceType === 'partner' ? 'Warp Details' : 'Warp Yarn Returns'}
                     </h4>
                     <table className="item-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         {sourceType === 'partner' ? (
-                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
-                            <th style={{ width: '12%', textAlign: 'left' }}>Count</th>
-                            <th style={{ width: '10%', textAlign: 'left' }}>Colour</th>
-                            <th style={{ width: '10%', textAlign: 'right' }}>Required (kg)</th>
-                            <th style={{ width: '10%', textAlign: 'right' }}>Sent (kg)</th>
-                            <th style={{ width: '10%', textAlign: 'right' }}>Prev. Rec (kg)</th>
-                            <th style={{ width: '10%', textAlign: 'right', color: '#b91c1c' }}>Balance (kg)</th>
-                            <th style={{ width: '10%' }}>Received Weight (kg)</th>
-                            <th style={{ width: '10%' }}>Lot Number</th>
-                            <th style={{ width: '10%' }}>Location</th>
-                            <th style={{ width: '8%', textAlign: 'center' }}>Actions</th>
+                          <tr>
+                            <th className="premium-th" style={{ width: '12%' }}>Count</th>
+                            <th className="premium-th" style={{ width: '10%' }}>Colour</th>
+                            <th className="premium-th premium-th-right" style={{ width: '10%' }}>Required (kg)</th>
+                            <th className="premium-th premium-th-right" style={{ width: '10%' }}>Sent (kg)</th>
+                            <th className="premium-th premium-th-right" style={{ width: '10%' }}>Prev. Rec (kg)</th>
+                            <th className="premium-th premium-th-right" style={{ width: '10%', color: '#b91c1c' }}>Balance (kg)</th>
+                            <th className="premium-th" style={{ width: '10%' }}>Received Weight (kg)</th>
+                            <th className="premium-th" style={{ width: '10%' }}>Lot Number</th>
+                            <th className="premium-th" style={{ width: '10%' }}>Location</th>
+                            <th className="premium-th" style={{ width: '8%', textAlign: 'center' }}>Actions</th>
                           </tr>
                         ) : (
-                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
-                            <th style={{ width: '15%', textAlign: 'left' }}>Count</th>
-                            <th style={{ width: '15%', textAlign: 'left' }}>Colour</th>
-                            <th style={{ width: '15%', textAlign: 'left' }}>Lot Number</th>
-                            <th style={{ width: '15%', textAlign: 'right' }}>Delivered Qty (kg)</th>
-                            <th style={{ width: '15%' }}>Return Qty (kg)</th>
-                            <th style={{ width: '15%' }}>Location</th>
-                            <th style={{ width: '10%', textAlign: 'center' }}>Actions</th>
+                          <tr>
+                            <th className="premium-th" style={{ width: '15%' }}>Count</th>
+                            <th className="premium-th" style={{ width: '15%' }}>Colour</th>
+                            <th className="premium-th" style={{ width: '15%' }}>Lot Number</th>
+                            <th className="premium-th premium-th-right" style={{ width: '15%' }}>Delivered Qty (kg)</th>
+                            <th className="premium-th" style={{ width: '15%' }}>Return Qty (kg)</th>
+                            <th className="premium-th" style={{ width: '15%' }}>Location</th>
+                            <th className="premium-th" style={{ width: '10%', textAlign: 'center' }}>Actions</th>
                           </tr>
                         )}
                       </thead>
@@ -1482,34 +1717,35 @@ export default function ReceiveYarn() {
                 )}
 
                 {group.weft.length > 0 && (
-                  <div style={{ padding: '1.25rem 1.5rem 1.5rem 1.5rem' }}>
-                    <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '900', color: '#0d9488', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <div style={{ padding: '1.5rem' }}>
+                    <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: '900', color: '#0d9488', textTransform: 'uppercase', letterSpacing: '0.5px', borderLeft: '4px solid #0d9488', paddingLeft: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Dna size={18} />
                       {sourceType === 'partner' ? 'Weft Details' : 'Weft Yarn Returns'}
                     </h4>
                     <table className="item-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         {sourceType === 'partner' ? (
-                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
-                            <th style={{ width: '12%', textAlign: 'left' }}>Count</th>
-                            <th style={{ width: '10%', textAlign: 'left' }}>Colour</th>
-                            <th style={{ width: '10%', textAlign: 'right' }}>Required (kg)</th>
-                            <th style={{ width: '10%', textAlign: 'right' }}>Sent (kg)</th>
-                            <th style={{ width: '10%', textAlign: 'right' }}>Prev. Rec (kg)</th>
-                            <th style={{ width: '10%', textAlign: 'right', color: '#b91c1c' }}>Balance (kg)</th>
-                            <th style={{ width: '10%' }}>Received Weight (kg)</th>
-                            <th style={{ width: '10%' }}>Lot Number</th>
-                            <th style={{ width: '10%' }}>Location</th>
-                            <th style={{ width: '8%', textAlign: 'center' }}>Actions</th>
+                          <tr>
+                            <th className="premium-th" style={{ width: '12%' }}>Count</th>
+                            <th className="premium-th" style={{ width: '10%' }}>Colour</th>
+                            <th className="premium-th premium-th-right" style={{ width: '10%' }}>Required (kg)</th>
+                            <th className="premium-th premium-th-right" style={{ width: '10%' }}>Sent (kg)</th>
+                            <th className="premium-th premium-th-right" style={{ width: '10%' }}>Prev. Rec (kg)</th>
+                            <th className="premium-th premium-th-right" style={{ width: '10%', color: '#b91c1c' }}>Balance (kg)</th>
+                            <th className="premium-th" style={{ width: '10%' }}>Received Weight (kg)</th>
+                            <th className="premium-th" style={{ width: '10%' }}>Lot Number</th>
+                            <th className="premium-th" style={{ width: '10%' }}>Location</th>
+                            <th className="premium-th" style={{ width: '8%', textAlign: 'center' }}>Actions</th>
                           </tr>
                         ) : (
-                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #eee' }}>
-                            <th style={{ width: '15%', textAlign: 'left' }}>Count</th>
-                            <th style={{ width: '15%', textAlign: 'left' }}>Colour</th>
-                            <th style={{ width: '15%', textAlign: 'left' }}>Lot Number</th>
-                            <th style={{ width: '15%', textAlign: 'right' }}>Delivered Qty (kg)</th>
-                            <th style={{ width: '15%' }}>Return Qty (kg)</th>
-                            <th style={{ width: '15%' }}>Location</th>
-                            <th style={{ width: '10%', textAlign: 'center' }}>Actions</th>
+                          <tr>
+                            <th className="premium-th" style={{ width: '15%' }}>Count</th>
+                            <th className="premium-th" style={{ width: '15%' }}>Colour</th>
+                            <th className="premium-th" style={{ width: '15%' }}>Lot Number</th>
+                            <th className="premium-th premium-th-right" style={{ width: '15%' }}>Delivered Qty (kg)</th>
+                            <th className="premium-th" style={{ width: '15%' }}>Return Qty (kg)</th>
+                            <th className="premium-th" style={{ width: '15%' }}>Location</th>
+                            <th className="premium-th" style={{ width: '10%', textAlign: 'center' }}>Actions</th>
                           </tr>
                         )}
                       </thead>
@@ -1544,24 +1780,34 @@ export default function ReceiveYarn() {
               </div>
             ))}
 
-            <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem', border: '1px solid #eee' }}>
-              <button onClick={() => navigate('/dyed-yarn')} className="btn btn-secondary">Cancel</button>
-              <button onClick={handleProceed} className="btn btn-primary" style={{ padding: '0.75rem 3rem', fontWeight: '900', backgroundColor: '#7f1d1d' }}>Confirm Logistics <ChevronRight size={18} /></button>
+            <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+              <button onClick={() => navigate('/dyed-yarn')} className="btn btn-secondary premium-btn" style={{ height: '42px', padding: '0 1.5rem', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', color: '#475569', cursor: 'pointer', fontWeight: '800' }}>Cancel</button>
+              <button onClick={handleProceed} className="btn btn-primary premium-btn" style={{ height: '42px', padding: '0 2.5rem', fontWeight: '900', backgroundColor: '#7f1d1d', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 6px rgba(127, 29, 29, 0.15)' }}>Confirm Logistics <ChevronRight size={18} /></button>
             </div>
           </div>
         )}
 
         {step === 2 && (
-          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="glass-panel" style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '2.5rem', width: '500px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
-              <h3 style={{ margin: '0 0 1.5rem 0', fontWeight: '900', color: '#7f1d1d' }}>Finalize Receipt</h3>
+          <div className="premium-modal-overlay">
+            <div className="premium-modal-card">
+              <h3 style={{ margin: '0 0 1.5rem 0', fontWeight: '950', fontSize: '1.25rem', color: '#7f1d1d', letterSpacing: '0.5px' }}>Finalize Receipt</h3>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                 {sourceType === 'partner' && (
                   <div style={{ padding: '1.25rem', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', marginBottom: '0.5rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#166534' }}>DOF COMPLETION PROGRESS</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#166534', letterSpacing: '0.5px' }}>DOF COMPLETION PROGRESS</span>
                       <span style={{ fontSize: '1rem', fontWeight: '900', color: '#166534' }}>{dofProgress.toFixed(1)}%</span>
+                    </div>
+                    {/* Visual Progress Bar */}
+                    <div style={{ width: '100%', height: '8px', backgroundColor: '#e2e8f0', borderRadius: '9999px', overflow: 'hidden', marginBottom: '1rem' }}>
+                      <div style={{ 
+                        width: `${Math.min(100, dofProgress)}%`, 
+                        height: '100%', 
+                        background: 'linear-gradient(90deg, #22c55e, #16a34a)', 
+                        borderRadius: '9999px',
+                        transition: 'width 0.4s ease-out'
+                      }} />
                     </div>
                     {dofProgress >= 95 && (
                       <div style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: '700', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1580,15 +1826,21 @@ export default function ReceiveYarn() {
                   </div>
                 )}
 
-                <div><label className="form-label">DC Number</label><input className="form-input" placeholder="e.g. DC-12345" value={logistics.dc_number} onChange={e => setLogistics({...logistics, dc_number: e.target.value})} /></div>
-                <div><label className="form-label">Vehicle No</label><input className="form-input" placeholder="e.g. TN 01 AB 1234" value={logistics.vehicle_no} onChange={e => setLogistics({...logistics, vehicle_no: e.target.value})} /></div>
                 <div>
-                  <label className="form-label">Received By</label>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.8rem', color: '#475569', marginBottom: '0.35rem', display: 'block' }}>DC Number</label>
+                  <input className="premium-input" placeholder="e.g. DC-12345" value={logistics.dc_number} onChange={e => setLogistics({...logistics, dc_number: e.target.value})} style={{ fontWeight: '800' }} />
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.8rem', color: '#475569', marginBottom: '0.35rem', display: 'block' }}>Vehicle No</label>
+                  <input className="premium-input" placeholder="e.g. TN 01 AB 1234" value={logistics.vehicle_no} onChange={e => setLogistics({...logistics, vehicle_no: e.target.value})} style={{ fontWeight: '800' }} />
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontWeight: '700', fontSize: '0.8rem', color: '#475569', marginBottom: '0.35rem', display: 'block' }}>Received By</label>
                   <select
-                    className="form-input"
+                    className="premium-select"
                     value={logistics.received_by}
                     onChange={e => setLogistics({...logistics, received_by: e.target.value})}
-                    style={{ backgroundColor: '#fff', cursor: 'pointer' }}
+                    style={{ backgroundColor: '#fff', cursor: 'pointer', fontWeight: '800' }}
                   >
                     <option value="">Select Personnel...</option>
                     {logistics.received_by && !yarnWorkers.some(w => w.worker_name === logistics.received_by) && (
@@ -1601,20 +1853,25 @@ export default function ReceiveYarn() {
                 </div>
                 
                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
-                  <button onClick={() => setStep(1)} className="btn btn-secondary" style={{ flex: 1 }}>Back</button>
+                  <button onClick={() => setStep(1)} className="btn btn-secondary premium-btn" style={{ flex: 1, height: '42px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', color: '#475569', cursor: 'pointer', fontWeight: '800' }}>Back</button>
                   <button 
                     onClick={handleSubmit} 
                     disabled={loading} 
-                    className="btn btn-primary" 
+                    className="btn btn-primary premium-btn" 
                     style={{ 
                       flex: 2, 
+                      height: '42px',
+                      borderRadius: '8px',
+                      border: 'none',
                       fontWeight: '900', 
                       backgroundColor: '#7f1d1d',
+                      color: '#fff',
                       opacity: loading ? 0.7 : 1,
-                      cursor: loading ? 'not-allowed' : 'pointer'
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 4px 6px rgba(127, 29, 29, 0.15)'
                     }}
                   >
-                    {loading ? <Loader size={18} className="spin" /> : 'Confirm & Generate Receipt'}
+                    {loading ? <Loader size={18} className="spin" /> : 'Confirm & Generate'}
                   </button>
                 </div>
               </div>
@@ -1631,8 +1888,8 @@ function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLo
   const balance = Math.max(0, item.sent_qty - item.historical_qty);
   
   return (
-    <tr style={{ backgroundColor: item.isSplit ? '#f8fafc' : 'transparent' }}>
-      <td>
+    <tr className="premium-row" style={{ backgroundColor: item.isSplit ? '#f8fafc' : 'transparent', borderBottom: '1px solid #f1f5f9' }}>
+      <td className="premium-td">
         {item.isSplit ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#64748b', paddingLeft: '1rem', fontWeight: '700', fontSize: '0.85rem' }}>
             <MoveHorizontal size={14} />
@@ -1644,45 +1901,45 @@ function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLo
           </span>
         )}
       </td>
-      <td style={{ fontWeight: '700', color: '#7f1d1d' }}>
+      <td className="premium-td" style={{ fontWeight: '700', color: '#7f1d1d' }}>
         {item.isSplit ? '' : item.colour}
       </td>
-      <td style={{ textAlign: 'right', fontWeight: '600' }}>
+      <td className="premium-td premium-td-right" style={{ fontWeight: '600' }}>
         {item.isSplit ? '' : item.required_qty.toFixed(2)}
       </td>
-      <td style={{ textAlign: 'right', fontWeight: '600' }}>
+      <td className="premium-td premium-td-right" style={{ fontWeight: '600' }}>
         {item.isSplit ? '' : item.sent_qty.toFixed(2)}
       </td>
-      <td style={{ textAlign: 'right', fontWeight: '700', color: '#16a34a' }}>
+      <td className="premium-td premium-td-right" style={{ fontWeight: '700', color: '#16a34a' }}>
         {item.isSplit ? '' : item.historical_qty.toFixed(2)}
       </td>
-      <td style={{ textAlign: 'right', fontWeight: '800', color: '#b91c1c' }}>
+      <td className="premium-td premium-td-right" style={{ fontWeight: '800', color: '#b91c1c' }}>
         {item.isSplit ? '' : balance.toFixed(2)}
       </td>
-      <td>
+      <td className="premium-td">
         <input 
           type="number" 
           step="0.01" 
-          className="form-input" 
+          className="premium-input" 
           style={{ textAlign: 'right', fontWeight: '900', fontSize: '1rem', padding: '6px 12px' }} 
           value={item.received_weight} 
           onChange={e => updateItem('received_weight', e.target.value)} 
           placeholder="0.00" 
         />
       </td>
-      <td>
+      <td className="premium-td">
         <input 
           type="text" 
-          className="form-input" 
+          className="premium-input" 
           style={{ fontWeight: '700', fontSize: '0.875rem', padding: '6px 12px' }} 
           value={item.lot_number || ''} 
           onChange={e => updateItem('lot_number', e.target.value)} 
           placeholder="e.g. Lot 1" 
         />
       </td>
-      <td>
+      <td className="premium-td">
         <select 
-          className="form-input" 
+          className="premium-select" 
           style={{ fontWeight: '700', fontSize: '0.85rem' }} 
           value={item.location_id} 
           onChange={e => updateItem('location_id', e.target.value)}
@@ -1691,7 +1948,7 @@ function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLo
           {locations.map(l => <option key={l.id} value={l.id}>{l.location_name}</option>)}
         </select>
       </td>
-      <td style={{ textAlign: 'center' }}>
+      <td className="premium-td" style={{ textAlign: 'center' }}>
         {item.isSplit ? (
           <button 
             type="button"
@@ -1705,9 +1962,11 @@ function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLo
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              borderRadius: '4px'
+              borderRadius: '4px',
+              transition: 'all 0.2s'
             }}
             title="Remove Lot Split"
+            className="premium-btn"
           >
             <X size={18} />
           </button>
@@ -1715,15 +1974,19 @@ function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLo
           <button 
             type="button"
             onClick={onAddLot}
-            className="btn btn-secondary"
+            className="btn btn-secondary premium-btn"
             style={{ 
-              padding: '4px 10px', 
+              padding: '6px 12px', 
               fontSize: '0.75rem', 
               fontWeight: '800', 
               borderRadius: '6px',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '0.25rem'
+              gap: '0.25rem',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #cbd5e1',
+              color: '#475569',
+              cursor: 'pointer'
             }}
           >
             + Add Lot
@@ -1738,8 +2001,8 @@ function ProductionDataRow({ item, yarnCounts, locations, updateItem, onAddLot, 
   const countObj = yarnCounts.find(y => y.id === item.yarn_count_id);
   
   return (
-    <tr style={{ backgroundColor: item.isSplit ? '#f8fafc' : 'transparent' }}>
-      <td>
+    <tr className="premium-row" style={{ backgroundColor: item.isSplit ? '#f8fafc' : 'transparent', borderBottom: '1px solid #f1f5f9' }}>
+      <td className="premium-td">
         {item.isSplit ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#64748b', paddingLeft: '1rem', fontWeight: '700', fontSize: '0.85rem' }}>
             <MoveHorizontal size={14} />
@@ -1751,36 +2014,36 @@ function ProductionDataRow({ item, yarnCounts, locations, updateItem, onAddLot, 
           </span>
         )}
       </td>
-      <td style={{ fontWeight: '700', color: '#7f1d1d' }}>
+      <td className="premium-td" style={{ fontWeight: '700', color: '#7f1d1d' }}>
         {item.isSplit ? '' : item.colour}
       </td>
-      <td>
+      <td className="premium-td">
         <input 
           type="text" 
-          className="form-input" 
+          className="premium-input" 
           style={{ fontWeight: '700', fontSize: '0.875rem', padding: '6px 12px' }} 
           value={item.lot_number || ''} 
           onChange={e => updateItem('lot_number', e.target.value)} 
           placeholder="e.g. Lot 1" 
         />
       </td>
-      <td style={{ textAlign: 'right', fontWeight: '600' }}>
+      <td className="premium-td premium-td-right" style={{ fontWeight: '600' }}>
         {item.isSplit ? '' : item.sent_qty.toFixed(2)}
       </td>
-      <td>
+      <td className="premium-td">
         <input 
           type="number" 
           step="0.01" 
-          className="form-input" 
+          className="premium-input" 
           style={{ textAlign: 'right', fontWeight: '900', fontSize: '1rem', padding: '6px 12px' }} 
           value={item.received_weight} 
           onChange={e => updateItem('received_weight', e.target.value)} 
           placeholder="0.00" 
         />
       </td>
-      <td>
+      <td className="premium-td">
         <select 
-          className="form-input" 
+          className="premium-select" 
           style={{ fontWeight: '700', fontSize: '0.85rem' }} 
           value={item.location_id} 
           onChange={e => updateItem('location_id', e.target.value)}
@@ -1789,7 +2052,7 @@ function ProductionDataRow({ item, yarnCounts, locations, updateItem, onAddLot, 
           {locations.map(l => <option key={l.id} value={l.id}>{l.location_name}</option>)}
         </select>
       </td>
-      <td style={{ textAlign: 'center' }}>
+      <td className="premium-td" style={{ textAlign: 'center' }}>
         {item.isSplit ? (
           <button 
             type="button"
@@ -1803,9 +2066,11 @@ function ProductionDataRow({ item, yarnCounts, locations, updateItem, onAddLot, 
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              borderRadius: '4px'
+              borderRadius: '4px',
+              transition: 'all 0.2s'
             }}
             title="Remove Lot Split"
+            className="premium-btn"
           >
             <X size={18} />
           </button>
@@ -1813,15 +2078,19 @@ function ProductionDataRow({ item, yarnCounts, locations, updateItem, onAddLot, 
           <button 
             type="button"
             onClick={onAddLot}
-            className="btn btn-secondary"
+            className="btn btn-secondary premium-btn"
             style={{ 
-              padding: '4px 10px', 
+              padding: '6px 12px', 
               fontSize: '0.75rem', 
               fontWeight: '800', 
               borderRadius: '6px',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '0.25rem'
+              gap: '0.25rem',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #cbd5e1',
+              color: '#475569',
+              cursor: 'pointer'
             }}
           >
             + Add Lot

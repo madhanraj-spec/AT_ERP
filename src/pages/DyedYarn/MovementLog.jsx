@@ -219,7 +219,7 @@ export default function DyedYarnMovement() {
       } else {
         const { data, error } = await supabase
           .from('dyed_yarn_deliveries')
-          .select('*, items:dyed_yarn_delivery_items(*, location:master_locations(location_name), orders(*), yarn_count:master_yarn_counts(*))')
+          .select('*, dyeing_unit:master_partners(partner_name), items:dyed_yarn_delivery_items(*, location:master_locations(location_name), orders(*), yarn_count:master_yarn_counts(*))')
           .order('created_at', { ascending: false });
         if (error) throw error;
         setRecords(data || []);
@@ -578,6 +578,23 @@ export default function DyedYarnMovement() {
                       ) : (
                         (() => {
                           const firstItem = r.items?.[0] || {};
+                          const isRedyeing = r.delivery_type === 'redyeing' || firstItem.process_type === 'redyeing';
+
+                          if (isRedyeing) {
+                            return (
+                              <>
+                                <div style={{ fontWeight: '800', color: '#dc2626' }}>Redyeing Return</div>
+                                <div style={{ fontWeight: '600', color: '#475569', fontSize: '0.8rem' }}>
+                                  {r.dyeing_unit?.partner_name || 'Dyeing Partner'}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#666' }}>
+                                  {r.dof_number ? `DOF: ${r.dof_number}` : ''}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#999' }}>Delivered by: {r.delivered_by || '-'}</div>
+                              </>
+                            );
+                          }
+
                           let formNo = '—';
                           let machineName = '';
                           if (firstItem.process_type === 'warping') {
