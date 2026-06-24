@@ -54,11 +54,11 @@ export default function DyedYarnDashboard() {
       path: '/dyed-yarn/movement'
     },
     {
-      title: 'Order Processing Status',
+      title: 'Order Details',
       icon: <ClipboardList size={24} color="#92400e" />, 
       iconBg: '#fefce8',
-      description: 'View all orders with dyed yarn inventory status. Track received quantities, available stock, and receipt details by count and color.',
-      linkText: 'View Order Stock',
+      description: 'View details of order specifications and yarn information.',
+      linkText: 'View Order Details',
       path: '/dyed-yarn/orders'
     },
     {
@@ -252,7 +252,7 @@ export default function DyedYarnDashboard() {
               cursor: 'pointer'
             }}
           >
-            View Orders
+            View Order Details
           </button>
 
           <button 

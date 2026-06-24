@@ -329,9 +329,10 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
       const colour = item.colour || '—';
       const lot = item.lot_number || '—';
       const loc = item.location?.location_name || '—';
-      const key = `${countId}||${colour}||${lot}||${loc}`;
+      const type = item.yarn_type || 'warp';
+      const key = `${countId}||${colour}||${lot}||${loc}||${type}`;
       if (!groups[key]) {
-        groups[key] = { countId, colour, lotNumber: lot, locationName: loc, received: 0, delivered: 0 };
+        groups[key] = { countId, colour, lotNumber: lot, locationName: loc, type, received: 0, delivered: 0 };
       }
       groups[key].received += parseFloat(item.quantity_kg || 0);
     });
@@ -341,17 +342,18 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
       const colour = item.colour || '—';
       const lot = item.lot_number || '—';
       let loc = item.location?.location_name || '—';
+      const type = item.yarn_type || (item.process_type === 'warping' ? 'warp' : 'weft');
 
       if (loc === '—' && lot !== '—') {
-        const matchingReceipt = dyri.find(r => r.yarn_count_id === countId && r.colour === colour && (r.lot_number || '—') === lot);
+        const matchingReceipt = dyri.find(r => r.yarn_count_id === countId && r.colour === colour && (r.lot_number || '—') === lot && (r.yarn_type || 'warp') === type);
         if (matchingReceipt && matchingReceipt.location?.location_name) {
           loc = matchingReceipt.location.location_name;
         }
       }
 
-      const key = `${countId}||${colour}||${lot}||${loc}`;
+      const key = `${countId}||${colour}||${lot}||${loc}||${type}`;
       if (!groups[key]) {
-        groups[key] = { countId, colour, lotNumber: lot, locationName: loc, received: 0, delivered: 0 };
+        groups[key] = { countId, colour, lotNumber: lot, locationName: loc, type, received: 0, delivered: 0 };
       }
       groups[key].delivered += parseFloat(item.quantity_kg || 0);
     });
@@ -368,6 +370,9 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
       }))
       .filter(g => g.balance > 0.001)
       .sort((a, b) => {
+        if (a.type !== b.type) {
+          return a.type === 'warp' ? -1 : 1;
+        }
         if (a.colour !== b.colour) return a.colour.localeCompare(b.colour);
         if (a.countId !== b.countId) return a.countId - b.countId;
         return a.lotNumber.localeCompare(b.lotNumber);
@@ -749,15 +754,29 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
                     </tr>
                   );
                 }
-                return availableLots.map((item, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-current, #f3f4f6)', backgroundColor: '#fff' }}>
-                    <td style={{ ...tdStyle, fontWeight: '800', color: 'var(--color-primary)' }}>{item.colour}</td>
-                    <td style={{ ...tdStyle, fontWeight: '700', color: '#1e293b' }}>{formatCount(item.countId)}</td>
-                    <td style={{ ...tdStyle, fontWeight: '700', fontFamily: 'monospace' }}>{item.lotNumber}</td>
-                    <td style={{ ...numericTdStyle, color: '#16a34a' }}>{item.balance.toFixed(2)} kg</td>
-                    <td style={tdStyle}>{item.locationName}</td>
-                  </tr>
-                ));
+                return availableLots.map((item, idx) => {
+                  const showWarpHeader = idx === 0 && item.type === 'warp';
+                  const showWeftHeader = item.type !== 'warp' && (idx === 0 || availableLots[idx - 1].type === 'warp');
+
+                  return (
+                    <React.Fragment key={idx}>
+                      {(showWarpHeader || showWeftHeader) && (
+                        <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #cbd5e1' }}>
+                          <td colSpan="5" style={{ padding: '0.4rem 0.75rem', fontWeight: '800', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#475569' }}>
+                            {item.type === 'warp' ? 'Warp Yarn Lots' : 'Weft Yarn Lots'}
+                          </td>
+                        </tr>
+                      )}
+                      <tr style={{ borderBottom: '1px solid var(--border-current, #f3f4f6)', backgroundColor: '#fff' }}>
+                        <td style={{ ...tdStyle, fontWeight: '800', color: 'var(--color-primary)' }}>{item.colour}</td>
+                        <td style={{ ...tdStyle, fontWeight: '700', color: '#1e293b' }}>{formatCount(item.countId)}</td>
+                        <td style={{ ...tdStyle, fontWeight: '700', fontFamily: 'monospace' }}>{item.lotNumber}</td>
+                        <td style={{ ...numericTdStyle, color: '#16a34a' }}>{item.balance.toFixed(2)} kg</td>
+                        <td style={tdStyle}>{item.locationName}</td>
+                      </tr>
+                    </React.Fragment>
+                  );
+                });
               })()}
             </tbody>
           </table>

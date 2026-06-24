@@ -2793,7 +2793,7 @@ function SofStopWizardModal({ sof, onClose, onSuccess }) {
               </p>
               <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                 <button
-                  onClick={() => setStopStep('ask_splits')}
+                  onClick={() => setStopStep(stopHasSplits ? 'splits_table' : 'ask_splits')}
                   style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-muted-current)', fontWeight: '600' }}
                 >
                   Back
@@ -3087,11 +3087,7 @@ function SofStopWizardModal({ sof, onClose, onSuccess }) {
               <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                 <button
                   onClick={() => {
-                    if (stopHasSplits) {
-                      setStopStep('splits_table');
-                    } else {
-                      setStopStep('ask_realloc_now_later');
-                    }
+                    setStopStep('ask_realloc_now_later');
                   }}
                   style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', color: 'var(--text-muted-current)', fontWeight: '600' }}
                 >

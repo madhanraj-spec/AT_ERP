@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Layers, ChevronLeft, ChevronRight,
@@ -176,12 +177,38 @@ const TOTAL_DAYS = 30;
 
 function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, customTextColor, customLabel, topOffset, customHeight, tooltipType }) {
   const [hovered, setHovered] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+  const barRef = useRef(null);
   const sc = getStatusColor(wof.status);
 
   const handleClick = (e) => {
     e.stopPropagation();
     if (onWofClick) onWofClick(wof);
   };
+
+  const updateCoords = () => {
+    if (barRef.current) {
+      const rect = barRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.top,
+        left: rect.left,
+        width: rect.width
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (hovered) {
+      updateCoords();
+      // Listen to scroll and resize events in capture phase to catch scroll on Gantt container
+      window.addEventListener('scroll', updateCoords, true);
+      window.addEventListener('resize', updateCoords);
+      return () => {
+        window.removeEventListener('scroll', updateCoords, true);
+        window.removeEventListener('resize', updateCoords);
+      };
+    }
+  }, [hovered]);
 
   const bg = customBg || sc.bg;
   const border = customBorder || sc.border;
@@ -193,6 +220,7 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
 
   return (
     <div
+      ref={barRef}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={handleClick}
@@ -228,22 +256,22 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
         </span>
       )}
 
-      {/* Hover Tooltip */}
-      {hovered && (
+      {/* Hover Tooltip rendered via Portal to avoid overflow clipping */}
+      {hovered && createPortal(
         <div
           onClick={e => e.stopPropagation()}
           style={{
-            position: 'absolute',
-            bottom: 'calc(100% + 8px)',
-            left: '50%',
-            transform: 'translateX(-50%)',
+            position: 'fixed',
+            top: `${coords.top - 8}px`,
+            left: `${coords.left + coords.width / 2}px`,
+            transform: 'translate(-50%, -100%)',
             backgroundColor: '#1e293b',
             color: '#fff',
             borderRadius: '10px',
             padding: '0.75rem 1rem',
             minWidth: '240px',
             maxWidth: '320px',
-            zIndex: 100,
+            zIndex: 9999,
             boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
             pointerEvents: 'none',
             fontSize: '0.72rem',
@@ -375,7 +403,8 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -3335,13 +3364,19 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
     }
   }, [sofDetail]);
 
+  const getBalanceQty = () => {
+    const oQty = Number(sofDetail?.original_qty || sofDetail?.qty || 0);
+    if (stopHasSplits && stopSplits.length > 0) {
+      const completedSum = stopSplits.reduce((sum, s) => sum + (parseFloat(s.completedQty) || 0), 0);
+      return Math.max(0, Math.round((oQty - completedSum) * 100) / 100);
+    }
+    return oQty;
+  };
+
   const handleSplitsCountChange = (count) => {
     setReallocSplitsCount(count);
-    const defaultQty = sofDetail.qty > 0 
-      ? (Number(sofDetail.original_qty || sofDetail.qty) - sofDetail.qty)
-      : (sofDetail.original_qty || sofDetail.qty || 0);
-
-    const evenQty = Math.round((defaultQty / count) * 100) / 100;
+    const balanceQty = getBalanceQty();
+    const evenQty = Math.round((balanceQty / count) * 100) / 100;
 
     setReallocSplits(prev => {
       const next = [...prev];
@@ -3363,8 +3398,14 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
         next.splice(count);
       }
       
+      // Distribute balance evenly, last split gets remainder
       for (let i = 0; i < next.length; i++) {
-        next[i].qty = evenQty.toString();
+        if (i === next.length - 1) {
+          const otherSum = next.slice(0, i).reduce((s, x) => s + (parseFloat(x.qty) || 0), 0);
+          next[i] = { ...next[i], qty: Math.max(0, Math.round((balanceQty - otherSum) * 100) / 100).toString() };
+        } else {
+          next[i] = { ...next[i], qty: evenQty.toString() };
+        }
       }
       return next;
     });
@@ -4488,7 +4529,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                     </p>
                     <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                       <button
-                        onClick={() => setStopStep('ask_splits')}
+                        onClick={() => setStopStep(stopHasSplits ? 'splits_table' : 'ask_splits')}
                         style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
                       >
                         Back
@@ -4505,6 +4546,20 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                       <button
                         onClick={() => {
                           setReallocWhen('now');
+                          const balanceQty = getBalanceQty();
+                          setReallocQty(balanceQty.toString());
+                          setReallocSplitsCount(1);
+                          setReallocSplits([{
+                            sizing_type: sofDetail.sizing_type || 'in_house',
+                            qty: balanceQty.toString(),
+                            machine_id: '',
+                            machine_name: '',
+                            partner_id: '',
+                            partner_name: '',
+                            start_date: '',
+                            end_date: '',
+                            beam_name: sofDetail.beam_name || ''
+                          }]);
                           setStopStep('reallocate');
                         }}
                         style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#10b981', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
@@ -4600,7 +4655,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                           }
                           const remainingQty = originalQty - sum;
                           if (remainingQty > 0) {
-                            setStopStep('reallocate');
+                            setStopStep('ask_realloc_now_later');
                           } else {
                             setStopStep('confirm_stop');
                           }
@@ -4759,11 +4814,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                     <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                       <button
                         onClick={() => {
-                          if (stopHasSplits) {
-                            setStopStep('splits_table');
-                          } else {
-                            setStopStep('ask_realloc_now_later');
-                          }
+                          setStopStep('ask_realloc_now_later');
                         }}
                         style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
                       >
@@ -4771,9 +4822,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                       </button>
                       <button
                         onClick={() => {
-                          const parentRemainingQty = sofDetail.qty > 0 
-                            ? (Number(sofDetail.original_qty || sofDetail.qty) - sofDetail.qty)
-                            : (sofDetail.original_qty || sofDetail.qty || 0);
+                          const parentRemainingQty = getBalanceQty();
 
                           let totalSplitQty = 0;
                           for (let idx = 0; idx < reallocSplits.length; idx++) {
