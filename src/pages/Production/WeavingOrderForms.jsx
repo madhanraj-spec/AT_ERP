@@ -9,6 +9,8 @@ import { generateWeavingNumbersBulk, insertWeavingOrdersWithRetry } from '../../
 import PrintableWVOF from './PrintableWVOF';
 import PrintableWVOFDC from './PrintableWVOFDC';
 import DyedDeliveryPrintModal from '../DyedYarn/DyedDeliveryPrintModal';
+import DyedReceiptPrintModal from '../DyedYarn/DyedReceiptPrintModal';
+import DYRRDetail from '../../components/DYRRDetail';
 
 function resolveWvofStatusValue(wvof) {
   if (!wvof) return 'pending';
@@ -326,6 +328,7 @@ function calcBarPosition(wof, days) {
 
 function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, customTextColor, customLabel, topOffset, customHeight, tooltipType, deliveries }) {
   const [hovered, setHovered] = useState(false);
+  const [tooltipDirection, setTooltipDirection] = useState('up');
   const sc = getStatusColorForWeaving(wof);
 
   const handleClick = (e) => {
@@ -345,7 +348,26 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
 
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
+      onMouseEnter={(e) => {
+        setHovered(true);
+        const container = e.currentTarget.closest('.gantt-scroll-container');
+        if (container) {
+          const containerRect = container.getBoundingClientRect();
+          const barRect = e.currentTarget.getBoundingClientRect();
+          if (barRect.top - containerRect.top < 180) {
+            setTooltipDirection('down');
+          } else {
+            setTooltipDirection('up');
+          }
+        } else {
+          const barRect = e.currentTarget.getBoundingClientRect();
+          if (barRect.top < 220) {
+            setTooltipDirection('down');
+          } else {
+            setTooltipDirection('up');
+          }
+        }
+      }}
       onMouseLeave={() => setHovered(false)}
       onClick={handleClick}
       style={{
@@ -357,7 +379,7 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
         backgroundColor: bg,
         border: `1.5px solid ${border}`,
         borderRadius: '4px',
-        zIndex: 2,
+        zIndex: hovered ? 50 : 2,
         overflow: 'visible',
         display: 'flex', alignItems: 'center',
         paddingLeft: compact ? '4px' : '6px',
@@ -384,7 +406,10 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
           onClick={e => e.stopPropagation()}
           style={{
             position: 'absolute',
-            bottom: 'calc(100% + 8px)',
+            ...(tooltipDirection === 'down'
+              ? { top: 'calc(100% + 8px)', bottom: 'auto' }
+              : { bottom: 'calc(100% + 8px)', top: 'auto' }
+            ),
             left: '50%',
             transform: 'translateX(-50%)',
             backgroundColor: '#1e293b',
@@ -403,13 +428,15 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
         >
           <div style={{
             position: 'absolute',
-            bottom: '-6px',
             left: '50%',
             transform: 'translateX(-50%)',
             width: 0, height: 0,
             borderLeft: '6px solid transparent',
             borderRight: '6px solid transparent',
-            borderTop: '6px solid #1e293b'
+            ...(tooltipDirection === 'down'
+              ? { top: '-6px', bottom: 'auto', borderBottom: '6px solid #1e293b', borderTop: 'none' }
+              : { bottom: '-6px', top: 'auto', borderTop: '6px solid #1e293b', borderBottom: 'none' }
+            )
           }} />
 
           <div style={{ fontWeight: '800', fontSize: '0.78rem', color: '#fbbf24', marginBottom: '0.4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -603,6 +630,8 @@ export default function WeavingOrderForms() {
 
   const [weavingOrders, setWeavingOrders] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
+  const [receiptItems, setReceiptItems] = useState([]);
+  const [printDyrr, setPrintDyrr] = useState(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
@@ -1136,31 +1165,45 @@ export default function WeavingOrderForms() {
       if (!error) {
         setWeavingOrders(data || []);
         if (data && data.length > 0) {
-          const { data: delData, error: delError } = await supabase
-            .from('dyed_yarn_delivery_items')
-            .select(`
-              id,
-              production_form_id,
-              yarn_count_id,
-              quantity_kg,
-              colour,
-              lot_number,
-              process_type,
-              delivery:dyed_yarn_deliveries(
+          const uniqueOrderIds = Array.from(new Set(data.map(w => w.order_id).filter(Boolean)));
+          const [delRes, recRes] = await Promise.all([
+            supabase
+              .from('dyed_yarn_delivery_items')
+              .select(`
                 id,
-                dydr_number,
-                delivered_date,
-                delivered_by,
-                vehicle_no,
-                remarks
-              )
-            `)
-            .in('production_form_id', data.map(w => w.id));
-          if (!delError) {
-            setDeliveries(delData || []);
+                production_form_id,
+                yarn_count_id,
+                quantity_kg,
+                colour,
+                lot_number,
+                process_type,
+                delivery:dyed_yarn_deliveries(
+                  id,
+                  dydr_number,
+                  delivered_date,
+                  delivered_by,
+                  vehicle_no,
+                  remarks
+                )
+              `)
+              .in('production_form_id', data.map(w => w.id)),
+            uniqueOrderIds.length > 0
+              ? supabase
+                  .from('dyed_yarn_receipt_items')
+                  .select('*, yarn_count:master_yarn_counts(count_value, material, product_type), location:master_locations(location_name), receipt:dyed_yarn_receipts(id, dyrr_number, dof_id, dof_number, received_date, vehicle_no, dc_number, received_by, remarks, source_type)')
+                  .in('order_id', uniqueOrderIds)
+              : Promise.resolve({ data: [] })
+          ]);
+
+          if (!delRes.error) {
+            setDeliveries(delRes.data || []);
+          }
+          if (!recRes.error) {
+            setReceiptItems(recRes.data || []);
           }
         } else {
           setDeliveries([]);
+          setReceiptItems([]);
         }
       } else {
         console.error('Error fetching Weaving Orders:', error);
@@ -1740,7 +1783,7 @@ export default function WeavingOrderForms() {
       const { data: deliveries, error: delErr } = await supabase
         .from('dyed_yarn_delivery_items')
         .select(`
-          yarn_count_id, colour, lot_number, location_id, quantity_kg, production_form_id
+          yarn_count_id, colour, lot_number, location_id, quantity_kg, production_form_id, process_type
         `)
         .eq('order_id', wvof.order_id);
 
@@ -1779,7 +1822,18 @@ export default function WeavingOrderForms() {
       });
 
       validDeliveries?.forEach(d => {
-        const key = `${d.yarn_count_id}|${d.colour}|${d.lot_number || ''}|${d.location_id || ''}`;
+        let locId = d.location_id;
+        if (!locId && d.lot_number) {
+          const matchingReceipt = receipts?.find(r => 
+            r.yarn_count_id === d.yarn_count_id && 
+            r.colour === d.colour && 
+            (r.lot_number || '') === d.lot_number
+          );
+          if (matchingReceipt) {
+            locId = matchingReceipt.location_id;
+          }
+        }
+        const key = `${d.yarn_count_id}|${d.colour}|${d.lot_number || ''}|${locId || ''}`;
         if (stockMap[key]) {
           stockMap[key].available -= parseFloat(d.quantity_kg || 0);
         }
@@ -1793,13 +1847,13 @@ export default function WeavingOrderForms() {
 
       if (allErr) throw allErr;
 
-      // Map allotments from other weaving orders and current weaving order
+      // Map allotments from other weaving orders and current weaving order by count & colour
       const otherAllotmentsMap = {};
       const currentAllotmentsMap = {};
 
       allWeavings?.forEach(w => {
         w.weft_allotments?.forEach(a => {
-          const key = `${a.yarn_count_id || a.countId}|${a.colour}|${a.lot_number || ''}|${a.location_id || ''}`;
+          const key = `${a.yarn_count_id || a.countId}|${a.colour}`;
           const qty = parseFloat(a.allotted_qty || 0);
           if (w.id === wvof.id) {
             currentAllotmentsMap[key] = (currentAllotmentsMap[key] || 0) + qty;
@@ -1807,6 +1861,13 @@ export default function WeavingOrderForms() {
             otherAllotmentsMap[key] = (otherAllotmentsMap[key] || 0) + qty;
           }
         });
+      });
+
+      // Total available stock by count & colour
+      const totalStockMap = {};
+      Object.values(stockMap).forEach(s => {
+        const key = `${s.yarn_count_id}|${s.colour}`;
+        totalStockMap[key] = (totalStockMap[key] || 0) + s.available;
       });
 
       // Now build the list of weft requirements for this order
@@ -1822,73 +1883,20 @@ export default function WeavingOrderForms() {
         const yc = yarnCounts.find(y => y.id === countId);
         const countValueDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (req.countValue || req.count_value || '—');
 
-        // Identify all unique lot & location keys that have stock or allotments for this count & colour
-        const keys = new Set();
-        Object.keys(stockMap).forEach(k => {
-          const s = stockMap[k];
-          if (s.yarn_count_id === countId && s.colour === colour) {
-            keys.add(k);
-          }
+        const key = `${countId}|${colour}`;
+        const warehouseStock = totalStockMap[key] || 0;
+        const otherAllotted = otherAllotmentsMap[key] || 0;
+        const currentAllotted = currentAllotmentsMap[key] || 0;
+
+        builtRows.push({
+          yarn_count_id: countId,
+          countValue: countValueDisplay,
+          colour: colour,
+          required_qty: requiredQty,
+          available_qty: warehouseStock,
+          other_allotted: otherAllotted,
+          allotted_qty: currentAllotted > 0 ? currentAllotted.toString() : ''
         });
-
-        // Add keys from other allotments matching this count & colour
-        allWeavings?.forEach(w => {
-          w.weft_allotments?.forEach(a => {
-            const aCountId = a.yarn_count_id || a.countId;
-            if (aCountId === countId && a.colour === colour) {
-              const key = `${countId}|${colour}|${a.lot_number || ''}|${a.location_id || ''}`;
-              keys.add(key);
-            }
-          });
-        });
-
-        const currentAllotments = wvof.weft_allotments || [];
-
-        if (keys.size > 0) {
-          keys.forEach(key => {
-            const parts = key.split('|');
-            const lot = parts[2] || '—';
-            const locId = parts[3] || null;
-
-            const warehouseStock = stockMap[key]?.available || 0;
-            const otherAllotted = otherAllotmentsMap[key] || 0;
-            
-            // Find existing allotment in current order form
-            const currentMatch = currentAllotments.find(a => 
-              (a.yarn_count_id === countId || a.countId === countId) &&
-              a.colour === colour &&
-              (a.lot_number || '') === (lot === '—' ? '' : lot) &&
-              (a.location_id || '') === (locId || '')
-            );
-
-            builtRows.push({
-              yarn_count_id: countId,
-              countValue: countValueDisplay,
-              colour: colour,
-              required_qty: requiredQty,
-              lot_number: lot,
-              location_id: locId,
-              location_name: stockMap[key]?.location_name || (currentMatch?.location_name || '—'),
-              available_qty: warehouseStock,
-              other_allotted: otherAllotted,
-              allotted_qty: currentMatch ? currentMatch.allotted_qty.toString() : ''
-            });
-          });
-        } else {
-          // No stock in warehouse and no prior allotments
-          builtRows.push({
-            yarn_count_id: countId,
-            countValue: countValueDisplay,
-            colour: colour,
-            required_qty: requiredQty,
-            lot_number: '—',
-            location_id: null,
-            location_name: 'No stock in warehouse',
-            available_qty: 0,
-            other_allotted: 0,
-            allotted_qty: ''
-          });
-        }
       });
 
       setAllotRows(builtRows);
@@ -1929,9 +1937,9 @@ export default function WeavingOrderForms() {
           countValue: r.countValue,
           colour: r.colour,
           required_qty: r.required_qty,
-          lot_number: r.lot_number !== '—' ? r.lot_number : null,
-          location_id: r.location_id,
-          location_name: r.location_name,
+          lot_number: null,
+          location_id: null,
+          location_name: null,
           allotted_qty: parseFloat(r.allotted_qty)
         }));
 
@@ -2880,16 +2888,18 @@ export default function WeavingOrderForms() {
                                         <thead>
                                           <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
                                             <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Colour</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Yarn Count</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Allotted Qty (kg)</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Delivered Qty (kg)</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Balance Qty (kg)</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Count</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Allotted</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Delivered</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Balance</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Used</th>
+                                            <th style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Returned</th>
                                           </tr>
                                         </thead>
                                         <tbody>
                                           {(!wvof.weft_allotments || wvof.weft_allotments.length === 0) ? (
                                             <tr>
-                                              <td colSpan="5" style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
+                                              <td colSpan="7" style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
                                                 No allotments added to this weaving order form yet.
                                               </td>
                                             </tr>
@@ -2907,6 +2917,16 @@ export default function WeavingOrderForms() {
                                               const deliveredQty = matchingDel.reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
                                               const balance = Math.max(0, parseFloat(allot.allotted_qty || allot.qty || 0) - deliveredQty);
 
+                                              // Returns matching this count/colour on this WVOF
+                                              const returnedQty = wvof.yarn_returns
+                                                ? (wvof.yarn_returns || []).filter(r => 
+                                                    (r.yarn_count_id === (allot.countId || allot.yarn_count_id) || r.countId === (allot.countId || allot.yarn_count_id)) && 
+                                                    r.colour === allot.colour
+                                                  ).reduce((sum, r) => sum + parseFloat(r.quantity_returned || 0), 0)
+                                                : 0;
+
+                                              const usedQty = wvof.yarn_returns ? Math.max(0, deliveredQty - returnedQty) : deliveredQty;
+
                                               return (
                                                 <tr key={aIdx} style={{ borderBottom: '1px solid var(--border-current)' }}>
                                                   <td style={{ padding: '0.6rem 0.75rem', fontWeight: '600', color: 'var(--color-primary)' }}>{allot.colour || '—'}</td>
@@ -2914,6 +2934,8 @@ export default function WeavingOrderForms() {
                                                   <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#800000', textAlign: 'right' }}>{parseFloat(allot.allotted_qty || allot.qty || 0).toFixed(2)}</td>
                                                   <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#047857', textAlign: 'right' }}>{deliveredQty.toFixed(2)}</td>
                                                   <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: balance > 0.01 ? '#b45309' : '#047857', textAlign: 'right' }}>{balance.toFixed(2)}</td>
+                                                  <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#d97706', textAlign: 'right' }}>{usedQty.toFixed(2)}</td>
+                                                  <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: returnedQty > 0 ? '#b91c1c' : 'var(--text-muted-current)', textAlign: 'right' }}>{returnedQty.toFixed(2)}</td>
                                                 </tr>
                                               );
                                             })
@@ -2923,60 +2945,31 @@ export default function WeavingOrderForms() {
                                     </div>
                                   </div>
 
-                                  <div>
-                                    <h6 style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                      Associated DYDRs (Dyed Yarn Delivery Receipts)
-                                    </h6>
-                                    {deliveries.filter(d => d.production_form_id === wvof.id).length === 0 ? (
-                                      <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.78rem', fontStyle: 'italic' }}>
-                                        No DYDR delivery receipts have been created for this weaving order form yet.
-                                      </p>
-                                    ) : (
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                        {(() => {
-                                          const formDydis = deliveries.filter(d => d.production_form_id === wvof.id);
-                                          const uniqueDydrs = {};
-                                          formDydis.forEach(item => {
-                                            if (item.delivery) {
-                                              uniqueDydrs[item.delivery.id] = item.delivery;
-                                            }
-                                          });
-                                          const uniqueDydrList = Object.values(uniqueDydrs);
-                                          if (uniqueDydrList.length === 0) {
-                                            const totalFormDelivered = formDydis.reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
-                                            return (
-                                              <div style={{
-                                                padding: '0.6rem 1rem',
-                                                backgroundColor: '#f8fafc',
-                                                border: '1px solid #e2e8f0',
-                                                borderRadius: '8px',
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                alignItems: 'center',
-                                                fontSize: '0.78rem'
-                                              }}>
-                                                <span style={{ fontWeight: '850', color: '#1e293b' }}>Total Delivered Qty</span>
-                                                <span style={{ fontWeight: '700', color: '#047857' }}>{totalFormDelivered.toFixed(2)} kg</span>
-                                              </div>
-                                            );
-                                          }
-                                          return uniqueDydrList.map((del, dIdx) => {
-                                            const weight = formDydis.filter(item => item.delivery?.id === del.id).reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
-                                            return (
-                                              <div 
-                                                key={dIdx} 
-                                                onClick={() => {
-                                                  const items = formDydis.filter(item => item.delivery?.id === del.id);
-                                                  setSelectedDydr({
-                                                    ...del,
-                                                    weaving: wvof,
-                                                    items: items.map(it => ({
-                                                      ...it,
-                                                      orders: wvof.order
-                                                    }))
-                                                  });
-                                                }}
-                                                style={{
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginTop: '1.5rem' }}>
+                                    {/* Left Column - Associated DYDRs */}
+                                    <div>
+                                      <h6 style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                        Associated DYDRs (Dyed Yarn Delivery Receipts)
+                                      </h6>
+                                      {deliveries.filter(d => d.production_form_id === wvof.id).length === 0 ? (
+                                        <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.78rem', fontStyle: 'italic' }}>
+                                          No DYDR delivery receipts have been created for this weaving order form yet.
+                                        </p>
+                                      ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                          {(() => {
+                                            const formDydis = deliveries.filter(d => d.production_form_id === wvof.id);
+                                            const uniqueDydrs = {};
+                                            formDydis.forEach(item => {
+                                              if (item.delivery) {
+                                                uniqueDydrs[item.delivery.id] = item.delivery;
+                                              }
+                                            });
+                                            const uniqueDydrList = Object.values(uniqueDydrs);
+                                            if (uniqueDydrList.length === 0) {
+                                              const totalFormDelivered = formDydis.reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
+                                              return (
+                                                <div style={{
                                                   padding: '0.6rem 1rem',
                                                   backgroundColor: '#f8fafc',
                                                   border: '1px solid #e2e8f0',
@@ -2984,36 +2977,154 @@ export default function WeavingOrderForms() {
                                                   display: 'flex',
                                                   justifyContent: 'space-between',
                                                   alignItems: 'center',
-                                                  fontSize: '0.78rem',
-                                                  cursor: 'pointer',
-                                                  transition: 'all 0.15s'
-                                                }}
-                                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
-                                                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
-                                              >
-                                                <div>
-                                                  <span style={{ fontWeight: '800', color: '#800000', fontFamily: 'monospace' }}>{del.dydr_number}</span>
-                                                  <span style={{ color: 'var(--text-muted-current)', marginLeft: '1rem' }}>
-                                                    Date: {del.delivered_date ? new Date(del.delivered_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                                                  </span>
-                                                  <span style={{ color: 'var(--text-muted-current)', marginLeft: '1rem' }}>
-                                                    Delivered By: {del.delivered_by || '—'}
-                                                  </span>
+                                                  fontSize: '0.78rem'
+                                                }}>
+                                                  <span style={{ fontWeight: '850', color: '#1e293b' }}>Total Delivered Qty</span>
+                                                  <span style={{ fontWeight: '700', color: '#047857' }}>{totalFormDelivered.toFixed(2)} kg</span>
                                                 </div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                  <span style={{ fontWeight: '700', color: '#047857' }}>
-                                                    {weight.toFixed(2)} kg
-                                                  </span>
-                                                  <span style={{ color: '#800000', fontSize: '0.7rem', fontWeight: '700' }}>
-                                                    View Receipt
-                                                  </span>
+                                              );
+                                            }
+                                            return uniqueDydrList.map((del, dIdx) => {
+                                              const weight = formDydis.filter(item => item.delivery?.id === del.id).reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+                                              return (
+                                                <div 
+                                                  key={dIdx} 
+                                                  onClick={() => {
+                                                    const items = formDydis.filter(item => item.delivery?.id === del.id);
+                                                    setSelectedDydr({
+                                                      ...del,
+                                                      weaving: wvof,
+                                                      items: items.map(it => ({
+                                                        ...it,
+                                                        orders: wvof.order
+                                                      }))
+                                                    });
+                                                  }}
+                                                  style={{
+                                                    padding: '0.6rem 1rem',
+                                                    backgroundColor: '#f8fafc',
+                                                    border: '1px solid #e2e8f0',
+                                                    borderRadius: '8px',
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    fontSize: '0.78rem',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.15s'
+                                                  }}
+                                                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                                                >
+                                                  <div>
+                                                    <span style={{ fontWeight: '800', color: '#800000', fontFamily: 'monospace' }}>{del.dydr_number}</span>
+                                                    <span style={{ color: 'var(--text-muted-current)', marginLeft: '1rem' }}>
+                                                      Date: {del.delivered_date ? new Date(del.delivered_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                                    </span>
+                                                    <span style={{ color: 'var(--text-muted-current)', marginLeft: '1rem' }}>
+                                                      Delivered By: {del.delivered_by || '—'}
+                                                    </span>
+                                                  </div>
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                    <span style={{ fontWeight: '700', color: '#047857' }}>
+                                                      {weight.toFixed(2)} kg
+                                                    </span>
+                                                    <span style={{ color: '#800000', fontSize: '0.7rem', fontWeight: '700' }}>
+                                                      View Receipt
+                                                    </span>
+                                                  </div>
                                                 </div>
-                                              </div>
-                                            );
+                                              );
+                                            });
+                                          })()}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Right Column - Associated DYRRs */}
+                                    <div>
+                                      <h6 style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                        Associated DYRRs (Dyed Yarn Return Receipts)
+                                      </h6>
+                                      {!(wvof.status === 'completed' || wvof.status === 'stopped' || wvof.status === 'late_complete') ? (
+                                        <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.78rem', fontStyle: 'italic' }}>
+                                          Returns will be active once this Weaving Order Form is completed or stopped.
+                                        </p>
+                                      ) : (
+                                        (() => {
+                                          const associatedDyrrs = receiptItems.filter(item => {
+                                            return item.receipt?.source_type === 'production' && item.receipt?.dof_number === wvof.weaving_number;
                                           });
-                                        })()}
-                                      </div>
-                                    )}
+
+                                          if (associatedDyrrs.length === 0) {
+                                            return (
+                                              <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.78rem', fontStyle: 'italic' }}>
+                                                No DYRR return receipts have been created for this weaving order form yet.
+                                              </p>
+                                            );
+                                          }
+
+                                          const groupedDyrrMap = {};
+                                          associatedDyrrs.forEach(item => {
+                                            const rec = item.receipt;
+                                            if (!rec) return;
+                                            if (!groupedDyrrMap[rec.id]) {
+                                              groupedDyrrMap[rec.id] = {
+                                                id: rec.id,
+                                                dyrr_number: rec.dyrr_number,
+                                                received_date: rec.received_date,
+                                                received_by: rec.received_by,
+                                                vehicle_no: rec.vehicle_no,
+                                                dc_number: rec.dc_number,
+                                                remarks: rec.remarks,
+                                                source_type: rec.source_type,
+                                                dof_number: rec.dof_number,
+                                                items: []
+                                              };
+                                            }
+                                            groupedDyrrMap[rec.id].items.push(item);
+                                          });
+                                          const groupedDyrrList = Object.values(groupedDyrrMap);
+
+                                          return (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                              {groupedDyrrList.map(gDyrr => (
+                                                <DYRRDetail 
+                                                  key={gDyrr.id} 
+                                                  dyrr={gDyrr} 
+                                                  onPrint={(d) => {
+                                                    const printObj = {
+                                                      receiptNumber: d.dyrr_number,
+                                                      dyrr_number: d.dyrr_number,
+                                                      created_at: d.received_date,
+                                                      date: d.received_date ? new Date(d.received_date).toLocaleDateString() : '',
+                                                      source: 'production',
+                                                      source_type: 'production_return',
+                                                      partner_name: 'N/A',
+                                                      dof_number: d.dof_number,
+                                                      dc_number: d.dc_number,
+                                                      vehicle_no: d.vehicle_no,
+                                                      received_by: d.received_by,
+                                                      remarks: d.remarks,
+                                                      items: d.items.map(item => ({
+                                                        orderNo: wvof.order?.order_number || '—',
+                                                        design: `${wvof.order?.design_no || '—'} / ${wvof.order?.design_name || ''}`,
+                                                        count: item.yarn_count?.count_value,
+                                                        colour: item.colour,
+                                                        yarn_type: item.yarn_type || 'weft',
+                                                        lot_number: item.lot_number,
+                                                        location: item.location?.location_name || '—',
+                                                        quantity_kg: item.quantity_kg
+                                                      }))
+                                                    };
+                                                    setPrintDyrr(printObj);
+                                                  }} 
+                                                />
+                                              ))}
+                                            </div>
+                                          );
+                                        })()
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               )}
@@ -3454,7 +3565,7 @@ export default function WeavingOrderForms() {
             backgroundColor: '#fff',
             marginBottom: '2rem'
           }}>
-            <div style={{ overflowX: 'auto' }}>
+            <div className="gantt-scroll-container" style={{ overflowX: 'auto' }}>
               <div style={{ minWidth: `${LABEL_COL_WIDTH + (DAY_COL_WIDTH * TOTAL_DAYS)}px` }}>
 
                 {/* Header: Month Row */}
@@ -4531,16 +4642,18 @@ export default function WeavingOrderForms() {
                             <thead>
                               <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>
                                 <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Colour</th>
-                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Yarn Count</th>
-                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Allotted (kg)</th>
-                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Delivered (kg)</th>
-                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Balance (kg)</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Count</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Allotted</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Delivered</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Balance</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Used</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Returned</th>
                               </tr>
                             </thead>
                             <tbody>
                               {(!selectedWvof.weft_allotments || selectedWvof.weft_allotments.length === 0) ? (
                                 <tr>
-                                  <td colSpan="5" style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
+                                  <td colSpan="7" style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
                                     No allotments added to this weaving order form yet.
                                   </td>
                                 </tr>
@@ -4557,6 +4670,16 @@ export default function WeavingOrderForms() {
                                   const deliveredQty = matchingDel.reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
                                   const balance = Math.max(0, parseFloat(allot.allotted_qty || allot.qty || 0) - deliveredQty);
 
+                                  // Returns matching this count/colour on this WVOF
+                                  const returnedQty = selectedWvof.yarn_returns
+                                    ? (selectedWvof.yarn_returns || []).filter(r => 
+                                        (r.yarn_count_id === (allot.countId || allot.yarn_count_id) || r.countId === (allot.countId || allot.yarn_count_id)) && 
+                                        r.colour === allot.colour
+                                      ).reduce((sum, r) => sum + parseFloat(r.quantity_returned || 0), 0)
+                                    : 0;
+
+                                  const usedQty = selectedWvof.yarn_returns ? Math.max(0, deliveredQty - returnedQty) : deliveredQty;
+
                                   return (
                                     <tr key={aIdx} style={{ borderBottom: '1px solid var(--border-current)' }}>
                                       <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: '#800000' }}>{allot.colour || '—'}</td>
@@ -4564,6 +4687,8 @@ export default function WeavingOrderForms() {
                                       <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#800000', textAlign: 'right' }}>{parseFloat(allot.allotted_qty || allot.qty || 0).toFixed(2)}</td>
                                       <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#047857', textAlign: 'right' }}>{deliveredQty.toFixed(2)}</td>
                                       <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: balance > 0.01 ? '#b45309' : '#047857', textAlign: 'right' }}>{balance.toFixed(2)}</td>
+                                      <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#d97706', textAlign: 'right' }}>{usedQty.toFixed(2)}</td>
+                                      <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: returnedQty > 0 ? '#b91c1c' : 'var(--text-muted-current)', textAlign: 'right' }}>{returnedQty.toFixed(2)}</td>
                                     </tr>
                                   );
                                 })
@@ -4573,72 +4698,161 @@ export default function WeavingOrderForms() {
                         </div>
                       </div>
 
-                      <div>
-                        <h6 style={{ margin: '0 0 0.5rem', fontSize: '0.78rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Associated DYDRs
-                        </h6>
-                        {deliveries.filter(d => d.production_form_id === selectedWvof.id).length === 0 ? (
-                          <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.78rem', fontStyle: 'italic' }}>
-                            No DYDR delivery receipts have been created for this weaving order form yet.
-                          </p>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            {(() => {
-                              const formDydis = deliveries.filter(d => d.production_form_id === selectedWvof.id);
-                              const uniqueDydrs = {};
-                              formDydis.forEach(item => {
-                                  if (item.delivery) {
-                                    uniqueDydrs[item.delivery.id] = item.delivery;
-                                  }
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                        {/* Left Column - Associated DYDRs */}
+                        <div>
+                          <h6 style={{ margin: '0 0 0.5rem', fontSize: '0.78rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Associated DYDRs
+                          </h6>
+                          {deliveries.filter(d => d.production_form_id === selectedWvof.id).length === 0 ? (
+                            <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.78rem', fontStyle: 'italic' }}>
+                              No DYDR delivery receipts have been created for this weaving order form yet.
+                            </p>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                              {(() => {
+                                const formDydis = deliveries.filter(d => d.production_form_id === selectedWvof.id);
+                                const uniqueDydrs = {};
+                                formDydis.forEach(item => {
+                                    if (item.delivery) {
+                                      uniqueDydrs[item.delivery.id] = item.delivery;
+                                    }
+                                });
+                                const uniqueDydrList = Object.values(uniqueDydrs);
+                                return uniqueDydrList.map((del, dIdx) => {
+                                  const weight = formDydis.filter(item => item.delivery?.id === del.id).reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+                                  return (
+                                    <div 
+                                      key={dIdx} 
+                                      onClick={() => {
+                                        const items = formDydis.filter(item => item.delivery?.id === del.id);
+                                        setSelectedDydr({
+                                          ...del,
+                                          weaving: selectedWvof,
+                                          items: items.map(it => ({
+                                            ...it,
+                                            orders: selectedWvof.order
+                                          }))
+                                        });
+                                      }}
+                                      style={{
+                                        padding: '0.6rem 1rem',
+                                        backgroundColor: '#f8fafc',
+                                        border: '1px solid #e2e8f0',
+                                        borderRadius: '8px',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        fontSize: '0.78rem',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s'
+                                      }}
+                                      onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                      onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                                    >
+                                      <div>
+                                        <span style={{ fontWeight: '800', color: '#800000', fontFamily: 'monospace' }}>{del.dydr_number}</span>
+                                        <span style={{ color: 'var(--text-muted-current)', marginLeft: '1rem' }}>
+                                          Date: {del.delivered_date ? new Date(del.delivered_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}
+                                        </span>
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <span style={{ fontWeight: '700', color: '#047857' }}>{weight.toFixed(2)} kg</span>
+                                        <span style={{ color: '#800000', fontSize: '0.7rem', fontWeight: '700' }}>View</span>
+                                      </div>
+                                    </div>
+                                  );
+                                });
+                              })()}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right Column - Associated DYRRs */}
+                        <div>
+                          <h6 style={{ margin: '0 0 0.5rem', fontSize: '0.78rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Associated DYRRs
+                          </h6>
+                          {!(selectedWvof.status === 'completed' || selectedWvof.status === 'stopped' || selectedWvof.status === 'late_complete') ? (
+                            <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.78rem', fontStyle: 'italic' }}>
+                              Returns will be active once this Weaving Order Form is completed or stopped.
+                            </p>
+                          ) : (
+                            (() => {
+                              const associatedDyrrs = receiptItems.filter(item => {
+                                return item.receipt?.source_type === 'production' && item.receipt?.dof_number === selectedWvof.weaving_number;
                               });
-                              const uniqueDydrList = Object.values(uniqueDydrs);
-                              return uniqueDydrList.map((del, dIdx) => {
-                                const weight = formDydis.filter(item => item.delivery?.id === del.id).reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
+
+                              if (associatedDyrrs.length === 0) {
                                 return (
-                                  <div 
-                                    key={dIdx} 
-                                    onClick={() => {
-                                      const items = formDydis.filter(item => item.delivery?.id === del.id);
-                                      setSelectedDydr({
-                                        ...del,
-                                        weaving: selectedWvof,
-                                        items: items.map(it => ({
-                                          ...it,
-                                          orders: selectedWvof.order
-                                        }))
-                                      });
-                                    }}
-                                    style={{
-                                      padding: '0.6rem 1rem',
-                                      backgroundColor: '#f8fafc',
-                                      border: '1px solid #e2e8f0',
-                                      borderRadius: '8px',
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      alignItems: 'center',
-                                      fontSize: '0.78rem',
-                                      cursor: 'pointer',
-                                      transition: 'all 0.15s'
-                                    }}
-                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
-                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
-                                  >
-                                    <div>
-                                      <span style={{ fontWeight: '800', color: '#800000', fontFamily: 'monospace' }}>{del.dydr_number}</span>
-                                      <span style={{ color: 'var(--text-muted-current)', marginLeft: '1rem' }}>
-                                        Date: {del.delivered_date ? new Date(del.delivered_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}
-                                      </span>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                      <span style={{ fontWeight: '700', color: '#047857' }}>{weight.toFixed(2)} kg</span>
-                                      <span style={{ color: '#800000', fontSize: '0.7rem', fontWeight: '700' }}>View</span>
-                                    </div>
-                                  </div>
+                                  <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.78rem', fontStyle: 'italic' }}>
+                                    No DYRR return receipts have been created for this weaving order form yet.
+                                  </p>
                                 );
+                              }
+
+                              const groupedDyrrMap = {};
+                              associatedDyrrs.forEach(item => {
+                                const rec = item.receipt;
+                                if (!rec) return;
+                                if (!groupedDyrrMap[rec.id]) {
+                                  groupedDyrrMap[rec.id] = {
+                                    id: rec.id,
+                                    dyrr_number: rec.dyrr_number,
+                                    received_date: rec.received_date,
+                                    received_by: rec.received_by,
+                                    vehicle_no: rec.vehicle_no,
+                                    dc_number: rec.dc_number,
+                                    remarks: rec.remarks,
+                                    source_type: rec.source_type,
+                                    dof_number: rec.dof_number,
+                                    items: []
+                                  };
+                                }
+                                groupedDyrrMap[rec.id].items.push(item);
                               });
-                            })()}
-                          </div>
-                        )}
+                              const groupedDyrrList = Object.values(groupedDyrrMap);
+
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                  {groupedDyrrList.map(gDyrr => (
+                                    <DYRRDetail 
+                                      key={gDyrr.id} 
+                                      dyrr={gDyrr} 
+                                      onPrint={(d) => {
+                                        const printObj = {
+                                          receiptNumber: d.dyrr_number,
+                                          dyrr_number: d.dyrr_number,
+                                          created_at: d.received_date,
+                                          date: d.received_date ? new Date(d.received_date).toLocaleDateString() : '',
+                                          source: 'production',
+                                          source_type: 'production_return',
+                                          partner_name: 'N/A',
+                                          dof_number: d.dof_number,
+                                          dc_number: d.dc_number,
+                                          vehicle_no: d.vehicle_no,
+                                          received_by: d.received_by,
+                                          remarks: d.remarks,
+                                          items: d.items.map(item => ({
+                                            orderNo: selectedWvof.order?.order_number || '—',
+                                            design: `${selectedWvof.order?.design_no || '—'} / ${selectedWvof.order?.design_name || ''}`,
+                                            count: item.yarn_count?.count_value,
+                                            colour: item.colour,
+                                            yarn_type: item.yarn_type || 'weft',
+                                            lot_number: item.lot_number,
+                                            location: item.location?.location_name || '—',
+                                            quantity_kg: item.quantity_kg
+                                          }))
+                                        };
+                                        setPrintDyrr(printObj);
+                                      }} 
+                                    />
+                                  ))}
+                                </div>
+                              );
+                            })()
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -5731,8 +5945,6 @@ export default function WeavingOrderForms() {
                       <thead>
                         <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '1px solid var(--border-current)' }}>
                           <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>Colour & Count</th>
-                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>Lot Number</th>
-                          <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>Location</th>
                           <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>Available Qty (Stock)</th>
                           <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700' }}>Allotted in Other WVOFs</th>
                           <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', width: '120px' }}>Allot Qty (kg)</th>
@@ -5747,8 +5959,6 @@ export default function WeavingOrderForms() {
                                 <div>{row.colour}</div>
                                 <div style={{ fontSize: '0.68rem', color: 'var(--text-muted-current)', fontWeight: '500' }}>{ycDisplay}</div>
                               </td>
-                              <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace' }}>{row.lot_number}</td>
-                              <td style={{ padding: '0.5rem 0.75rem' }}>{row.location_name}</td>
                               <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: row.available_qty > 0 ? '#16a34a' : 'var(--text-muted-current)' }}>
                                 {row.available_qty.toFixed(2)} kg
                               </td>
@@ -5826,41 +6036,71 @@ export default function WeavingOrderForms() {
                     <h5 style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       Planned Daily Qty (Mtrs)
                     </h5>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.5rem', maxHeight: '180px', overflowY: 'auto', paddingRight: '0.25rem' }}>
-                      {allotPlannedProduction.map((item, idx) => {
-                        const d = new Date(item.date + 'T00:00:00');
-                        const formattedDate = !isNaN(d.getTime()) 
-                          ? d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-                          : item.date;
+                    <div style={{ border: '1px solid var(--border-current)', borderRadius: '8px', overflow: 'hidden', maxHeight: '180px', overflowY: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', textAlign: 'left' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '1px solid var(--border-current)', position: 'sticky', top: 0, zIndex: 1 }}>
+                            <th style={{ padding: '0.4rem 0.75rem', fontWeight: '700' }}>Date</th>
+                            <th style={{ padding: '0.4rem 0.75rem', fontWeight: '700' }}>Day</th>
+                            <th style={{ padding: '0.4rem 0.75rem', fontWeight: '700', textAlign: 'right', width: '110px' }}>Qty (Mtrs)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {allotPlannedProduction.map((item, idx) => {
+                            const d = new Date(item.date + 'T00:00:00');
+                            const formattedDate = !isNaN(d.getTime()) 
+                              ? d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                              : item.date;
+                            const dayName = !isNaN(d.getTime())
+                              ? d.toLocaleDateString('en-IN', { weekday: 'short' })
+                              : '—';
 
-                        return (
-                          <div key={item.date} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.5rem', border: '1px solid var(--border-current)', borderRadius: '6px', backgroundColor: 'var(--surface-current)' }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-current)' }}>
-                              {formattedDate}
-                            </span>
-                            <input
-                              type="number"
-                              placeholder="0"
-                              value={item.qty}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setAllotPlannedProduction(prev => prev.map((p, i) => i === idx ? { ...p, qty: val } : p));
-                              }}
-                              style={{
-                                width: '80px',
-                                padding: '0.25rem 0.4rem',
-                                border: '1px solid var(--border-current)',
-                                borderRadius: '6px',
-                                fontSize: '0.75rem',
-                                background: 'var(--surface-current)',
-                                color: 'var(--text-current)',
-                                boxSizing: 'border-box',
-                                textAlign: 'right'
-                              }}
-                            />
-                          </div>
-                        );
-                      })}
+                            return (
+                              <tr key={item.date} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: 'var(--surface-current)' }}>
+                                <td style={{ padding: '0.35rem 0.75rem', fontWeight: '600' }}>{formattedDate}</td>
+                                <td style={{ padding: '0.35rem 0.75rem', color: 'var(--text-muted-current)' }}>{dayName}</td>
+                                <td style={{ padding: '0.25rem 0.75rem', textAlign: 'right' }}>
+                                  <input
+                                    type="number"
+                                    placeholder="0"
+                                    value={item.qty}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setAllotPlannedProduction(prev => prev.map((p, i) => i === idx ? { ...p, qty: val } : p));
+                                    }}
+                                    style={{
+                                      width: '90px',
+                                      padding: '0.25rem 0.4rem',
+                                      border: '1.5px solid #d97706',
+                                      backgroundColor: '#fffbeb',
+                                      color: '#b45309',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      boxSizing: 'border-box',
+                                      textAlign: 'right',
+                                      fontWeight: '700',
+                                      outline: 'none',
+                                      transition: 'all 0.2s ease'
+                                    }}
+                                    onFocus={e => {
+                                      e.target.style.borderColor = '#800000';
+                                      e.target.style.backgroundColor = '#ffffff';
+                                      e.target.style.color = '#000000';
+                                      e.target.style.boxShadow = '0 0 0 3px rgba(128, 0, 0, 0.15)';
+                                    }}
+                                    onBlur={e => {
+                                      e.target.style.borderColor = '#d97706';
+                                      e.target.style.backgroundColor = '#fffbeb';
+                                      e.target.style.color = '#b45309';
+                                      e.target.style.boxShadow = 'none';
+                                    }}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                     {/* Total Planned Daily Qty Summary */}
                     {(() => {
@@ -5935,6 +6175,13 @@ export default function WeavingOrderForms() {
             const yc = yarnCounts.find(y => y.id === countId);
             return yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : '—';
           }}
+        />
+      )}
+
+      {printDyrr && (
+        <DyedReceiptPrintModal
+          receipt={printDyrr}
+          onClose={() => setPrintDyrr(null)}
         />
       )}
     </div>

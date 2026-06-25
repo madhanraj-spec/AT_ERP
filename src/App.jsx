@@ -110,7 +110,7 @@ function AppRoutes() {
             <Route path="/dyed-yarn/receive" element={<ReceiveYarn />} />
             <Route path="/dyed-yarn/deliver" element={<DeliverDyedYarn />} />
             <Route path="/dyed-yarn/movement" element={<DyedYarnMovement />} />
-            <Route path="/dyed-yarn/orders" element={<DyedYarnOrders />} />
+            <Route path="/dyed-yarn/orders" element={<OrdersManagement hideNewOrderButton={true} showAllMerchandisers={true} backPath="/dyed-yarn" />} />
             <Route path="/dyed-yarn/inventory" element={<StockInventory />} />
             <Route path="/dyed-yarn/redyeing" element={<AllotToRedyeing />} />
 

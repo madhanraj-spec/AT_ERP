@@ -57,7 +57,7 @@ export default function DyedYarnDashboard() {
       title: 'Order Details',
       icon: <ClipboardList size={24} color="#92400e" />, 
       iconBg: '#fefce8',
-      description: 'View details of order specifications and yarn information.',
+      description: 'View all orders with dyed yarn inventory status. Track received quantities, available stock, and receipt details by count and color.',
       linkText: 'View Order Details',
       path: '/dyed-yarn/orders'
     },

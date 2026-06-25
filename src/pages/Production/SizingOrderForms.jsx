@@ -81,6 +81,31 @@ export default function SizingOrderForms() {
   const [weavingEndDate, setWeavingEndDate] = useState('');
   const [weavingSplitsCount, setWeavingSplitsCount] = useState(1);
   const [weavingSplitsData, setWeavingSplitsData] = useState([]);
+
+  const totalSplitsQty = weavingSplitsData.reduce((sum, s) => sum + (parseFloat(s.qty) || 0), 0);
+  const sofQtyVal = forwardSof ? parseFloat(forwardSof.qty) || 0 : 0;
+  const remainingQty = Math.round((sofQtyVal - totalSplitsQty) * 100) / 100;
+
+  const qtyValidationError = (() => {
+    if (!forwardSof) return '';
+    for (let i = 0; i < weavingSplitsData.length; i++) {
+      const qValStr = weavingSplitsData[i].qty;
+      if (qValStr === undefined || qValStr === null || qValStr.toString().trim() === '') {
+        return `Please enter a quantity for Split #${i + 1}.`;
+      }
+      const q = parseFloat(qValStr);
+      if (isNaN(q) || q < 0) {
+        return `Split #${i + 1} quantity is invalid or negative.`;
+      }
+      if (q === 0 && weavingSplitsData.length > 1) {
+        return `Split #${i + 1} quantity cannot be 0.`;
+      }
+    }
+    if (Math.abs(totalSplitsQty - sofQtyVal) > 0.1) {
+      return `Total split quantity (${totalSplitsQty} Mtrs) must equal the total SOF quantity (${sofQtyVal} Mtrs).`;
+    }
+    return '';
+  })();
   const [printSof, setPrintSof] = useState(null);
   const [printSofdc, setPrintSofdc] = useState(null);
   const [expandedSofdcId, setExpandedSofdcId] = useState(null);
@@ -104,13 +129,36 @@ export default function SizingOrderForms() {
     
     const count = parseInt(weavingSplitsCount) || 1;
     const sofQty = parseFloat(forwardSof.qty) || 0;
-    const avgQty = Math.round((sofQty / count) * 100) / 100;
     
     const newSplits = [];
+    let sumOfPreceding = 0;
+    
     for (let i = 0; i < count; i++) {
       const existingSplit = weavingSplitsData[i];
+      let splitQty = '';
+      
+      if (count === 1) {
+        splitQty = sofQty.toString();
+      } else if (i === count - 1) {
+        // Last split gets the remainder to ensure exact sum
+        const remaining = Math.max(0, Math.round((sofQty - sumOfPreceding) * 100) / 100);
+        splitQty = remaining.toString();
+      } else {
+        // For splits 0 to N-2, keep existing quantity if it exists, otherwise split evenly
+        if (existingSplit && existingSplit.qty !== undefined && existingSplit.qty !== null && existingSplit.qty !== '') {
+          splitQty = existingSplit.qty;
+        } else {
+          const remainingToDistribute = sofQty - sumOfPreceding;
+          const remainingCount = count - i;
+          const portion = Math.round((remainingToDistribute / remainingCount) * 100) / 100;
+          splitQty = portion.toString();
+        }
+      }
+      
+      sumOfPreceding += parseFloat(splitQty) || 0;
+      
       newSplits.push({
-        qty: existingSplit?.qty || avgQty.toString(),
+        qty: splitQty,
         start_date: existingSplit?.start_date || weavingStartDate || forwardSof.start_date || '',
         end_date: existingSplit?.end_date || weavingEndDate || forwardSof.end_date || '',
         weaving_type: existingSplit?.weaving_type || 'in_house',
@@ -851,7 +899,7 @@ export default function SizingOrderForms() {
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '2px solid var(--border-current)', textAlign: 'left' }}>
                 <th style={{ width: '40px', padding: '0.875rem 0.5rem' }}></th>
-                {['SOF & Warping Ref', 'Order & Design', 'Allocation', 'Qty (Mtrs)', 'Timeline', 'Status', 'Actions'].map(h => (
+                {['SOF & Warping Ref', 'Order & Design', 'Allocation', 'Qty (Mtrs)', 'Completed Qty (Mtrs)', 'Timeline', 'Status', 'Actions'].map(h => (
                   <th key={h} style={{ padding: '0.875rem 1rem', fontWeight: '800', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted-current)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -906,7 +954,10 @@ export default function SizingOrderForms() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ padding: '0.875rem 1rem', fontWeight: '700', fontSize: '0.85rem' }}>{Number(sof.qty).toLocaleString()}</td>
+                      <td style={{ padding: '0.875rem 1rem', fontWeight: '700', fontSize: '0.85rem' }}>{Number(sof.original_qty || sof.qty).toLocaleString()}</td>
+                      <td style={{ padding: '0.875rem 1rem', fontWeight: '700', fontSize: '0.85rem', color: (sof.status === 'completed' || sof.status === 'stopped') ? 'var(--text-current)' : 'var(--text-muted-current)' }}>
+                        {sof.status === 'completed' || sof.status === 'stopped' ? Number(sof.qty || 0).toLocaleString() : '—'}
+                      </td>
                       <td style={{ padding: '0.875rem 1rem' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem' }}>
                           <div><span style={{ color: 'var(--text-muted-current)', fontWeight: '500' }}>Start:</span> <span style={{ fontWeight: '600' }}>{sof.start_date || '—'}</span></div>
@@ -1368,8 +1419,10 @@ export default function SizingOrderForms() {
                 <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-current)' }}>
                   Forward Sizing Form to Weaving
                 </h3>
-                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted-current)' }}>
-                  Sizing Ref: <strong style={{ color: '#800000', fontFamily: 'monospace' }}>{forwardSof.sof_number} {forwardSof.beam_name ? `(${forwardSof.beam_name})` : ''}</strong>
+                 <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted-current)', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span>Sizing Ref: <strong style={{ color: '#800000', fontFamily: 'monospace' }}>{forwardSof.sof_number} {forwardSof.beam_name ? `(${forwardSof.beam_name})` : ''}</strong></span>
+                  <span style={{ color: 'var(--border-current)' }}>|</span>
+                  <span>Total Qty: <strong style={{ color: 'var(--text-current)', fontWeight: '800' }}>{forwardSof.qty} Mtrs</strong></span>
                 </p>
               </div>
               <button
@@ -1422,9 +1475,76 @@ export default function SizingOrderForms() {
                 flexDirection: 'column',
                 gap: '1rem'
               }}>
-                <h4 style={{ margin: '0 0 0.2rem 0', fontSize: '0.85rem', fontWeight: '800', color: '#800000' }}>
+                 <h4 style={{ margin: '0 0 0.2rem 0', fontSize: '0.85rem', fontWeight: '800', color: '#800000' }}>
                   Weaving Loom & Schedule Allocation
                 </h4>
+
+                {/* Allocation Summary Grid */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr 1fr',
+                  gap: '0.75rem',
+                  backgroundColor: 'var(--surface-current)',
+                  padding: '0.75rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-current)',
+                  marginTop: '0.25rem'
+                }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '750', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Total SOF Qty</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#800000', marginTop: '0.2rem' }}>{forwardSof?.qty} Mtrs</div>
+                  </div>
+                  <div style={{ textAlign: 'center', borderLeft: '1px solid var(--border-current)', borderRight: '1px solid var(--border-current)' }}>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '750', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Allocated Qty</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-current)', marginTop: '0.2rem' }}>{totalSplitsQty} Mtrs</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: '750', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Remaining Qty</div>
+                    <div style={{ 
+                      fontSize: '0.95rem', 
+                      fontWeight: '800', 
+                      color: Math.abs(remainingQty) < 0.1 ? '#10b981' : (remainingQty < 0 ? '#ef4444' : '#f59e0b'),
+                      marginTop: '0.2rem' 
+                    }}>
+                      {remainingQty} Mtrs
+                    </div>
+                  </div>
+                </div>
+
+                {/* Validation Message */}
+                {qtyValidationError ? (
+                  <div style={{ 
+                    backgroundColor: 'rgba(239, 68, 68, 0.05)', 
+                    border: '1px solid rgba(239, 68, 68, 0.25)', 
+                    borderRadius: '8px', 
+                    padding: '0.6rem 0.8rem', 
+                    color: '#ef4444', 
+                    fontSize: '0.75rem',
+                    fontWeight: '600',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}>
+                    ⚠️ {qtyValidationError}
+                  </div>
+                ) : (
+                  weavingSplitsCount > 1 && (
+                    <div style={{ 
+                      backgroundColor: 'rgba(16, 185, 129, 0.05)', 
+                      border: '1px solid rgba(16, 185, 129, 0.25)', 
+                      borderRadius: '8px', 
+                      padding: '0.6rem 0.8rem', 
+                      color: '#10b981', 
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}>
+                      ✅ Allocation matches total quantity perfectly!
+                    </div>
+                  )
+                )}
 
                 {loadingModalData ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted-current)' }}>
@@ -1529,17 +1649,18 @@ export default function SizingOrderForms() {
                               <input
                                 type="number"
                                 value={split.qty}
+                                disabled={weavingSplitsCount === 1}
                                 onChange={e => {
                                   const sofQty = parseFloat(forwardSof?.qty) || 0;
                                   const newVal = e.target.value;
-                                  const newValNum = parseFloat(newVal) || 0;
                                   setWeavingSplitsData(prev => {
                                     const updated = prev.map((s, idx) => idx === index ? { ...s, qty: newVal } : s);
-                                    // Auto-balance: if more than 1 split, fill the last split with the remaining qty
-                                    if (updated.length > 1 && index !== updated.length - 1) {
-                                      const otherSum = updated.reduce((sum, s, idx) => idx !== updated.length - 1 ? sum + (parseFloat(s.qty) || 0) : sum, 0);
+                                    // Auto-balance: if more than 1 split, allot remaining quantity to the target split
+                                    if (updated.length > 1) {
+                                      const targetIndex = index < updated.length - 1 ? index + 1 : index - 1;
+                                      const otherSum = updated.reduce((sum, s, idx) => idx !== targetIndex ? sum + (parseFloat(s.qty) || 0) : sum, 0);
                                       const remaining = Math.max(0, Math.round((sofQty - otherSum) * 100) / 100);
-                                      updated[updated.length - 1] = { ...updated[updated.length - 1], qty: remaining.toString() };
+                                      updated[targetIndex] = { ...updated[targetIndex], qty: remaining.toString() };
                                     }
                                     return updated;
                                   });
@@ -1547,7 +1668,18 @@ export default function SizingOrderForms() {
                                 required
                                 min="0"
                                 max={parseFloat(forwardSof?.qty) || ''}
-                                style={{ width: '100%', padding: '0.4rem 0.5rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.75rem', background: 'var(--bg-current)', color: 'var(--text-current)', boxSizing: 'border-box' }}
+                                style={{
+                                  width: '100%',
+                                  padding: '0.4rem 0.5rem',
+                                  border: '1px solid var(--border-current)',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  background: weavingSplitsCount === 1 ? 'rgba(0, 0, 0, 0.05)' : 'var(--bg-current)',
+                                  color: 'var(--text-current)',
+                                  boxSizing: 'border-box',
+                                  cursor: weavingSplitsCount === 1 ? 'not-allowed' : 'text',
+                                  opacity: weavingSplitsCount === 1 ? 0.7 : 1
+                                }}
                               />
                             </div>
                             <div>
@@ -1606,7 +1738,7 @@ export default function SizingOrderForms() {
               </button>
               <button
                 onClick={handleForwardSubmit}
-                disabled={forwardSubmitting || loadingModalData}
+                disabled={forwardSubmitting || loadingModalData || !!qtyValidationError}
                 style={{
                   backgroundColor: '#800000',
                   border: 'none',
@@ -1615,11 +1747,11 @@ export default function SizingOrderForms() {
                   borderRadius: '8px',
                   fontWeight: '700',
                   fontSize: '0.825rem',
-                  cursor: 'pointer',
+                  cursor: (forwardSubmitting || loadingModalData || !!qtyValidationError) ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.5rem',
-                  opacity: (forwardSubmitting || loadingModalData) ? 0.7 : 1
+                  opacity: (forwardSubmitting || loadingModalData || !!qtyValidationError) ? 0.5 : 1
                 }}
               >
                 {forwardSubmitting ? <Loader size={14} className="spin" /> : null}
@@ -2567,12 +2699,24 @@ function SofStopWizardModal({ sof, onClose, onSuccess }) {
       } else {
         // If the user says there are no completed weaving splits (or there's only 1 weaving order),
         // we update or delete it based on the Sizing completed sum.
-        const { data: wvs, error: fetchWvErr } = await supabase
+        let wvs = [];
+        const { data: dataById, error: fetchWvErr } = await supabase
           .from('weaving_orders')
           .select('*')
           .eq('sof_id', sofDetail.id);
         
         if (fetchWvErr) throw fetchWvErr;
+        wvs = dataById || [];
+
+        if (wvs.length === 0 && sofDetail.sof_number) {
+          const { data: dataByNum, error: fetchWvErrNum } = await supabase
+            .from('weaving_orders')
+            .select('*')
+            .eq('sof_number', sofDetail.sof_number);
+          
+          if (fetchWvErrNum) throw fetchWvErrNum;
+          wvs = dataByNum || [];
+        }
 
         if (wvs && wvs.length > 0) {
           if (completedSum <= 0) {
@@ -2581,6 +2725,14 @@ function SofStopWizardModal({ sof, onClose, onSuccess }) {
               .delete()
               .eq('sof_id', sofDetail.id);
             if (delErr) throw delErr;
+
+            if (sofDetail.sof_number) {
+              const { error: delErrNum } = await supabase
+                .from('weaving_orders')
+                .delete()
+                .eq('sof_number', sofDetail.sof_number);
+              if (delErrNum) throw delErrNum;
+            }
           } else {
             // Update the first one to completedSum, delete the rest if any
             const { error: updErr } = await supabase

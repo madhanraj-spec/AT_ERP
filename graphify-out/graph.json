@@ -2024,6 +2024,36 @@
       "norm_label": "run()"
     },
     {
+      "label": "debug_avail.js",
+      "file_type": "code",
+      "source_file": "scratch/debug_avail.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_debug_avail",
+      "community": 414,
+      "norm_label": "debug_avail.js"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/debug_avail.js",
+      "source_location": "L9",
+      "_origin": "ast",
+      "id": "scratch_debug_avail_supabase",
+      "community": 414,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "main()",
+      "file_type": "code",
+      "source_file": "scratch/debug_avail.js",
+      "source_location": "L11",
+      "_origin": "ast",
+      "id": "scratch_debug_avail_main",
+      "community": 414,
+      "norm_label": "main()"
+    },
+    {
       "label": "debug_processed_order_fields.js",
       "file_type": "code",
       "source_file": "scratch/debug_processed_order_fields.js",
@@ -3634,6 +3664,36 @@
       "norm_label": "productionhub()"
     },
     {
+      "label": "test_auth_fetch.js",
+      "file_type": "code",
+      "source_file": "scratch/test_auth_fetch.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_test_auth_fetch",
+      "community": 382,
+      "norm_label": "test_auth_fetch.js"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/test_auth_fetch.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "scratch_test_auth_fetch_supabase",
+      "community": 382,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scratch/test_auth_fetch.js",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "scratch_test_auth_fetch_run",
+      "community": 382,
+      "norm_label": "run()"
+    },
+    {
       "label": "test_columns.js",
       "file_type": "code",
       "source_file": "scratch/test_columns.js",
@@ -3854,6 +3914,36 @@
       "norm_label": "run()"
     },
     {
+      "label": "trace_exact_keys.js",
+      "file_type": "code",
+      "source_file": "scratch/trace_exact_keys.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_trace_exact_keys",
+      "community": 415,
+      "norm_label": "trace_exact_keys.js"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/trace_exact_keys.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_trace_exact_keys_supabase",
+      "community": 415,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "main()",
+      "file_type": "code",
+      "source_file": "scratch/trace_exact_keys.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "scratch_trace_exact_keys_main",
+      "community": 415,
+      "norm_label": "main()"
+    },
+    {
       "label": "trace_lot2.js",
       "file_type": "code",
       "source_file": "scratch/trace_lot2.js",
@@ -3914,6 +4004,36 @@
       "norm_label": "run()"
     },
     {
+      "label": "trace_lot_stock.js",
+      "file_type": "code",
+      "source_file": "scratch/trace_lot_stock.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_trace_lot_stock",
+      "community": 416,
+      "norm_label": "trace_lot_stock.js"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/trace_lot_stock.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_trace_lot_stock_supabase",
+      "community": 416,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "main()",
+      "file_type": "code",
+      "source_file": "scratch/trace_lot_stock.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "scratch_trace_lot_stock_main",
+      "community": 416,
+      "norm_label": "main()"
+    },
+    {
       "label": "trace_receipt_items.js",
       "file_type": "code",
       "source_file": "scratch/trace_receipt_items.js",
@@ -3972,6 +4092,36 @@
       "id": "scratch_trace_receipt_items_run",
       "community": 413,
       "norm_label": "run()"
+    },
+    {
+      "label": "trace_receipts_raw.js",
+      "file_type": "code",
+      "source_file": "scratch/trace_receipts_raw.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "scratch_trace_receipts_raw",
+      "community": 417,
+      "norm_label": "trace_receipts_raw.js"
+    },
+    {
+      "label": "supabase",
+      "file_type": "code",
+      "source_file": "scratch/trace_receipts_raw.js",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "scratch_trace_receipts_raw_supabase",
+      "community": 417,
+      "norm_label": "supabase"
+    },
+    {
+      "label": "main()",
+      "file_type": "code",
+      "source_file": "scratch/trace_receipts_raw.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "scratch_trace_receipts_raw_main",
+      "community": 417,
+      "norm_label": "main()"
     },
     {
       "label": "trace_stock.js",
@@ -4210,7 +4360,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "src_app",
-      "community": 206,
+      "community": 0,
       "norm_label": "app.jsx"
     },
     {
@@ -4220,7 +4370,7 @@
       "source_location": "L47",
       "_origin": "ast",
       "id": "src_app_approutes",
-      "community": 206,
+      "community": 0,
       "norm_label": "approutes()"
     },
     {
@@ -4230,7 +4380,7 @@
       "source_location": "L161",
       "_origin": "ast",
       "id": "src_app_placeholderpage",
-      "community": 206,
+      "community": 0,
       "norm_label": "placeholderpage()"
     },
     {
@@ -4240,7 +4390,7 @@
       "source_location": "L171",
       "_origin": "ast",
       "id": "src_app_app",
-      "community": 206,
+      "community": 0,
       "norm_label": "app()"
     },
     {
@@ -4290,7 +4440,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "layout_applayout",
-      "community": 206,
+      "community": 0,
       "norm_label": "applayout.jsx"
     },
     {
@@ -4300,7 +4450,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "layout_applayout_applayout",
-      "community": 206,
+      "community": 0,
       "norm_label": "applayout()"
     },
     {
@@ -4440,7 +4590,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "src_main",
-      "community": 206,
+      "community": 0,
       "norm_label": "main.jsx"
     },
     {
@@ -4710,7 +4860,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "pages_dashboard",
-      "community": 206,
+      "community": 0,
       "norm_label": "dashboard.jsx"
     },
     {
@@ -4720,7 +4870,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "pages_dashboard_dashboard",
-      "community": 206,
+      "community": 0,
       "norm_label": "dashboard()"
     },
     {
@@ -4777,7 +4927,7 @@
       "label": "DYDRReceiptModal()",
       "file_type": "code",
       "source_file": "src/pages/DyedYarn/DeliverYarn.jsx",
-      "source_location": "L1876",
+      "source_location": "L1877",
       "_origin": "ast",
       "id": "dyedyarn_deliveryarn_dydrreceiptmodal",
       "community": 3,
@@ -4790,7 +4940,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "dyedyarn_dyeddeliveryprintmodal",
-      "community": 383,
+      "community": 11,
       "norm_label": "dyeddeliveryprintmodal.jsx"
     },
     {
@@ -4800,7 +4950,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "dyedyarn_dyeddeliveryprintmodal_dyeddeliveryprintmodal",
-      "community": 383,
+      "community": 11,
       "norm_label": "dyeddeliveryprintmodal()"
     },
     {
@@ -4810,7 +4960,7 @@
       "source_location": "L255",
       "_origin": "ast",
       "id": "dyedyarn_dyeddeliveryprintmodal_infoboxstyle",
-      "community": 383,
+      "community": 11,
       "norm_label": "infoboxstyle"
     },
     {
@@ -4820,7 +4970,7 @@
       "source_location": "L265",
       "_origin": "ast",
       "id": "dyedyarn_dyeddeliveryprintmodal_infolabelstyle",
-      "community": 383,
+      "community": 11,
       "norm_label": "infolabelstyle"
     },
     {
@@ -4830,7 +4980,7 @@
       "source_location": "L273",
       "_origin": "ast",
       "id": "dyedyarn_dyeddeliveryprintmodal_datalinestyle",
-      "community": 383,
+      "community": 11,
       "norm_label": "datalinestyle"
     },
     {
@@ -4840,7 +4990,7 @@
       "source_location": "L279",
       "_origin": "ast",
       "id": "dyedyarn_dyeddeliveryprintmodal_thstyle",
-      "community": 383,
+      "community": 11,
       "norm_label": "thstyle"
     },
     {
@@ -4850,7 +5000,7 @@
       "source_location": "L288",
       "_origin": "ast",
       "id": "dyedyarn_dyeddeliveryprintmodal_tdstyle",
-      "community": 383,
+      "community": 11,
       "norm_label": "tdstyle"
     },
     {
@@ -5830,7 +5980,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "inspection_unwashedinspection",
-      "community": 206,
+      "community": 0,
       "norm_label": "unwashedinspection.jsx"
     },
     {
@@ -5840,7 +5990,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "inspection_unwashedinspection_unwashedinspection",
-      "community": 206,
+      "community": 0,
       "norm_label": "unwashedinspection()"
     },
     {
@@ -5850,7 +6000,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "inspection_washedinspection",
-      "community": 206,
+      "community": 0,
       "norm_label": "washedinspection.jsx"
     },
     {
@@ -5860,7 +6010,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "inspection_washedinspection_washedinspection",
-      "community": 206,
+      "community": 0,
       "norm_label": "washedinspection()"
     },
     {
@@ -5970,7 +6120,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "merchandiser_createorder",
-      "community": 206,
+      "community": 0,
       "norm_label": "createorder.jsx"
     },
     {
@@ -5980,7 +6130,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "merchandiser_createorder_weave_types",
-      "community": 206,
+      "community": 0,
       "norm_label": "weave_types"
     },
     {
@@ -5990,7 +6140,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "merchandiser_createorder_order_categories",
-      "community": 206,
+      "community": 0,
       "norm_label": "order_categories"
     },
     {
@@ -6000,7 +6150,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "merchandiser_createorder_compressimage",
-      "community": 206,
+      "community": 0,
       "norm_label": "compressimage()"
     },
     {
@@ -6010,7 +6160,7 @@
       "source_location": "L69",
       "_origin": "ast",
       "id": "merchandiser_createorder_createorder",
-      "community": 206,
+      "community": 0,
       "norm_label": "createorder()"
     },
     {
@@ -6287,7 +6437,7 @@
       "label": "TabOrderInfo()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L864",
+      "source_location": "L867",
       "_origin": "ast",
       "id": "orders_management_taborderinfo",
       "community": 7,
@@ -6297,7 +6447,7 @@
       "label": "DetailItem()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L940",
+      "source_location": "L943",
       "_origin": "ast",
       "id": "orders_management_detailitem",
       "community": 7,
@@ -6307,7 +6457,7 @@
       "label": "TabInspection()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L949",
+      "source_location": "L952",
       "_origin": "ast",
       "id": "orders_management_tabinspection",
       "community": 7,
@@ -6317,7 +6467,7 @@
       "label": "TabDyeing()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L1314",
+      "source_location": "L1317",
       "_origin": "ast",
       "id": "orders_management_tabdyeing",
       "community": 7,
@@ -6327,7 +6477,7 @@
       "label": "TabProcessing()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L1993",
+      "source_location": "L1996",
       "_origin": "ast",
       "id": "orders_management_tabprocessing",
       "community": 7,
@@ -6337,7 +6487,7 @@
       "label": "TabUnderDevelopment()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L2569",
+      "source_location": "L2572",
       "_origin": "ast",
       "id": "orders_management_tabunderdevelopment",
       "community": 7,
@@ -6347,7 +6497,7 @@
       "label": "OrdersManagement()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L2579",
+      "source_location": "L2582",
       "_origin": "ast",
       "id": "orders_management_ordersmanagement",
       "community": 7,
@@ -6357,7 +6507,7 @@
       "label": "ModalWrapper()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L3524",
+      "source_location": "L3530",
       "_origin": "ast",
       "id": "orders_management_modalwrapper",
       "community": 7,
@@ -6367,7 +6517,7 @@
       "label": "DOFModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L3540",
+      "source_location": "L3546",
       "_origin": "ast",
       "id": "orders_management_dofmodal",
       "community": 7,
@@ -6377,7 +6527,7 @@
       "label": "GYDRModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L3970",
+      "source_location": "L3976",
       "_origin": "ast",
       "id": "orders_management_gydrmodal",
       "community": 7,
@@ -6387,7 +6537,7 @@
       "label": "DYDRModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L4116",
+      "source_location": "L4122",
       "_origin": "ast",
       "id": "orders_management_dydrmodal",
       "community": 7,
@@ -6397,7 +6547,7 @@
       "label": "POFModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L4187",
+      "source_location": "L4193",
       "_origin": "ast",
       "id": "orders_management_pofmodal",
       "community": 7,
@@ -6407,7 +6557,7 @@
       "label": "POFRRModal()",
       "file_type": "code",
       "source_file": "src/pages/Orders/Management.jsx",
-      "source_location": "L4374",
+      "source_location": "L4380",
       "_origin": "ast",
       "id": "orders_management_pofrrmodal",
       "community": 7,
@@ -6420,7 +6570,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "orders_ordersizingtab",
-      "community": 1,
+      "community": 234,
       "norm_label": "ordersizingtab.jsx"
     },
     {
@@ -6430,7 +6580,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "orders_ordersizingtab_getlocaldatestring",
-      "community": 1,
+      "community": 234,
       "norm_label": "getlocaldatestring()"
     },
     {
@@ -6440,7 +6590,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "orders_ordersizingtab_getsofstatusbadge",
-      "community": 1,
+      "community": 234,
       "norm_label": "getsofstatusbadge()"
     },
     {
@@ -6450,7 +6600,7 @@
       "source_location": "L51",
       "_origin": "ast",
       "id": "orders_ordersizingtab_ordersizingtab",
-      "community": 1,
+      "community": 234,
       "norm_label": "ordersizingtab()"
     },
     {
@@ -6510,67 +6660,67 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "orders_orderweavingtab",
-      "community": 380,
+      "community": 11,
       "norm_label": "orderweavingtab.jsx"
     },
     {
       "label": "getLocalDateString()",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderWeavingTab.jsx",
-      "source_location": "L8",
+      "source_location": "L10",
       "_origin": "ast",
       "id": "orders_orderweavingtab_getlocaldatestring",
-      "community": 380,
+      "community": 11,
       "norm_label": "getlocaldatestring()"
     },
     {
       "label": "getDatesInRange()",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderWeavingTab.jsx",
-      "source_location": "L18",
+      "source_location": "L20",
       "_origin": "ast",
       "id": "orders_orderweavingtab_getdatesinrange",
-      "community": 380,
+      "community": 11,
       "norm_label": "getdatesinrange()"
     },
     {
       "label": "resolveWvofStatusValue()",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderWeavingTab.jsx",
-      "source_location": "L33",
+      "source_location": "L35",
       "_origin": "ast",
       "id": "orders_orderweavingtab_resolvewvofstatusvalue",
-      "community": 380,
+      "community": 11,
       "norm_label": "resolvewvofstatusvalue()"
     },
     {
       "label": "getWvofStatusBadge()",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderWeavingTab.jsx",
-      "source_location": "L68",
+      "source_location": "L70",
       "_origin": "ast",
       "id": "orders_orderweavingtab_getwvofstatusbadge",
-      "community": 380,
+      "community": 11,
       "norm_label": "getwvofstatusbadge()"
     },
     {
       "label": "getWeftYarnStatus()",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderWeavingTab.jsx",
-      "source_location": "L100",
+      "source_location": "L102",
       "_origin": "ast",
       "id": "orders_orderweavingtab_getweftyarnstatus",
-      "community": 380,
+      "community": 11,
       "norm_label": "getweftyarnstatus()"
     },
     {
       "label": "OrderWeavingTab()",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderWeavingTab.jsx",
-      "source_location": "L119",
+      "source_location": "L121",
       "_origin": "ast",
       "id": "orders_orderweavingtab_orderweavingtab",
-      "community": 380,
+      "community": 11,
       "norm_label": "orderweavingtab()"
     },
     {
@@ -6580,7 +6730,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab",
-      "community": 7,
+      "community": 206,
       "norm_label": "orderyarnusagetab.jsx"
     },
     {
@@ -6590,177 +6740,177 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_orderyarnusagetab",
-      "community": 7,
+      "community": 206,
       "norm_label": "orderyarnusagetab()"
     },
     {
       "label": "thStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L904",
+      "source_location": "L980",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_thstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "thstyle"
     },
     {
       "label": "numericThStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L913",
+      "source_location": "L989",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_numericthstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "numericthstyle"
     },
     {
       "label": "tdStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L918",
+      "source_location": "L994",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_tdstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "tdstyle"
     },
     {
       "label": "numericTdStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L924",
+      "source_location": "L1000",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_numerictdstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "numerictdstyle"
     },
     {
       "label": "receiptColStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L931",
+      "source_location": "L1007",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_receiptcolstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "receiptcolstyle"
     },
     {
       "label": "receiptHeaderStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L941",
+      "source_location": "L1017",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_receiptheaderstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "receiptheaderstyle"
     },
     {
       "label": "receiptCardStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L952",
+      "source_location": "L1028",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_receiptcardstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "receiptcardstyle"
     },
     {
       "label": "viewButtonStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L963",
+      "source_location": "L1039",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_viewbuttonstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "viewbuttonstyle"
     },
     {
       "label": "emptyTextStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L977",
+      "source_location": "L1053",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_emptytextstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "emptytextstyle"
     },
     {
       "label": "subThStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L986",
+      "source_location": "L1062",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_subthstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "subthstyle"
     },
     {
       "label": "subNumericThStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L993",
+      "source_location": "L1069",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_subnumericthstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "subnumericthstyle"
     },
     {
       "label": "subTdStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L998",
+      "source_location": "L1074",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_subtdstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "subtdstyle"
     },
     {
       "label": "subNumericTdStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L1004",
+      "source_location": "L1080",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_subnumerictdstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "subnumerictdstyle"
     },
     {
       "label": "level2ThStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L1010",
+      "source_location": "L1086",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_level2thstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "level2thstyle"
     },
     {
       "label": "level2NumericThStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L1017",
+      "source_location": "L1093",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_level2numericthstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "level2numericthstyle"
     },
     {
       "label": "level2TdStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L1022",
+      "source_location": "L1098",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_level2tdstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "level2tdstyle"
     },
     {
       "label": "level2NumericTdStyle",
       "file_type": "code",
       "source_file": "src/pages/Orders/OrderYarnUsageTab.jsx",
-      "source_location": "L1028",
+      "source_location": "L1104",
       "_origin": "ast",
       "id": "orders_orderyarnusagetab_level2numerictdstyle",
-      "community": 7,
+      "community": 206,
       "norm_label": "level2numerictdstyle"
     },
     {
@@ -7480,7 +7630,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "production_printablesofdc",
-      "community": 1,
+      "community": 234,
       "norm_label": "printablesofdc.jsx"
     },
     {
@@ -7490,7 +7640,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "production_printablesofdc_getlocaldatestring",
-      "community": 1,
+      "community": 234,
       "norm_label": "getlocaldatestring()"
     },
     {
@@ -7500,7 +7650,7 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "production_printablesofdc_getsofstatusbadge",
-      "community": 1,
+      "community": 234,
       "norm_label": "getsofstatusbadge()"
     },
     {
@@ -7510,7 +7660,7 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "production_printablesofdc_printablesofdc",
-      "community": 1,
+      "community": 234,
       "norm_label": "printablesofdc()"
     },
     {
@@ -7580,7 +7730,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "production_printablewvof",
-      "community": 398,
+      "community": 11,
       "norm_label": "printablewvof.jsx"
     },
     {
@@ -7590,7 +7740,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "production_printablewvof_getlocaldatestring",
-      "community": 398,
+      "community": 11,
       "norm_label": "getlocaldatestring()"
     },
     {
@@ -7600,7 +7750,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "production_printablewvof_resolvewvofstatusvalue",
-      "community": 398,
+      "community": 11,
       "norm_label": "resolvewvofstatusvalue()"
     },
     {
@@ -7610,7 +7760,7 @@
       "source_location": "L50",
       "_origin": "ast",
       "id": "production_printablewvof_getwvofstatusbadge",
-      "community": 398,
+      "community": 11,
       "norm_label": "getwvofstatusbadge()"
     },
     {
@@ -7620,7 +7770,7 @@
       "source_location": "L82",
       "_origin": "ast",
       "id": "production_printablewvof_printablewvof",
-      "community": 398,
+      "community": 11,
       "norm_label": "printablewvof()"
     },
     {
@@ -7630,7 +7780,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "production_printablewvofdc",
-      "community": 380,
+      "community": 11,
       "norm_label": "printablewvofdc.jsx"
     },
     {
@@ -7640,7 +7790,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "production_printablewvofdc_printablewvofdc",
-      "community": 380,
+      "community": 11,
       "norm_label": "printablewvofdc()"
     },
     {
@@ -7650,7 +7800,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "production_sizingorderforms",
-      "community": 394,
+      "community": 263,
       "norm_label": "sizingorderforms.jsx"
     },
     {
@@ -7660,7 +7810,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "production_sizingorderforms_getsofstatusbadge",
-      "community": 394,
+      "community": 263,
       "norm_label": "getsofstatusbadge()"
     },
     {
@@ -7670,7 +7820,7 @@
       "source_location": "L50",
       "_origin": "ast",
       "id": "production_sizingorderforms_status_options",
-      "community": 394,
+      "community": 263,
       "norm_label": "status_options"
     },
     {
@@ -7680,37 +7830,37 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "production_sizingorderforms_sizingorderforms",
-      "community": 394,
+      "community": 263,
       "norm_label": "sizingorderforms()"
     },
     {
       "label": "MultiSelectDropdown()",
       "file_type": "code",
       "source_file": "src/pages/Production/SizingOrderForms.jsx",
-      "source_location": "L2046",
+      "source_location": "L2178",
       "_origin": "ast",
       "id": "production_sizingorderforms_multiselectdropdown",
-      "community": 394,
+      "community": 263,
       "norm_label": "multiselectdropdown()"
     },
     {
       "label": "SofStopWizardModal()",
       "file_type": "code",
       "source_file": "src/pages/Production/SizingOrderForms.jsx",
-      "source_location": "L2156",
+      "source_location": "L2288",
       "_origin": "ast",
       "id": "production_sizingorderforms_sofstopwizardmodal",
-      "community": 394,
+      "community": 263,
       "norm_label": "sofstopwizardmodal()"
     },
     {
       "label": "SofReallocateModal()",
       "file_type": "code",
       "source_file": "src/pages/Production/SizingOrderForms.jsx",
-      "source_location": "L3226",
+      "source_location": "L3378",
       "_origin": "ast",
       "id": "production_sizingorderforms_sofreallocatemodal",
-      "community": 394,
+      "community": 263,
       "norm_label": "sofreallocatemodal()"
     },
     {
@@ -7777,7 +7927,7 @@
       "label": "StatusUpdater()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingOrderForms.jsx",
-      "source_location": "L4388",
+      "source_location": "L4429",
       "_origin": "ast",
       "id": "production_warpingorderforms_statusupdater",
       "community": 263,
@@ -7787,7 +7937,7 @@
       "label": "MultiSelectDropdown()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingOrderForms.jsx",
-      "source_location": "L4430",
+      "source_location": "L4471",
       "_origin": "ast",
       "id": "production_warpingorderforms_multiselectdropdown",
       "community": 263,
@@ -7917,7 +8067,7 @@
       "label": "WarpingSizing()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L387",
+      "source_location": "L400",
       "_origin": "ast",
       "id": "production_warpingsizing_warpingsizing",
       "community": 1,
@@ -7927,7 +8077,7 @@
       "label": "InHouseGantt()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L471",
+      "source_location": "L484",
       "_origin": "ast",
       "id": "production_warpingsizing_inhousegantt",
       "community": 1,
@@ -7937,7 +8087,7 @@
       "label": "WofDetailModal()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L1066",
+      "source_location": "L1080",
       "_origin": "ast",
       "id": "production_warpingsizing_wofdetailmodal",
       "community": 1,
@@ -7947,7 +8097,7 @@
       "label": "InfoField()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3014",
+      "source_location": "L3030",
       "_origin": "ast",
       "id": "production_warpingsizing_infofield",
       "community": 1,
@@ -7957,7 +8107,7 @@
       "label": "thStyle",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3027",
+      "source_location": "L3043",
       "_origin": "ast",
       "id": "production_warpingsizing_thstyle",
       "community": 1,
@@ -7967,7 +8117,7 @@
       "label": "tdStyle",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3037",
+      "source_location": "L3053",
       "_origin": "ast",
       "id": "production_warpingsizing_tdstyle",
       "community": 1,
@@ -7977,7 +8127,7 @@
       "label": "calcBarPositionForDates()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3041",
+      "source_location": "L3057",
       "_origin": "ast",
       "id": "production_warpingsizing_calcbarpositionfordates",
       "community": 1,
@@ -7987,7 +8137,7 @@
       "label": "calcBarPosition()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3079",
+      "source_location": "L3095",
       "_origin": "ast",
       "id": "production_warpingsizing_calcbarposition",
       "community": 1,
@@ -7997,7 +8147,7 @@
       "label": "JobWorkTable()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3086",
+      "source_location": "L3102",
       "_origin": "ast",
       "id": "production_warpingsizing_jobworktable",
       "community": 1,
@@ -8007,7 +8157,7 @@
       "label": "getSofStatusBadge()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3231",
+      "source_location": "L3250",
       "_origin": "ast",
       "id": "production_warpingsizing_getsofstatusbadge",
       "community": 1,
@@ -8017,7 +8167,7 @@
       "label": "SofDetailModal()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L3266",
+      "source_location": "L3285",
       "_origin": "ast",
       "id": "production_warpingsizing_sofdetailmodal",
       "community": 1,
@@ -8027,7 +8177,7 @@
       "label": "SizingTab()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L5183",
+      "source_location": "L5434",
       "_origin": "ast",
       "id": "production_warpingsizing_sizingtab",
       "community": 1,
@@ -8037,7 +8187,7 @@
       "label": "InHouseSizingGantt()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L5187",
+      "source_location": "L5438",
       "_origin": "ast",
       "id": "production_warpingsizing_inhousesizinggantt",
       "community": 1,
@@ -8047,7 +8197,7 @@
       "label": "JobWorkSizingTable()",
       "file_type": "code",
       "source_file": "src/pages/Production/WarpingSizing.jsx",
-      "source_location": "L5734",
+      "source_location": "L5986",
       "_origin": "ast",
       "id": "production_warpingsizing_jobworksizingtable",
       "community": 1,
@@ -8067,7 +8217,7 @@
       "label": "resolveWvofStatusValue()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L13",
+      "source_location": "L15",
       "_origin": "ast",
       "id": "production_weavingorderforms_resolvewvofstatusvalue",
       "community": 11,
@@ -8077,7 +8227,7 @@
       "label": "getWvofStatusBadge()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L48",
+      "source_location": "L50",
       "_origin": "ast",
       "id": "production_weavingorderforms_getwvofstatusbadge",
       "community": 11,
@@ -8087,7 +8237,7 @@
       "label": "getWeftYarnStatus()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L80",
+      "source_location": "L82",
       "_origin": "ast",
       "id": "production_weavingorderforms_getweftyarnstatus",
       "community": 11,
@@ -8097,7 +8247,7 @@
       "label": "getDatesInRange()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L97",
+      "source_location": "L99",
       "_origin": "ast",
       "id": "production_weavingorderforms_getdatesinrange",
       "community": 11,
@@ -8107,7 +8257,7 @@
       "label": "getLocalDateOnly()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L117",
+      "source_location": "L119",
       "_origin": "ast",
       "id": "production_weavingorderforms_getlocaldateonly",
       "community": 11,
@@ -8117,7 +8267,7 @@
       "label": "getUnifiedProductionDates()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L127",
+      "source_location": "L129",
       "_origin": "ast",
       "id": "production_weavingorderforms_getunifiedproductiondates",
       "community": 11,
@@ -8127,7 +8277,7 @@
       "label": "getDaysArray()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L149",
+      "source_location": "L151",
       "_origin": "ast",
       "id": "production_weavingorderforms_getdaysarray",
       "community": 11,
@@ -8137,7 +8287,7 @@
       "label": "formatDateKey()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L159",
+      "source_location": "L161",
       "_origin": "ast",
       "id": "production_weavingorderforms_formatdatekey",
       "community": 11,
@@ -8147,7 +8297,7 @@
       "label": "isToday()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L166",
+      "source_location": "L168",
       "_origin": "ast",
       "id": "production_weavingorderforms_istoday",
       "community": 11,
@@ -8157,7 +8307,7 @@
       "label": "getLocalDateString()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L173",
+      "source_location": "L175",
       "_origin": "ast",
       "id": "production_weavingorderforms_getlocaldatestring",
       "community": 11,
@@ -8167,7 +8317,7 @@
       "label": "hasExceededPlannedEnd()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L183",
+      "source_location": "L185",
       "_origin": "ast",
       "id": "production_weavingorderforms_hasexceededplannedend",
       "community": 11,
@@ -8177,7 +8327,7 @@
       "label": "allocateLanes()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L196",
+      "source_location": "L198",
       "_origin": "ast",
       "id": "production_weavingorderforms_allocatelanes",
       "community": 11,
@@ -8187,7 +8337,7 @@
       "label": "getStatusColorForWeaving()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L251",
+      "source_location": "L253",
       "_origin": "ast",
       "id": "production_weavingorderforms_getstatuscolorforweaving",
       "community": 11,
@@ -8197,7 +8347,7 @@
       "label": "DAY_NAMES",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L283",
+      "source_location": "L285",
       "_origin": "ast",
       "id": "production_weavingorderforms_day_names",
       "community": 11,
@@ -8207,7 +8357,7 @@
       "label": "MONTH_NAMES",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L284",
+      "source_location": "L286",
       "_origin": "ast",
       "id": "production_weavingorderforms_month_names",
       "community": 11,
@@ -8217,7 +8367,7 @@
       "label": "calcBarPositionForDates()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L289",
+      "source_location": "L291",
       "_origin": "ast",
       "id": "production_weavingorderforms_calcbarpositionfordates",
       "community": 11,
@@ -8227,7 +8377,7 @@
       "label": "calcBarPosition()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L323",
+      "source_location": "L325",
       "_origin": "ast",
       "id": "production_weavingorderforms_calcbarposition",
       "community": 11,
@@ -8237,7 +8387,7 @@
       "label": "GanttBar()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L327",
+      "source_location": "L329",
       "_origin": "ast",
       "id": "production_weavingorderforms_ganttbar",
       "community": 11,
@@ -8247,7 +8397,7 @@
       "label": "MOCK_AIRJET_LOOMS",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L548",
+      "source_location": "L575",
       "_origin": "ast",
       "id": "production_weavingorderforms_mock_airjet_looms",
       "community": 11,
@@ -8257,7 +8407,7 @@
       "label": "MOCK_RAPIER_LOOMS",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L556",
+      "source_location": "L583",
       "_origin": "ast",
       "id": "production_weavingorderforms_mock_rapier_looms",
       "community": 11,
@@ -8267,7 +8417,7 @@
       "label": "getLooms()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L562",
+      "source_location": "L589",
       "_origin": "ast",
       "id": "production_weavingorderforms_getlooms",
       "community": 11,
@@ -8277,7 +8427,7 @@
       "label": "getOrdersForMachine()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L579",
+      "source_location": "L606",
       "_origin": "ast",
       "id": "production_weavingorderforms_getordersformachine",
       "community": 11,
@@ -8287,7 +8437,7 @@
       "label": "STATUS_OPTIONS",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L593",
+      "source_location": "L620",
       "_origin": "ast",
       "id": "production_weavingorderforms_status_options",
       "community": 11,
@@ -8297,7 +8447,7 @@
       "label": "WeavingOrderForms()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L598",
+      "source_location": "L625",
       "_origin": "ast",
       "id": "production_weavingorderforms_weavingorderforms",
       "community": 11,
@@ -8307,7 +8457,7 @@
       "label": "MultiSelectDropdown()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L5945",
+      "source_location": "L6192",
       "_origin": "ast",
       "id": "production_weavingorderforms_multiselectdropdown",
       "community": 11,
@@ -8317,10 +8467,10 @@
       "label": "WvofStopWizardModal()",
       "file_type": "code",
       "source_file": "src/pages/Production/WeavingOrderForms.jsx",
-      "source_location": "L6050",
+      "source_location": "L6297",
       "_origin": "ast",
       "id": "production_weavingorderforms_wvofstopwizardmodal",
-      "community": 399,
+      "community": 263,
       "norm_label": "wvofstopwizardmodal()"
     },
     {
@@ -8360,7 +8510,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "utils_weaving",
-      "community": 399,
+      "community": 263,
       "norm_label": "weaving.js"
     },
     {
@@ -8370,7 +8520,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "utils_weaving_generateweavingnumbersbulk",
-      "community": 399,
+      "community": 263,
       "norm_label": "generateweavingnumbersbulk()"
     },
     {
@@ -8380,7 +8530,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "id": "utils_weaving_getmaxseq",
-      "community": 399,
+      "community": 263,
       "norm_label": "getmaxseq()"
     },
     {
@@ -8390,7 +8540,7 @@
       "source_location": "L97",
       "_origin": "ast",
       "id": "utils_weaving_insertweavingorderswithretry",
-      "community": 399,
+      "community": 263,
       "norm_label": "insertweavingorderswithretry()"
     },
     {
@@ -15600,7 +15750,7 @@
       "source_location": "L54",
       "_origin": "ast",
       "id": "users_bundles_security_compliance",
-      "community": 379,
+      "community": 217,
       "norm_label": "security & compliance"
     },
     {
@@ -15610,7 +15760,7 @@
       "source_location": "L56",
       "_origin": "ast",
       "id": "users_bundles_the_security_engineer_pack",
-      "community": 379,
+      "community": 217,
       "norm_label": "\ud83d\udee1\ufe0f the \"security engineer\" pack"
     },
     {
@@ -15620,7 +15770,7 @@
       "source_location": "L70",
       "_origin": "ast",
       "id": "users_bundles_the_security_developer_pack",
-      "community": 379,
+      "community": 217,
       "norm_label": "\ud83d\udd10 the \"security developer\" pack"
     },
     {
@@ -15830,7 +15980,7 @@
       "source_location": "L297",
       "_origin": "ast",
       "id": "users_bundles_data_analytics",
-      "community": 376,
+      "community": 399,
       "norm_label": "\ud83d\udcca data & analytics"
     },
     {
@@ -15840,7 +15990,7 @@
       "source_location": "L299",
       "_origin": "ast",
       "id": "users_bundles_the_data_analytics_pack",
-      "community": 376,
+      "community": 399,
       "norm_label": "\ud83d\udcca the \"data & analytics\" pack"
     },
     {
@@ -15850,7 +16000,7 @@
       "source_location": "L312",
       "_origin": "ast",
       "id": "users_bundles_the_data_engineering_pack",
-      "community": 376,
+      "community": 399,
       "norm_label": "\ud83d\udd04 the \"data engineering\" pack"
     },
     {
@@ -18240,7 +18390,7 @@
       "source_location": "L24",
       "_origin": "ast",
       "id": "users_security_skills_active_directory_attacks_active_directory_attacks",
-      "community": 195,
+      "community": 421,
       "norm_label": "active directory attacks (`active-directory-attacks`)"
     },
     {
@@ -18250,7 +18400,7 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_28",
-      "community": 195,
+      "community": 421,
       "norm_label": "use cases"
     },
     {
@@ -18260,7 +18410,7 @@
       "source_location": "L34",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_34",
-      "community": 195,
+      "community": 421,
       "norm_label": "example prompts"
     },
     {
@@ -18460,7 +18610,7 @@
       "source_location": "L137",
       "_origin": "ast",
       "id": "users_security_skills_auth_implementation_patterns_auth_implementation_patterns",
-      "community": 234,
+      "community": 195,
       "norm_label": "auth-implementation-patterns (`auth-implementation-patterns`)"
     },
     {
@@ -18470,7 +18620,7 @@
       "source_location": "L141",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_141",
-      "community": 234,
+      "community": 195,
       "norm_label": "use cases"
     },
     {
@@ -18480,7 +18630,7 @@
       "source_location": "L146",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_146",
-      "community": 234,
+      "community": 195,
       "norm_label": "example prompts"
     },
     {
@@ -18490,7 +18640,7 @@
       "source_location": "L153",
       "_origin": "ast",
       "id": "users_security_skills_aws_penetration_testing_aws_penetration_testing",
-      "community": 408,
+      "community": 379,
       "norm_label": "aws penetration testing (`aws-penetration-testing`)"
     },
     {
@@ -18500,7 +18650,7 @@
       "source_location": "L157",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_157",
-      "community": 408,
+      "community": 379,
       "norm_label": "use cases"
     },
     {
@@ -18510,7 +18660,7 @@
       "source_location": "L162",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_162",
-      "community": 408,
+      "community": 379,
       "norm_label": "example prompts"
     },
     {
@@ -18760,7 +18910,7 @@
       "source_location": "L284",
       "_origin": "ast",
       "id": "users_security_skills_cloud_penetration_testing_cloud_penetration_testing",
-      "community": 382,
+      "community": 375,
       "norm_label": "cloud penetration testing (`cloud-penetration-testing`)"
     },
     {
@@ -18770,7 +18920,7 @@
       "source_location": "L288",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_288",
-      "community": 382,
+      "community": 375,
       "norm_label": "use cases"
     },
     {
@@ -18780,7 +18930,7 @@
       "source_location": "L294",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_294",
-      "community": 382,
+      "community": 375,
       "norm_label": "example prompts"
     },
     {
@@ -18790,7 +18940,7 @@
       "source_location": "L301",
       "_origin": "ast",
       "id": "users_security_skills_cloud_architect_cloud_architect",
-      "community": 62,
+      "community": 284,
       "norm_label": "cloud-architect (`cloud-architect`)"
     },
     {
@@ -18800,7 +18950,7 @@
       "source_location": "L305",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_305",
-      "community": 62,
+      "community": 284,
       "norm_label": "use cases"
     },
     {
@@ -18810,7 +18960,7 @@
       "source_location": "L308",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_308",
-      "community": 62,
+      "community": 284,
       "norm_label": "example prompts"
     },
     {
@@ -18850,7 +19000,7 @@
       "source_location": "L337",
       "_origin": "ast",
       "id": "users_security_skills_code_reviewer_code_reviewer",
-      "community": 405,
+      "community": 407,
       "norm_label": "code-reviewer (`code-reviewer`)"
     },
     {
@@ -18860,7 +19010,7 @@
       "source_location": "L341",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_341",
-      "community": 405,
+      "community": 407,
       "norm_label": "use cases"
     },
     {
@@ -18870,7 +19020,7 @@
       "source_location": "L344",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_344",
-      "community": 405,
+      "community": 407,
       "norm_label": "example prompts"
     },
     {
@@ -18880,7 +19030,7 @@
       "source_location": "L356",
       "_origin": "ast",
       "id": "users_security_skills_codebase_cleanup_deps_audit_codebase_cleanup_deps_audit",
-      "community": 284,
+      "community": 368,
       "norm_label": "codebase-cleanup-deps-audit (`codebase-cleanup-deps-audit`)"
     },
     {
@@ -18890,7 +19040,7 @@
       "source_location": "L360",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_360",
-      "community": 284,
+      "community": 368,
       "norm_label": "use cases"
     },
     {
@@ -18900,7 +19050,7 @@
       "source_location": "L363",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_363",
-      "community": 284,
+      "community": 368,
       "norm_label": "example prompts"
     },
     {
@@ -20250,7 +20400,7 @@
       "source_location": "L1007",
       "_origin": "ast",
       "id": "users_security_skills_mobile_security_coder_mobile_security_coder",
-      "community": 416,
+      "community": 400,
       "norm_label": "mobile-security-coder (`mobile-security-coder`)"
     },
     {
@@ -20260,7 +20410,7 @@
       "source_location": "L1011",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1011",
-      "community": 416,
+      "community": 400,
       "norm_label": "use cases"
     },
     {
@@ -20270,7 +20420,7 @@
       "source_location": "L1016",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1016",
-      "community": 416,
+      "community": 400,
       "norm_label": "example prompts"
     },
     {
@@ -20280,7 +20430,7 @@
       "source_location": "L1032",
       "_origin": "ast",
       "id": "users_security_skills_mtls_configuration_mtls_configuration",
-      "community": 373,
+      "community": 62,
       "norm_label": "mtls-configuration (`mtls-configuration`)"
     },
     {
@@ -20290,7 +20440,7 @@
       "source_location": "L1036",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1036",
-      "community": 373,
+      "community": 62,
       "norm_label": "use cases"
     },
     {
@@ -20300,7 +20450,7 @@
       "source_location": "L1039",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1039",
-      "community": 373,
+      "community": 62,
       "norm_label": "example prompts"
     },
     {
@@ -20340,7 +20490,7 @@
       "source_location": "L1061",
       "_origin": "ast",
       "id": "users_security_skills_nestjs_expert_nestjs_expert",
-      "community": 62,
+      "community": 376,
       "norm_label": "nestjs-expert (`nestjs-expert`)"
     },
     {
@@ -20350,7 +20500,7 @@
       "source_location": "L1065",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1065",
-      "community": 62,
+      "community": 376,
       "norm_label": "use cases"
     },
     {
@@ -20360,7 +20510,7 @@
       "source_location": "L1068",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1068",
-      "community": 62,
+      "community": 376,
       "norm_label": "example prompts"
     },
     {
@@ -20400,7 +20550,7 @@
       "source_location": "L1092",
       "_origin": "ast",
       "id": "users_security_skills_nextjs_supabase_auth_nextjs_supabase_auth",
-      "community": 407,
+      "community": 373,
       "norm_label": "nextjs-supabase-auth (`nextjs-supabase-auth`)"
     },
     {
@@ -20410,7 +20560,7 @@
       "source_location": "L1096",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1096",
-      "community": 407,
+      "community": 373,
       "norm_label": "use cases"
     },
     {
@@ -20420,7 +20570,7 @@
       "source_location": "L1099",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1099",
-      "community": 407,
+      "community": 373,
       "norm_label": "example prompts"
     },
     {
@@ -20430,7 +20580,7 @@
       "source_location": "L1104",
       "_origin": "ast",
       "id": "users_security_skills_nodejs_backend_patterns_nodejs_backend_patterns",
-      "community": 400,
+      "community": 408,
       "norm_label": "nodejs-backend-patterns (`nodejs-backend-patterns`)"
     },
     {
@@ -20440,7 +20590,7 @@
       "source_location": "L1108",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1108",
-      "community": 400,
+      "community": 408,
       "norm_label": "use cases"
     },
     {
@@ -20450,7 +20600,7 @@
       "source_location": "L1111",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1111",
-      "community": 400,
+      "community": 408,
       "norm_label": "example prompts"
     },
     {
@@ -20460,7 +20610,7 @@
       "source_location": "L1116",
       "_origin": "ast",
       "id": "users_security_skills_nodejs_best_practices_nodejs_best_practices",
-      "community": 368,
+      "community": 380,
       "norm_label": "nodejs-best-practices (`nodejs-best-practices`)"
     },
     {
@@ -20470,7 +20620,7 @@
       "source_location": "L1120",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1120",
-      "community": 368,
+      "community": 380,
       "norm_label": "use cases"
     },
     {
@@ -20480,7 +20630,7 @@
       "source_location": "L1123",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1123",
-      "community": 368,
+      "community": 380,
       "norm_label": "example prompts"
     },
     {
@@ -21030,7 +21180,7 @@
       "source_location": "L1374",
       "_origin": "ast",
       "id": "users_security_skills_security_scanning_tools_scanning_tools",
-      "community": 417,
+      "community": 62,
       "norm_label": "security scanning tools (`scanning-tools`)"
     },
     {
@@ -21040,7 +21190,7 @@
       "source_location": "L1378",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1378",
-      "community": 417,
+      "community": 62,
       "norm_label": "use cases"
     },
     {
@@ -21050,7 +21200,7 @@
       "source_location": "L1381",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1381",
-      "community": 417,
+      "community": 62,
       "norm_label": "example prompts"
     },
     {
@@ -21090,7 +21240,7 @@
       "source_location": "L1403",
       "_origin": "ast",
       "id": "users_security_skills_security_compliance_compliance_check_security_compliance_compliance_check",
-      "community": 62,
+      "community": 394,
       "norm_label": "security-compliance-compliance-check (`security-compliance-compliance-check`)"
     },
     {
@@ -21100,7 +21250,7 @@
       "source_location": "L1407",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1407",
-      "community": 62,
+      "community": 394,
       "norm_label": "use cases"
     },
     {
@@ -21110,7 +21260,7 @@
       "source_location": "L1410",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1410",
-      "community": 62,
+      "community": 394,
       "norm_label": "example prompts"
     },
     {
@@ -21150,7 +21300,7 @@
       "source_location": "L1427",
       "_origin": "ast",
       "id": "users_security_skills_security_review_cc_skill_security_review",
-      "community": 217,
+      "community": 403,
       "norm_label": "security-review (`cc-skill-security-review`)"
     },
     {
@@ -21160,7 +21310,7 @@
       "source_location": "L1431",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1431",
-      "community": 217,
+      "community": 403,
       "norm_label": "use cases"
     },
     {
@@ -21170,7 +21320,7 @@
       "source_location": "L1434",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1434",
-      "community": 217,
+      "community": 403,
       "norm_label": "example prompts"
     },
     {
@@ -21240,7 +21390,7 @@
       "source_location": "L1463",
       "_origin": "ast",
       "id": "users_security_skills_security_scanning_security_sast_security_scanning_security_sast",
-      "community": 403,
+      "community": 381,
       "norm_label": "security-scanning-security-sast (`security-scanning-security-sast`)"
     },
     {
@@ -21250,7 +21400,7 @@
       "source_location": "L1467",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1467",
-      "community": 403,
+      "community": 381,
       "norm_label": "use cases"
     },
     {
@@ -21260,7 +21410,7 @@
       "source_location": "L1470",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1470",
-      "community": 403,
+      "community": 381,
       "norm_label": "example prompts"
     },
     {
@@ -21510,7 +21660,7 @@
       "source_location": "L1572",
       "_origin": "ast",
       "id": "users_security_skills_stripe_integration_stripe_integration",
-      "community": 418,
+      "community": 62,
       "norm_label": "stripe-integration (`stripe-integration`)"
     },
     {
@@ -21520,7 +21670,7 @@
       "source_location": "L1576",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1576",
-      "community": 418,
+      "community": 62,
       "norm_label": "use cases"
     },
     {
@@ -21530,7 +21680,7 @@
       "source_location": "L1579",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1579",
-      "community": 418,
+      "community": 62,
       "norm_label": "example prompts"
     },
     {
@@ -21540,7 +21690,7 @@
       "source_location": "L1584",
       "_origin": "ast",
       "id": "users_security_skills_terraform_specialist_terraform_specialist",
-      "community": 62,
+      "community": 398,
       "norm_label": "terraform-specialist (`terraform-specialist`)"
     },
     {
@@ -21550,7 +21700,7 @@
       "source_location": "L1588",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1588",
-      "community": 62,
+      "community": 398,
       "norm_label": "use cases"
     },
     {
@@ -21560,7 +21710,7 @@
       "source_location": "L1591",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1591",
-      "community": 62,
+      "community": 398,
       "norm_label": "example prompts"
     },
     {
@@ -21690,7 +21840,7 @@
       "source_location": "L1651",
       "_origin": "ast",
       "id": "users_security_skills_vulnerability_scanner_vulnerability_scanner",
-      "community": 414,
+      "community": 418,
       "norm_label": "vulnerability-scanner (`vulnerability-scanner`)"
     },
     {
@@ -21700,7 +21850,7 @@
       "source_location": "L1655",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1655",
-      "community": 414,
+      "community": 418,
       "norm_label": "use cases"
     },
     {
@@ -21710,7 +21860,7 @@
       "source_location": "L1658",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1658",
-      "community": 414,
+      "community": 418,
       "norm_label": "example prompts"
     },
     {
@@ -21750,7 +21900,7 @@
       "source_location": "L1675",
       "_origin": "ast",
       "id": "users_security_skills_web_design_guidelines_web_design_guidelines",
-      "community": 375,
+      "community": 405,
       "norm_label": "web-design-guidelines (`web-design-guidelines`)"
     },
     {
@@ -21760,7 +21910,7 @@
       "source_location": "L1679",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1679",
-      "community": 375,
+      "community": 405,
       "norm_label": "use cases"
     },
     {
@@ -21770,7 +21920,7 @@
       "source_location": "L1682",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1682",
-      "community": 375,
+      "community": 405,
       "norm_label": "example prompts"
     },
     {
@@ -21810,7 +21960,7 @@
       "source_location": "L1699",
       "_origin": "ast",
       "id": "users_security_skills_wireshark_network_traffic_analysis_wireshark_analysis",
-      "community": 381,
+      "community": 383,
       "norm_label": "wireshark network traffic analysis (`wireshark-analysis`)"
     },
     {
@@ -21820,7 +21970,7 @@
       "source_location": "L1703",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1703",
-      "community": 381,
+      "community": 383,
       "norm_label": "use cases"
     },
     {
@@ -21830,7 +21980,7 @@
       "source_location": "L1706",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1706",
-      "community": 381,
+      "community": 383,
       "norm_label": "example prompts"
     },
     {
@@ -21840,7 +21990,7 @@
       "source_location": "L1711",
       "_origin": "ast",
       "id": "users_security_skills_wordpress_penetration_testing_wordpress_penetration_testing",
-      "community": 419,
+      "community": 62,
       "norm_label": "wordpress penetration testing (`wordpress-penetration-testing`)"
     },
     {
@@ -21850,7 +22000,7 @@
       "source_location": "L1715",
       "_origin": "ast",
       "id": "users_security_skills_use_cases_1715",
-      "community": 419,
+      "community": 62,
       "norm_label": "use cases"
     },
     {
@@ -21860,7 +22010,7 @@
       "source_location": "L1718",
       "_origin": "ast",
       "id": "users_security_skills_example_prompts_1718",
-      "community": 419,
+      "community": 62,
       "norm_label": "example prompts"
     },
     {
@@ -33815,6 +33965,26 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "scratch/debug_avail.js",
+      "source_location": "L11",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_debug_avail",
+      "target": "scratch_debug_avail_main"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/debug_avail.js",
+      "source_location": "L9",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_debug_avail",
+      "target": "scratch_debug_avail_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scratch/debug_processed_order_fields.js",
       "source_location": "L11",
       "weight": 1.0,
@@ -34838,9 +35008,9 @@
       "source_file": "scratch/list_orders.js",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "scratch_list_orders",
-      "target": "scratch_list_orders_createclient",
-      "confidence_score": 1.0
+      "target": "scratch_list_orders_createclient"
     },
     {
       "relation": "contains",
@@ -34848,9 +35018,9 @@
       "source_file": "scratch/list_orders.js",
       "source_location": "L2",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "scratch_list_orders",
-      "target": "scratch_list_orders_dotenv",
-      "confidence_score": 1.0
+      "target": "scratch_list_orders_dotenv"
     },
     {
       "relation": "contains",
@@ -34858,9 +35028,9 @@
       "source_file": "scratch/list_orders.js",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "scratch_list_orders",
-      "target": "scratch_list_orders_main",
-      "confidence_score": 1.0
+      "target": "scratch_list_orders_main"
     },
     {
       "relation": "contains",
@@ -34868,9 +35038,9 @@
       "source_file": "scratch/list_orders.js",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "scratch_list_orders",
-      "target": "scratch_list_orders_path",
-      "confidence_score": 1.0
+      "target": "scratch_list_orders_path"
     },
     {
       "relation": "contains",
@@ -34878,9 +35048,9 @@
       "source_file": "scratch/list_orders.js",
       "source_location": "L9",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "scratch_list_orders",
-      "target": "scratch_list_orders_supabase",
-      "confidence_score": 1.0
+      "target": "scratch_list_orders_supabase"
     },
     {
       "relation": "contains",
@@ -35085,6 +35255,26 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "scratch/test_auth_fetch.js",
+      "source_location": "L10",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_test_auth_fetch",
+      "target": "scratch_test_auth_fetch_run"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/test_auth_fetch.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_test_auth_fetch",
+      "target": "scratch_test_auth_fetch_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scratch/test_columns.js",
       "source_location": "L16",
       "weight": 1.0,
@@ -35276,6 +35466,26 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "scratch/trace_exact_keys.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_trace_exact_keys",
+      "target": "scratch_trace_exact_keys_main"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/trace_exact_keys.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_trace_exact_keys",
+      "target": "scratch_trace_exact_keys_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scratch/trace_lot2.js",
       "source_location": "L8",
       "weight": 1.0,
@@ -35326,6 +35536,26 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "scratch/trace_lot_stock.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_trace_lot_stock",
+      "target": "scratch_trace_lot_stock_main"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/trace_lot_stock.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_trace_lot_stock",
+      "target": "scratch_trace_lot_stock_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scratch/trace_receipt_items.js",
       "source_location": "L8",
       "weight": 1.0,
@@ -35372,6 +35602,26 @@
       "confidence_score": 1.0,
       "source": "scratch_trace_receipt_items",
       "target": "scratch_trace_receipt_items_supabase"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/trace_receipts_raw.js",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_trace_receipts_raw",
+      "target": "scratch_trace_receipts_raw_main"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scratch/trace_receipts_raw.js",
+      "source_location": "L6",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "scratch_trace_receipts_raw",
+      "target": "scratch_trace_receipts_raw_supabase"
     },
     {
       "relation": "contains",
@@ -36169,11 +36419,33 @@
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
+      "source_file": "src/pages/Orders/OrderWeavingTab.jsx",
+      "source_location": "L8",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "orders_orderweavingtab",
+      "target": "components_dyrrdetail"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
       "source_file": "src/pages/Production/WarpingOrderForms.jsx",
       "source_location": "L12",
       "weight": 1.0,
       "confidence_score": 1.0,
       "source": "production_warpingorderforms",
+      "target": "components_dyrrdetail"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "src/pages/Production/WeavingOrderForms.jsx",
+      "source_location": "L13",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "production_weavingorderforms",
       "target": "components_dyrrdetail"
     },
     {
@@ -38648,11 +38920,33 @@
       "relation": "imports_from",
       "context": "import",
       "confidence": "EXTRACTED",
+      "source_file": "src/pages/Orders/OrderWeavingTab.jsx",
+      "source_location": "L7",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "orders_orderweavingtab",
+      "target": "dyedyarn_dyedreceiptprintmodal"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
       "source_file": "src/pages/Production/WarpingOrderForms.jsx",
       "source_location": "L13",
       "weight": 1.0,
       "confidence_score": 1.0,
       "source": "production_warpingorderforms",
+      "target": "dyedyarn_dyedreceiptprintmodal"
+    },
+    {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "src/pages/Production/WeavingOrderForms.jsx",
+      "source_location": "L12",
+      "weight": 1.0,
+      "confidence_score": 1.0,
+      "source": "production_weavingorderforms",
       "target": "dyedyarn_dyedreceiptprintmodal"
     },
     {
@@ -65040,5 +65334,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "621b2f6ac71e782318f6ff75d595763858e1dff5"
+  "built_at_commit": "67ce0b6724e1a918f45285e44600bd7e0925b728"
 }

@@ -62,6 +62,37 @@ function PrintableWVOFDC({ wvof, order, producedQty }) {
   const todayStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const typeLabel = wvof.weaving_type === 'in_house' ? 'In-House' : 'Job Work';
 
+  const getStatusDisplay = () => {
+    if (!wvof) return { label: 'Pending', color: '#d97706' };
+    switch (wvof.status) {
+      case 'completed':
+        return { label: 'Completed', color: '#166534' };
+      case 'late_complete':
+      case 'late_completed':
+        return { label: 'Completed Late', color: '#b91c1c' };
+      case 'late':
+        return { label: 'Late', color: '#b91c1c' };
+      case 'start_date_exceeded':
+        return { label: 'Start Date Exceeded', color: '#b91c1c' };
+      case 'stopped':
+        return { label: 'Stopped', color: '#c2410c' };
+      case 'on_process':
+        return { label: 'On Process', color: '#1d4ed8' };
+      case 'weft_yarn_allotted':
+        return { label: 'Weft Yarn Allotted', color: '#854d0e' };
+      case 'weft_yarn_partially_delivered':
+        return { label: 'Weft Yarn Partially Delivered', color: '#c2410c' };
+      case 'weft_yarn_delivered':
+        return { label: 'Weft Yarn Delivered', color: '#0369a1' };
+      case 'pending':
+        return { label: 'Pending', color: '#d97706' };
+      default:
+        return { label: wvof.status ? wvof.status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Pending', color: '#d97706' };
+    }
+  };
+
+  const statusDisplay = getStatusDisplay();
+
   return (
     <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-current)', paddingTop: '1.5rem' }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
@@ -176,17 +207,12 @@ function PrintableWVOFDC({ wvof, order, producedQty }) {
               <div style={{ fontWeight: '700' }}>{wvof.beam_number || '—'}</div>
             </div>
             <div>
-              <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#888', fontWeight: '700', display: 'block' }}>Status during completion</label>
+              <label style={{ fontSize: '9px', textTransform: 'uppercase', color: '#888', fontWeight: '700', display: 'block' }}>Status</label>
               <div style={{ 
                 fontWeight: '700', 
-                color: wvof.status === 'stopped' 
-                  ? '#c2410c' 
-                  : (wvof.status === 'late_complete' ? '#b91c1c' : '#166534') 
+                color: statusDisplay.color
               }}>
-                {wvof.status === 'stopped' 
-                  ? 'Stopped' 
-                  : (wvof.status === 'late_complete' ? 'Completed Late' : 'Completed')
-                }
+                {statusDisplay.label}
               </div>
             </div>
           </div>

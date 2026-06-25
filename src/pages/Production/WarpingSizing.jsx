@@ -239,9 +239,8 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
         paddingLeft: compact ? '4px' : '6px',
         justifyContent: 'flex-start',
         cursor: 'pointer',
-        transition: 'box-shadow 0.15s, transform 0.15s',
-        boxShadow: hovered ? '0 4px 10px rgba(0,0,0,0.12)' : 'none',
-        transform: hovered ? 'scaleY(1.03)' : 'none'
+        transition: 'box-shadow 0.15s',
+        boxShadow: hovered ? '0 4px 10px rgba(0,0,0,0.12)' : 'none'
       }}
     >
       {/* Bar label */}
@@ -271,7 +270,7 @@ function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, custo
             padding: '0.75rem 1rem',
             minWidth: '240px',
             maxWidth: '320px',
-            zIndex: 9999,
+            zIndex: 99999,
             boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
             pointerEvents: 'none',
             fontSize: '0.72rem',
@@ -710,9 +709,10 @@ function InHouseGantt() {
         border: '1px solid var(--border-current)',
         borderRadius: '12px',
         overflow: 'hidden',
-        backgroundColor: '#fff'
+        backgroundColor: '#fff',
+        minHeight: '450px'
       }}>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="gantt-scroll-container" style={{ overflowX: 'auto' }}>
           <div style={{ minWidth: `${LABEL_COL_WIDTH + (DAY_COL_WIDTH * TOTAL_DAYS)}px` }}>
 
             {/* ── Header: Month Row ── */}
@@ -1576,12 +1576,14 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
       const finalWofQty = stopHasSplits
         ? finalWarpSplits.reduce((sum, s) => sum + parseFloat(s.qty || 0), 0)
         : 0;
+      const originalQty = Number(wofDetail.original_qty || wofDetail.qty);
 
       const { error: wofUpdateErr } = await supabase
         .from('warping_order_forms')
         .update({
           status: 'stopped',
           qty: finalWofQty,
+          original_qty: originalQty,
           process_completed_at: new Date().toISOString(),
           wofdc_number: wofdcNumber,
           warp_splits: finalWarpSplits,
@@ -3175,7 +3177,7 @@ function JobWorkTable() {
               backgroundColor: '#800000',
               color: 'rgba(255,255,255,0.92)'
             }}>
-              {['WOF Number', 'Order Number', 'Design', 'Partner', 'Qty (m)', 'Start Date', 'End Date', 'Status'].map(h => (
+              {['WOF Number', 'Order Number', 'Design', 'Partner', 'Qty (m)', 'Completed Qty (m)', 'Start Date', 'End Date', 'Status'].map(h => (
                 <th key={h} style={{
                   padding: '0.75rem 1rem', fontWeight: '800',
                   fontSize: '0.65rem', textTransform: 'uppercase',
@@ -3213,7 +3215,10 @@ function JobWorkTable() {
                     {wof.partner?.partner_name || wof.partner_name || '—'}
                   </td>
                   <td style={{ padding: '0.75rem 1rem', fontWeight: '700' }}>
-                    {wof.qty ? Number(wof.qty).toLocaleString() : '—'}
+                    {Number(wof.original_qty || wof.qty || 0).toLocaleString()}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: (wof.status === 'completed' || wof.status === 'stopped') ? 'inherit' : 'var(--text-muted-current)' }}>
+                    {wof.status === 'completed' || wof.status === 'stopped' ? Number(wof.qty || 0).toLocaleString() : '—'}
                   </td>
                   <td style={{ padding: '0.75rem 1rem' }}>
                     {wof.start_date ? new Date(wof.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
@@ -3322,6 +3327,19 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
   const [reallocSaving, setReallocSaving] = useState(false);
   const [reallocSplitsCount, setReallocSplitsCount] = useState(1);
   const [reallocSplits, setReallocSplits] = useState([]);
+  const [stopCompletedQty, setStopCompletedQty] = useState('');
+
+  const getRemainingQty = () => {
+    if (!sofDetail) return 0;
+    if (stopStep) {
+      const originalQty = Number(sofDetail.original_qty || sofDetail.qty || 0);
+      const completedQty = parseFloat(stopCompletedQty || 0);
+      return Math.max(0, originalQty - completedQty);
+    }
+    const originalQty = Number(sofDetail.original_qty || sofDetail.qty || 0);
+    const completedQty = sofDetail.status === 'stopped' ? Number(sofDetail.qty || 0) : 0;
+    return Math.max(0, originalQty - completedQty);
+  };
 
   // Reallocation states
   const [reallocType, setReallocType] = useState('in_house');
@@ -3361,6 +3379,8 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
         end_date: '',
         beam_name: sofDetail.beam_name || ''
       }]);
+      
+      setStopCompletedQty((sofDetail.original_qty || sofDetail.qty || 0).toString());
     }
   }, [sofDetail]);
 
@@ -3375,8 +3395,8 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
 
   const handleSplitsCountChange = (count) => {
     setReallocSplitsCount(count);
-    const balanceQty = getBalanceQty();
-    const evenQty = Math.round((balanceQty / count) * 100) / 100;
+    const remaining = getRemainingQty();
+    const evenQty = Math.round((remaining / count) * 100) / 100;
 
     setReallocSplits(prev => {
       const next = [...prev];
@@ -3611,6 +3631,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
   const handleSelectSplitsYes = async () => {
     setStopHasSplits(true);
     setStopStep('splits_table');
+    setStopCompletedQty((sofDetail.original_qty || sofDetail.qty || 0).toString());
     await loadStopSplits();
   };
 
@@ -3641,9 +3662,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
     setSaving(true);
     try {
       const originalQty = Number(sofDetail.original_qty || sofDetail.qty);
-      const completedSum = stopHasSplits 
-        ? stopSplits.reduce((sum, s) => sum + parseFloat(s.completedQty || 0), 0)
-        : 0;
+      const completedSum = parseFloat(stopCompletedQty || 0);
       
       const sofdcNumber = sofDetail.sof_number.replace('/SOF/', '/SOFDC/') + '/1';
 
@@ -3810,6 +3829,77 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
             });
           }
         }
+      } else {
+        // If the user says there are no completed weaving splits (or there's only 1 weaving order),
+        // we update or delete it based on the Sizing completed sum.
+        let wvs = [];
+        const { data: dataById, error: fetchWvErr } = await supabase
+          .from('weaving_orders')
+          .select('*')
+          .eq('sof_id', sofDetail.id);
+        
+        if (fetchWvErr) throw fetchWvErr;
+        wvs = dataById || [];
+
+        if (wvs.length === 0 && sofDetail.sof_number) {
+          const { data: dataByNum, error: fetchWvErrNum } = await supabase
+            .from('weaving_orders')
+            .select('*')
+            .eq('sof_number', sofDetail.sof_number);
+          
+          if (fetchWvErrNum) throw fetchWvErrNum;
+          wvs = dataByNum || [];
+        }
+
+        if (wvs && wvs.length > 0) {
+          if (completedSum <= 0) {
+            const { error: delErr } = await supabase
+              .from('weaving_orders')
+              .delete()
+              .eq('sof_id', sofDetail.id);
+            if (delErr) throw delErr;
+
+            if (sofDetail.sof_number) {
+              const { error: delErrNum } = await supabase
+                .from('weaving_orders')
+                .delete()
+                .eq('sof_number', sofDetail.sof_number);
+              if (delErrNum) throw delErrNum;
+            }
+          } else {
+            // Update the first one to completedSum, delete the rest if any
+            const { error: updErr } = await supabase
+              .from('weaving_orders')
+              .update({
+                qty: completedSum,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', wvs[0].id);
+            if (updErr) throw updErr;
+
+            if (wvs.length > 1) {
+              const otherIds = wvs.slice(1).map(w => w.id);
+              const { error: delErr } = await supabase
+                .from('weaving_orders')
+                .delete()
+                .in('id', otherIds);
+              if (delErr) throw delErr;
+            }
+
+            updatedWeavingSplits.push({
+              split_no: wvs[0].weaving_number || wvs[0].split_no,
+              qty: completedSum,
+              start_date: wvs[0].start_date || '',
+              end_date: wvs[0].end_date || '',
+              weaving_type: wvs[0].weaving_type || null,
+              partner_id: wvs[0].partner_id || null,
+              partner_name: wvs[0].partner_name || null,
+              machine_id: wvs[0].machine_id || null,
+              machine_name: wvs[0].machine_name || null,
+              beam_name: wvs[0].beam_name || wvs[0].beam_number || ''
+            });
+          }
+        }
       }
 
       // 5. Update current SOF
@@ -3866,9 +3956,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
   };
 
   const handlePostStopReallocate = async () => {
-    const parentRemainingQty = sofDetail.qty > 0 
-      ? (Number(sofDetail.original_qty || sofDetail.qty) - sofDetail.qty)
-      : (sofDetail.original_qty || sofDetail.qty || 0);
+    const parentRemainingQty = getRemainingQty();
 
     let totalSplitQty = 0;
     for (let idx = 0; idx < reallocSplits.length; idx++) {
@@ -4502,7 +4590,8 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                       <button
                         onClick={() => {
                           setStopHasSplits(false);
-                          setStopStep('ask_realloc_now_later');
+                          setStopStep('confirm_qty_no_splits');
+                          setStopCompletedQty('0');
                         }}
                         style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
                       >
@@ -4513,6 +4602,89 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                         style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#10b981', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
                       >
                         Yes, Splits Configured
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 2.2: Confirm quantity for no splits (New) */}
+                {stopStep === 'confirm_qty_no_splits' && (
+                  <div>
+                    <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <AlertTriangle size={16} /> Stop Permanently: Confirm Completed Quantity
+                    </h3>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+                          Total SOF Quantity
+                        </label>
+                        <div style={{ fontSize: '0.9rem', fontWeight: '700', padding: '0.5rem 0' }}>
+                          {Number(sofDetail.original_qty || sofDetail.qty).toLocaleString()} m
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+                          Remaining Quantity (to Reallocate)
+                        </label>
+                        <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#ea580c', padding: '0.5rem 0' }}>
+                          {Number(getRemainingQty()).toLocaleString()} m
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+                        Completed Quantity (Mtrs) *
+                      </label>
+                      <input
+                        type="number"
+                        value={stopCompletedQty}
+                        onChange={e => setStopCompletedQty(e.target.value)}
+                        style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.85rem', fontWeight: '700', boxSizing: 'border-box' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => setStopStep('ask_splits')}
+                        style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={() => {
+                          const originalQty = Number(sofDetail.original_qty || sofDetail.qty);
+                          const completedQty = parseFloat(stopCompletedQty || 0);
+                          if (isNaN(completedQty) || completedQty < 0 || completedQty > originalQty) {
+                            alert(`Please enter a valid completed quantity between 0 and ${originalQty} m.`);
+                            return;
+                          }
+                          const remainingQty = originalQty - completedQty;
+                          if (remainingQty > 0) {
+                            setReallocQty(remainingQty.toString());
+                            setReallocSplitsCount(1);
+                            setReallocSplits([{
+                              sizing_type: sofDetail.sizing_type || 'in_house',
+                              qty: remainingQty.toString(),
+                              machine_id: '',
+                              machine_name: '',
+                              partner_id: '',
+                              partner_name: '',
+                              start_date: '',
+                              end_date: '',
+                              beam_name: sofDetail.beam_name || ''
+                            }]);
+                            setStopStep('ask_realloc_now_later');
+                          } else {
+                            setReallocWhen(null);
+                            setStopStep('confirm_stop');
+                          }
+                        }}
+                        style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '8px', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700' }}
+                      >
+                        Next
                       </button>
                     </div>
                   </div>
@@ -4529,7 +4701,13 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                     </p>
                     <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                       <button
-                        onClick={() => setStopStep(stopHasSplits ? 'splits_table' : 'ask_splits')}
+                        onClick={() => {
+                          if (stopHasSplits) {
+                            setStopStep('splits_table');
+                          } else {
+                            setStopStep('confirm_qty_no_splits');
+                          }
+                        }}
                         style={{ padding: '0.5rem 1rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600' }}
                       >
                         Back
@@ -4576,6 +4754,39 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                     <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', fontWeight: '800', color: '#c2410c', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <AlertTriangle size={16} /> Enter Completed Quantities for Splits
                     </h3>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+                          Total SOF Quantity
+                        </label>
+                        <div style={{ fontSize: '0.9rem', fontWeight: '700', padding: '0.5rem 0' }}>
+                          {Number(sofDetail.original_qty || sofDetail.qty).toLocaleString()} m
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+                          Remaining Quantity (to Reallocate)
+                        </label>
+                        <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#ea580c', padding: '0.5rem 0' }}>
+                          {Number(getRemainingQty()).toLocaleString()} m
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+                        Total Completed Quantity (Mtrs) *
+                      </label>
+                      <input
+                        type="number"
+                        value={stopCompletedQty}
+                        onChange={e => setStopCompletedQty(e.target.value)}
+                        style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #fed7aa', fontSize: '0.85rem', fontWeight: '700', boxSizing: 'border-box' }}
+                      />
+                    </div>
+
                     {loadingStopSplits ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem 0' }}>
                         <Loader className="spin" size={16} /> Loading configured splits...
@@ -4583,7 +4794,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                     ) : stopSplits.length === 0 ? (
                       <div style={{ marginBottom: '1.25rem' }}>
                         <p style={{ fontSize: '0.82rem', color: '#9a3412', fontStyle: 'italic' }}>
-                           No weaving splits configured for this Sizing Order Form. Click next to reallocate the full quantity.
+                           No weaving splits configured for this Sizing Order Form.
                         </p>
                       </div>
                     ) : (
@@ -4638,8 +4849,13 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                       </button>
                       <button
                         onClick={() => {
-                          // Validation
                           const originalQty = Number(sofDetail.original_qty || sofDetail.qty);
+                          const totalCompleted = parseFloat(stopCompletedQty || 0);
+                          if (isNaN(totalCompleted) || totalCompleted < 0 || totalCompleted > originalQty) {
+                            alert(`Please enter a valid completed quantity between 0 and ${originalQty} m.`);
+                            return;
+                          }
+
                           let sum = 0;
                           for (const split of stopSplits) {
                             const completedQty = parseFloat(split.completedQty || 0);
@@ -4649,14 +4865,30 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                             }
                             sum += completedQty;
                           }
-                          if (sum > originalQty) {
-                            alert(`The sum of completed quantities (${sum} m) cannot exceed the original SOF quantity (${originalQty} m).`);
+
+                          if (Math.abs(sum - totalCompleted) > 0.1) {
+                            alert(`The sum of completed quantities for splits (${sum} m) must exactly match the entered Total Completed Quantity (${totalCompleted} m).`);
                             return;
                           }
-                          const remainingQty = originalQty - sum;
+
+                          const remainingQty = originalQty - totalCompleted;
                           if (remainingQty > 0) {
+                            setReallocQty(remainingQty.toString());
+                            setReallocSplitsCount(1);
+                            setReallocSplits([{
+                              sizing_type: sofDetail.sizing_type || 'in_house',
+                              qty: remainingQty.toString(),
+                              machine_id: '',
+                              machine_name: '',
+                              partner_id: '',
+                              partner_name: '',
+                              start_date: '',
+                              end_date: '',
+                              beam_name: sofDetail.beam_name || ''
+                            }]);
                             setStopStep('ask_realloc_now_later');
                           } else {
+                            setReallocWhen(null);
                             setStopStep('confirm_stop');
                           }
                         }}
@@ -4675,7 +4907,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                       <AlertTriangle size={16} /> Reallocate Sizing Order Form
                     </h3>
                     <p style={{ margin: '0 0 1rem 0', fontSize: '0.78rem', color: '#9a3412', fontWeight: '600' }}>
-                      Configure reallocation for the unfinished quantity.
+                      Configure reallocation for the unfinished quantity ({getRemainingQty()} m).
                     </p>
 
                     <div style={{ marginBottom: '1.25rem' }}>
@@ -4822,7 +5054,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                       </button>
                       <button
                         onClick={() => {
-                          const parentRemainingQty = getBalanceQty();
+                          const parentRemainingQty = getRemainingQty();
 
                           let totalSplitQty = 0;
                           for (let idx = 0; idx < reallocSplits.length; idx++) {
@@ -4856,8 +5088,8 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                             totalSplitQty += qVal;
                           }
 
-                          if (totalSplitQty > parentRemainingQty) {
-                            alert(`Total reallocated quantity (${totalSplitQty} m) cannot exceed the parent Sizing Order Form's remaining quantity (${parentRemainingQty} m).`);
+                          if (Math.abs(totalSplitQty - parentRemainingQty) > 0.01) {
+                            alert(`Total reallocated quantity (${totalSplitQty} m) must exactly match the remaining quantity (${parentRemainingQty} m).`);
                             return;
                           }
                           setStopStep('confirm_stop');
@@ -4879,10 +5111,14 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                     <div style={{ backgroundColor: 'rgba(254,215,170,0.2)', padding: '1rem', borderRadius: '8px', border: '1px solid #fed7aa', marginBottom: '1.25rem', fontSize: '0.8rem', lineHeight: '1.5' }}>
                       <div><strong>Form to Stop:</strong> {sofDetail.sof_number}</div>
                       <div><strong>Original Qty:</strong> {Number(sofDetail.original_qty || sofDetail.qty).toLocaleString()} m</div>
-                      <div><strong>Completed Qty:</strong> {stopHasSplits ? stopSplits.reduce((sum, s) => sum + parseFloat(s.completedQty || 0), 0) : 0} m</div>
-                      <div><strong>Remaining Qty:</strong> {stopHasSplits ? (Number(sofDetail.original_qty || sofDetail.qty) - stopSplits.reduce((sum, s) => sum + parseFloat(s.completedQty || 0), 0)) : (reallocWhen === 'later' ? Number(sofDetail.original_qty || sofDetail.qty) : reallocSplits.reduce((sum, s) => sum + parseFloat(s.qty || 0), 0))} m</div>
+                      <div><strong>Completed Qty:</strong> {parseFloat(stopCompletedQty || 0).toLocaleString()} m</div>
+                      <div><strong>Remaining Qty:</strong> {getRemainingQty().toLocaleString()} m</div>
                       
-                      {reallocWhen === 'later' ? (
+                      {getRemainingQty() === 0 ? (
+                        <div style={{ marginTop: '0.75rem', borderTop: '1px dashed #fed7aa', paddingTop: '0.5rem', color: '#166534', fontWeight: '700' }}>
+                          Process fully completed. No remaining quantity to reallocate.
+                        </div>
+                      ) : reallocWhen === 'later' ? (
                         <div style={{ marginTop: '0.75rem', borderTop: '1px dashed #fed7aa', paddingTop: '0.5rem', color: '#ea580c', fontWeight: '700' }}>
                           Reallocation will be performed later.
                         </div>
@@ -4904,15 +5140,21 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
                     <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                       <button
                         onClick={() => {
-                          if (reallocWhen === 'later') {
-                            setStopStep('ask_realloc_now_later');
+                          const originalQty = Number(sofDetail.original_qty || sofDetail.qty);
+                          const completedQtyVal = parseFloat(stopCompletedQty || 0);
+                          const remainingQtyVal = originalQty - completedQtyVal;
+
+                          if (remainingQtyVal === 0) {
+                            if (stopHasSplits) {
+                              setStopStep('splits_table');
+                            } else {
+                              setStopStep('confirm_qty_no_splits');
+                            }
                           } else {
-                            const originalQty = Number(sofDetail.original_qty || sofDetail.qty);
-                            const sum = stopHasSplits ? stopSplits.reduce((sum, s) => sum + parseFloat(s.completedQty || 0), 0) : 0;
-                            if (originalQty - sum > 0 || !stopHasSplits) {
+                            if (reallocWhen === 'now') {
                               setStopStep('reallocate');
                             } else {
-                              setStopStep('splits_table');
+                              setStopStep('ask_realloc_now_later');
                             }
                           }
                         }}
@@ -5440,9 +5682,10 @@ function InHouseSizingGantt() {
         border: '1px solid var(--border-current)',
         borderRadius: '12px',
         overflow: 'hidden',
-        backgroundColor: '#fff'
+        backgroundColor: '#fff',
+        minHeight: '450px'
       }}>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="gantt-scroll-container" style={{ overflowX: 'auto' }}>
           <div style={{ minWidth: `${LABEL_COL_WIDTH + (DAY_COL_WIDTH * TOTAL_DAYS)}px` }}>
 
             {/* ── Header: Month Row ── */}

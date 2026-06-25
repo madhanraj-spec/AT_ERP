@@ -419,6 +419,7 @@ export default function CreateWarpingOrderForm() {
         start_date: startDate,
         end_date: endDate,
         qty: parseFloat(wofQty),
+        original_qty: parseFloat(wofQty),
         colour_allotments: allotments.map(a => ({
           countId: a.countId,
           countValue: a.countValue,

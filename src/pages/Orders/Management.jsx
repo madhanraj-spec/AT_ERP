@@ -410,7 +410,8 @@ function OrderCard({
   orderSofs = [],
   orderWvofs = [],
   orderDydis = [],
-  allPofs = []
+  allPofs = [],
+  hideDeleteButton = false
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState('order_info');
@@ -625,14 +626,16 @@ function OrderCard({
               >
                 {order.status === 'draft' ? <Edit size={18} /> : <Eye size={18} />}
               </button>
-              <button 
-                onClick={onDelete}
-                className="btn-icon"
-                title="Delete Order"
-                style={{ color: '#ef4444' }}
-              >
-                <Trash2 size={18} />
-              </button>
+              {!hideDeleteButton && (
+                <button 
+                  onClick={onDelete}
+                  className="btn-icon"
+                  title="Delete Order"
+                  style={{ color: '#ef4444' }}
+                >
+                  <Trash2 size={18} />
+                </button>
+              )}
             </div>
             <div style={{ color: 'var(--text-muted-current)', display: 'flex', alignItems: 'center' }}>
               {isExpanded ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
@@ -2576,7 +2579,7 @@ function TabUnderDevelopment({ title }) {
   );
 }
 
-export default function OrdersManagement() {
+export default function OrdersManagement({ hideNewOrderButton = false, showAllMerchandisers = false, backPath = '' }) {
   const [filter, setFilter] = useState('all');
   const [isPrintingSheet, setIsPrintingSheet] = useState(false);
 
@@ -2713,7 +2716,7 @@ export default function OrdersManagement() {
         .select('*, vendor:master_partners(partner_name), master_brands(brand_name)')
         .order('created_at', { ascending: false });
 
-      if (profile?.role === 'merchandiser') {
+      if (profile?.role === 'merchandiser' && !showAllMerchandisers) {
         query = query.eq('merchandiser_id', profile.id);
       }
 
@@ -2886,7 +2889,7 @@ export default function OrdersManagement() {
       <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <button 
-            onClick={() => navigate(basePath)} 
+            onClick={() => navigate(backPath || basePath)} 
             style={{ 
               background: 'none', 
               border: 'none', 
@@ -2905,18 +2908,20 @@ export default function OrdersManagement() {
             Back to Dashboard
           </button>
           <h1 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--text-current)', fontWeight: 'bold' }}>
-            Orders Management
+            {hideNewOrderButton ? 'Order Details' : 'Orders Management'}
           </h1>
         </div>
         
-        <Link 
-          to={`${basePath}/create-order`} 
-          className="btn btn-primary" 
-          style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', fontWeight: 'bold', padding: '0.625rem 1.25rem' }}
-        >
-          <Plus size={18} />
-          New Order
-        </Link>
+        {!hideNewOrderButton && (
+          <Link 
+            to={`${basePath}/create-order`} 
+            className="btn btn-primary" 
+            style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center', fontWeight: 'bold', padding: '0.625rem 1.25rem' }}
+          >
+            <Plus size={18} />
+            New Order
+          </Link>
+        )}
       </div>
 
       {/* Filter Bar */}
@@ -3169,6 +3174,7 @@ export default function OrdersManagement() {
                 order={order} 
                 basePath={basePath} 
                 onDelete={() => deleteOrder(order.id)}
+                hideDeleteButton={hideNewOrderButton}
                 yarnCounts={yarnCounts}
                 onViewDOF={fetchDOFDetail}
                 onViewGYDR={fetchGYDRDetail}

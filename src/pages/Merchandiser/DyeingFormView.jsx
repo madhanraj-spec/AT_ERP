@@ -136,7 +136,7 @@ export default function DyeingFormView() {
   const isApproved = form.status !== 'pending' && form.status !== 'rejected';
 
   return (
-    <div style={{ maxWidth: '960px', margin: '0 auto', padding: '1.5rem' }}>
+    <div className="dof-view-parent-container" style={{ maxWidth: '960px', margin: '0 auto', padding: '1.5rem' }}>
 
       {/* Screen-only action bar */}
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -566,20 +566,55 @@ export default function DyeingFormView() {
       {/* Print-only styles */}
       <style>{`
         @media print {
-          body * { visibility: hidden; }
-          .print-container, .print-container * { visibility: visible; }
-          .print-container {
-            position: absolute;
-            left: 0; top: 0;
-            width: 100%;
-            padding: 1.5rem 2rem;
-            box-shadow: none;
-            border: none;
-            border-radius: 0;
-            font-size: 12px;
+          /* Hide screen-only items */
+          .no-print,
+          .no-print *,
+          button,
+          .btn,
+          aside,
+          header {
+            display: none !important;
           }
-          .no-print { display: none !important; }
-          @page { margin: 1.5cm; size: A4; }
+          
+          /* Reset containers for multi-page height flow and zero margins */
+          body, html, #root, .app-layout-container, .main-content-wrapper, main, .main-content {
+            background: white !important;
+            color: black !important;
+            height: auto !important;
+            min-height: auto !important;
+            overflow: visible !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          
+          .dof-view-parent-container {
+            max-width: 100% !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          
+          .print-container {
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            border-radius: 0 !important;
+            background: white !important;
+            color: black !important;
+          }
+          
+          @page {
+            size: portrait;
+            margin: 1.5cm;
+          }
         }
       `}</style>
     </div>

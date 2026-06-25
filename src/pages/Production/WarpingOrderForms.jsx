@@ -157,6 +157,40 @@ export default function WarpingOrderForms() {
   const [editWofSubmitting, setEditWofSubmitting] = useState(false);
   const [editWofError, setEditWofError] = useState('');
 
+  const handleSplitQtyChange = (index, value) => {
+    const totalQty = parseFloat(forwardWof?.qty || 0);
+    setSplitsData(prev => {
+      const next = prev.map((s, idx) => idx === index ? { ...s, qty: value } : s);
+      if (next.length === 2) {
+        const enteredVal = parseFloat(value) || 0;
+        const otherIndex = index === 0 ? 1 : 0;
+        const otherQty = Math.max(0, totalQty - enteredVal);
+        next[otherIndex].qty = otherQty.toString();
+      }
+      if (next.length === 1) {
+        next[0].qty = totalQty.toString();
+      }
+      return next;
+    });
+  };
+
+  const handleEditSplitQtyChange = (index, value) => {
+    const totalQty = parseFloat(editQty || editWof?.qty || 0);
+    setEditForwardSplitsData(prev => {
+      const next = prev.map((s, idx) => idx === index ? { ...s, qty: value } : s);
+      if (next.length === 2) {
+        const enteredVal = parseFloat(value) || 0;
+        const otherIndex = index === 0 ? 1 : 0;
+        const otherQty = Math.max(0, totalQty - enteredVal);
+        next[otherIndex].qty = otherQty.toString();
+      }
+      if (next.length === 1) {
+        next[0].qty = totalQty.toString();
+      }
+      return next;
+    });
+  };
+
   const [warpingMachines, setWarpingMachines] = useState([]);
   const [warpingPartners, setWarpingPartners] = useState([]);
   const [sizingMachines, setSizingMachines] = useState([]);
@@ -1894,7 +1928,7 @@ export default function WarpingOrderForms() {
             <thead>
               <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '2px solid var(--border-current)', textAlign: 'left' }}>
                 <th style={{ width: '40px', padding: '0.875rem 0.5rem' }}></th>
-                {['WOF & Order Ref','Design','Allocation','Qty (Mtrs)','Timeline','Status & Yarn','Action'].map(h => (
+                {['WOF & Order Ref','Design','Allocation','Qty (Mtrs)','Completed Qty (Mtrs)','Timeline','Status & Yarn','Action'].map(h => (
                   <th key={h} style={{ padding: '0.875rem 1rem', fontWeight: '800', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted-current)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -2119,7 +2153,10 @@ export default function WarpingOrderForms() {
     </div>
                         </div>
                       </td>
-                      <td style={{ padding: '0.875rem 1rem', fontWeight: '700' }}>{Number(wof.qty).toLocaleString()}</td>
+                      <td style={{ padding: '0.875rem 1rem', fontWeight: '700', fontSize: '0.85rem' }}>{Number(wof.original_qty || wof.qty || 0).toLocaleString()}</td>
+                      <td style={{ padding: '0.875rem 1rem', fontWeight: '700', fontSize: '0.85rem', color: (wof.status === 'completed' || wof.status === 'stopped') ? 'var(--text-current)' : 'var(--text-muted-current)' }}>
+                        {wof.status === 'completed' || wof.status === 'stopped' ? Number(wof.qty || 0).toLocaleString() : '—'}
+                      </td>
                       <td style={{ padding: '0.875rem 1rem' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem' }}>
                           <div><span style={{ color: 'var(--text-muted-current)', fontWeight: '500' }}>Start:</span> <span style={{ fontWeight: '600' }}>{wof.start_date || '—'}</span></div>
@@ -2991,9 +3028,10 @@ export default function WarpingOrderForms() {
                                 <input
                                   type="number"
                                   value={split.qty}
-                                  onChange={e => setSplitsData(prev => prev.map((s, idx) => idx === index ? { ...s, qty: e.target.value } : s))}
+                                  disabled={splitsData.length === 1}
+                                  onChange={e => handleSplitQtyChange(index, e.target.value)}
                                   required
-                                  style={{ width: '100%', padding: '0.45rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.8rem', background: 'var(--bg-current)', color: 'var(--text-current)', boxSizing: 'border-box' }}
+                                  style={{ width: '100%', padding: '0.45rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.8rem', background: 'var(--bg-current)', color: 'var(--text-current)', boxSizing: 'border-box', opacity: splitsData.length === 1 ? 0.75 : 1 }}
                                 />
                               </div>
                               <div>
@@ -3111,9 +3149,10 @@ export default function WarpingOrderForms() {
                                 <input
                                   type="number"
                                   value={split.qty}
-                                  onChange={e => setSplitsData(prev => prev.map((s, idx) => idx === index ? { ...s, qty: e.target.value } : s))}
+                                  disabled={splitsData.length === 1}
+                                  onChange={e => handleSplitQtyChange(index, e.target.value)}
                                   required
-                                  style={{ width: '100%', padding: '0.45rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.8rem', background: 'var(--bg-current)', color: 'var(--text-current)', boxSizing: 'border-box' }}
+                                  style={{ width: '100%', padding: '0.45rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.8rem', background: 'var(--bg-current)', color: 'var(--text-current)', boxSizing: 'border-box', opacity: splitsData.length === 1 ? 0.75 : 1 }}
                                 />
                               </div>
                               <div>
@@ -3524,9 +3563,10 @@ export default function WarpingOrderForms() {
                                     <input
                                       type="number"
                                       value={split.qty}
-                                      onChange={e => setEditForwardSplitsData(prev => prev.map((s, idx) => idx === index ? { ...s, qty: e.target.value } : s))}
+                                      disabled={editForwardSplitsData.length === 1}
+                                      onChange={e => handleEditSplitQtyChange(index, e.target.value)}
                                       required
-                                      style={{ width: '100%', padding: '0.45rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.8rem', background: 'var(--bg-current)', color: 'var(--text-current)', boxSizing: 'border-box' }}
+                                      style={{ width: '100%', padding: '0.45rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.8rem', background: 'var(--bg-current)', color: 'var(--text-current)', boxSizing: 'border-box', opacity: editForwardSplitsData.length === 1 ? 0.75 : 1 }}
                                     />
                                   </div>
                                   <div>
@@ -3644,9 +3684,10 @@ export default function WarpingOrderForms() {
                                     <input
                                       type="number"
                                       value={split.qty}
-                                      onChange={e => setEditForwardSplitsData(prev => prev.map((s, idx) => idx === index ? { ...s, qty: e.target.value } : s))}
+                                      disabled={editForwardSplitsData.length === 1}
+                                      onChange={e => handleEditSplitQtyChange(index, e.target.value)}
                                       required
-                                      style={{ width: '100%', padding: '0.45rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.8rem', background: 'var(--bg-current)', color: 'var(--text-current)', boxSizing: 'border-box' }}
+                                      style={{ width: '100%', padding: '0.45rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.8rem', background: 'var(--bg-current)', color: 'var(--text-current)', boxSizing: 'border-box', opacity: editForwardSplitsData.length === 1 ? 0.75 : 1 }}
                                     />
                                   </div>
                                   <div>

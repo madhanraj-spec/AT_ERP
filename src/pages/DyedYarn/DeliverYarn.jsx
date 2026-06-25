@@ -504,16 +504,12 @@ export default function DeliverDyedYarn() {
           const countId = req.yarn_count_id || req.countId || req.count_id;
           const colour = req.colour || req.colour;
           const allottedQty = parseFloat(req.allotted_qty || 0);
-          const lotNum = req.lot_number;
-          const locId = req.location_id;
 
-          // Calculate already delivered quantity for this specific allotment of this form (matching count, colour, lot, location)
+          // Calculate already delivered quantity for this requirement (matching count & colour)
           const formDeliveries = validDeliveries.filter(d => 
             d.production_form_id === doc.id &&
             d.yarn_count_id === countId &&
-            d.colour === colour &&
-            (d.lot_number === lotNum || (!d.lot_number && !lotNum) || (d.lot_number === '—' && !lotNum) || (lotNum === '—' && !d.lot_number)) &&
-            d.location_id === locId
+            d.colour === colour
           );
           const deliveredQty = formDeliveries.reduce((sum, d) => sum + parseFloat(d.quantity_kg || 0), 0);
 
@@ -525,34 +521,39 @@ export default function DeliverDyedYarn() {
           );
 
           let defaultAllocations = [];
-          if (matchingStocks.length > 0) {
-            // Find stock matching the allotted lot and location by preference
-            const matchedIdx = matchingStocks.findIndex(s => 
-              (s.lot_number === lotNum || (!s.lot_number && !lotNum) || (s.lot_number === '—' && !lotNum) || (lotNum === '—' && !s.lot_number)) &&
-              s.location_id === locId
-            );
-            
-            const selectedIdx = matchedIdx !== -1 ? matchedIdx : 0;
-            const defaultStock = matchingStocks[selectedIdx];
-
+          if (matchingStocks.length === 1) {
             defaultAllocations = [{
-              lot_number: defaultStock.lot_number,
-              location_id: defaultStock.location_id,
-              location_name: defaultStock.location_name,
-              dof_id: defaultStock.dof_id,
-              dof_number: defaultStock.dof_number,
-              receipt_id: defaultStock.receipt_id,
-              stock_kg: defaultStock.available,
+              lot_number: matchingStocks[0].lot_number,
+              location_id: matchingStocks[0].location_id,
+              location_name: matchingStocks[0].location_name,
+              dof_id: matchingStocks[0].dof_id,
+              dof_number: matchingStocks[0].dof_number,
+              receipt_id: matchingStocks[0].receipt_id,
+              stock_kg: matchingStocks[0].available,
               quantity_kg: '',
               no_of_bags: '',
-              selectedIndex: selectedIdx.toString(),
+              selectedIndex: '0',
+              disabled: false
+            }];
+          } else if (matchingStocks.length > 1) {
+            defaultAllocations = [{
+              lot_number: '',
+              location_id: null,
+              location_name: '',
+              dof_id: null,
+              dof_number: '',
+              receipt_id: null,
+              stock_kg: 0,
+              quantity_kg: '',
+              no_of_bags: '',
+              selectedIndex: '',
               disabled: false
             }];
           } else {
             defaultAllocations = [{
-              lot_number: lotNum || '—',
-              location_id: locId,
-              location_name: req.location_name || 'No stock in warehouse',
+              lot_number: '',
+              location_id: null,
+              location_name: 'No stock in warehouse',
               dof_id: null,
               dof_number: '—',
               receipt_id: null,
@@ -914,7 +915,7 @@ export default function DeliverDyedYarn() {
         remarks: remarks,
         target_process: targetProcess,
         doc_no: targetProcess === 'warping' ? selectedTarget.wof_number : selectedTarget.weaving_number,
-        machine_name: targetProcess === 'warping' ? (selectedTarget.machine?.machine_name || selectedTarget.machine_name || '—') : null,
+        machine_name: selectedTarget.machine?.machine_name || selectedTarget.machine_name || '—',
         order_no: selectedTarget.order?.order_number || '—',
         design_no: selectedTarget.design_no || selectedTarget.order?.design_no || '—',
         design_name: selectedTarget.order?.design_name || '',
@@ -1243,7 +1244,7 @@ export default function DeliverDyedYarn() {
                                               remarks: del.remarks,
                                               target_process: targetProcess,
                                               doc_no: targetProcess === 'warping' ? doc.wof_number : doc.weaving_number,
-                                              machine_name: targetProcess === 'warping' ? (doc.machine?.machine_name || doc.machine_name || '—') : null,
+                                              machine_name: doc.machine?.machine_name || doc.machine_name || '—',
                                               order_no: doc.order?.order_number || '—',
                                               design_no: doc.order?.design_no || '—',
                                               design_name: doc.order?.design_name || '',
@@ -1946,7 +1947,7 @@ function DYDRReceiptModal({ receipt, getFormatCount, onClose }) {
                 const metaRows = [
                   [receipt.target_process === 'warping' ? 'Warping Form (WOF)' : 'Weaving Order', receipt.doc_no],
                 ];
-                if (receipt.target_process === 'warping' && receipt.machine_name) {
+                if (receipt.machine_name && receipt.machine_name !== '—') {
                   metaRows.push(['Machine No / Name', receipt.machine_name]);
                 }
                 metaRows.push(

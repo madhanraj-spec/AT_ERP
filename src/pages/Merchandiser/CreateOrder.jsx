@@ -1144,8 +1144,8 @@ export default function CreateOrder() {
                   <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
                     <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Design No / Name</td>
                     <td className="spec-value" style={{ padding: '0.6rem 0.75rem', borderRight: '1px solid var(--border-current)' }}>{formData.design_no || '-'} {formData.design_name ? `(${formData.design_name})` : ''}</td>
-                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Season / Merchandiser</td>
-                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.season || '-'} / {formData.merchandiser_name || '-'}</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Season</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.season || '-'}</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
                     <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Vendor</td>
@@ -1172,10 +1172,10 @@ export default function CreateOrder() {
                     <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.technical_specs.weave_type || '-'} / {formData.technical_specs.gsm || '-'}</td>
                   </tr>
                   <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
-                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Order Type</td>
-                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', color: '#7c3aed' }}>{formData.technical_specs.order_category || '-'}</td>
-                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}></td>
-                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}></td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Order Category</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', color: '#7c3aed', borderRight: '1px solid var(--border-current)' }}>{formData.technical_specs.order_category || '-'}</td>
+                    <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>Merchandiser</td>
+                    <td className="spec-value" style={{ padding: '0.6rem 0.75rem' }}>{formData.merchandiser_name || '-'}</td>
                   </tr>
                   <tr>
                     <td className="spec-label" style={{ padding: '0.6rem 0.75rem', fontWeight: 'bold', backgroundColor: 'var(--surface-current)', borderRight: '1px solid var(--border-current)' }}>FOB Date</td>
@@ -1358,8 +1358,13 @@ export default function CreateOrder() {
                   display: none !important;
                 }
                 
+                @page {
+                  size: portrait;
+                  margin: 1.5cm;
+                }
+                
                 /* Reset containers for multi-page height flow and zero spacing margins */
-                body, html {
+                body, html, #root, .app-layout-container, .main-content-wrapper, main, .main-content, .create-order-container {
                   background: white !important;
                   color: black !important;
                   height: auto !important;
@@ -1367,46 +1372,11 @@ export default function CreateOrder() {
                   overflow: visible !important;
                   margin: 0 !important;
                   padding: 0 !important;
+                  display: block !important;
+                  width: 100% !important;
+                  max-width: 100% !important;
                   -webkit-print-color-adjust: exact !important;
                   print-color-adjust: exact !important;
-                }
-                
-                .app-container {
-                  display: block !important;
-                  height: auto !important;
-                  min-height: auto !important;
-                  overflow: visible !important;
-                  background: white !important;
-                }
-                
-                .main-content-wrapper {
-                  display: block !important;
-                  width: 100% !important;
-                  height: auto !important;
-                  overflow: visible !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  background: white !important;
-                }
-                
-                main,
-                .main-content {
-                  display: block !important;
-                  width: 100% !important;
-                  height: auto !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  overflow: visible !important;
-                  max-width: 100% !important;
-                }
-                
-                .create-order-container {
-                  max-width: 100% !important;
-                  width: 100% !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  height: auto !important;
-                  overflow: visible !important;
                 }
                 
                 .glass-panel {
