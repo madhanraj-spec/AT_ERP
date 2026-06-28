@@ -1417,6 +1417,7 @@ export default function WarpingOrderForms() {
                 .from('sizing_order_forms')
                 .update({
                   qty: completedQty,
+                  original_qty: completedQty,
                   updated_at: new Date().toISOString()
                 })
                 .eq('id', split.id);
@@ -1426,6 +1427,7 @@ export default function WarpingOrderForms() {
                 .from('weaving_orders')
                 .update({
                   qty: completedQty,
+                  original_qty: completedQty,
                   updated_at: new Date().toISOString()
                 })
                 .eq('id', split.id);

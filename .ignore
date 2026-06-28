@@ -1,0 +1,7 @@
+.agents/
+scratch/
+graphify-out/
+node_modules/
+dist/
+.git/
+.vercel/

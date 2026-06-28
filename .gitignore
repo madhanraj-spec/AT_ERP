@@ -23,3 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Temporary scratch files and logs
+scratch/
+
+# Graphify knowledge graph outputs
+graphify-out/

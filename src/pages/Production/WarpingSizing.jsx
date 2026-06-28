@@ -1524,6 +1524,7 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
                 .from('sizing_order_forms')
                 .update({
                   qty: completedQty,
+                  original_qty: completedQty,
                   updated_at: new Date().toISOString()
                 })
                 .eq('id', split.id);
@@ -1533,6 +1534,7 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
                 .from('weaving_orders')
                 .update({
                   qty: completedQty,
+                  original_qty: completedQty,
                   updated_at: new Date().toISOString()
                 })
                 .eq('id', split.id);
@@ -3810,6 +3812,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
               .from('weaving_orders')
               .update({
                 qty: splitCompletedQty,
+                original_qty: splitCompletedQty,
                 updated_at: new Date().toISOString()
               })
               .eq('id', split.id);
@@ -3872,6 +3875,7 @@ function SofDetailModal({ sof, onClose, onStatusChanged }) {
               .from('weaving_orders')
               .update({
                 qty: completedSum,
+                original_qty: completedSum,
                 updated_at: new Date().toISOString()
               })
               .eq('id', wvs[0].id);

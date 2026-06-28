@@ -2677,6 +2677,7 @@ function SofStopWizardModal({ sof, onClose, onSuccess }) {
               .from('weaving_orders')
               .update({
                 qty: splitCompletedQty,
+                original_qty: splitCompletedQty,
                 updated_at: new Date().toISOString()
               })
               .eq('id', split.id);
@@ -2739,6 +2740,7 @@ function SofStopWizardModal({ sof, onClose, onSuccess }) {
               .from('weaving_orders')
               .update({
                 qty: completedSum,
+                original_qty: completedSum,
                 updated_at: new Date().toISOString()
               })
               .eq('id', wvs[0].id);
