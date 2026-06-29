@@ -161,6 +161,22 @@ export default function MasterDetail() {
                 <option value="Vendor">Vendor</option>
               </select>
             </div>
+            <div className="input-group">
+              <label className="input-label">GSTIN (Optional)</label>
+              <input type="text" name="gstin" className="input-field" value={formData.gstin || ''} onChange={handleInputChange} placeholder="e.g. 33AAACC1234A1Z1" maxLength={15} />
+            </div>
+            <div className="input-group">
+              <label className="input-label">State (Optional)</label>
+              <input type="text" name="state" className="input-field" value={formData.state || ''} onChange={handleInputChange} placeholder="e.g. TAMIL NADU" />
+            </div>
+            <div className="input-group">
+              <label className="input-label">State Code (Optional)</label>
+              <input type="text" name="state_code" className="input-field" value={formData.state_code || ''} onChange={handleInputChange} placeholder="e.g. 33" maxLength={2} />
+            </div>
+            <div className="input-group" style={{ gridColumn: '1 / -1' }}>
+              <label className="input-label">Address (Optional)</label>
+              <textarea name="address" className="input-field" value={formData.address || ''} onChange={handleInputChange} placeholder="Full billing address..." rows={3} style={{ resize: 'vertical' }} />
+            </div>
           </>
         );
       case 'departments':
@@ -268,7 +284,13 @@ export default function MasterDetail() {
     switch (type) {
       case 'yarn-counts': return `${item.count_value} — ${item.material} (${item.product_type})`;
       case 'brands': return item.brand_name;
-      case 'partners': return `${item.partner_name} - [${item.partner_type}]`;
+      case 'partners': {
+        const parts = [`${item.partner_name} [${item.partner_type}]`        ];
+        if (item.gstin) parts.push(`GST: ${item.gstin}`);
+        if (item.state) parts.push(`State: ${item.state} (${item.state_code || '-'})`);
+        if (item.address) parts.push(`Addr: ${item.address}`);
+        return parts.join(' | ');
+      }
       case 'departments': return item.department_name;
       case 'machines': {
         const deptName = item.master_departments?.department_name || 'N/A';

@@ -1155,260 +1155,120 @@ function ApprovalsDYRRDetailModal({ data, yarnCounts, onClose }) {
 
 function DyeingFinanceApprovals() {
   const { profile } = useAuth();
-  const [forms, setForms] = useState([]);
+  const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [allDyrrs, setAllDyrrs] = useState([]);
-  const [allGydrs, setAllGydrs] = useState([]);
-  const [allGydrItems, setAllGydrItems] = useState([]);
-  const [allDyrrItems, setAllDyrrItems] = useState([]);
-  const [allReturns, setAllReturns] = useState([]);
-  const [yarnCounts, setYarnCounts] = useState([]);
-  const [expandedDofId, setExpandedDofId] = useState(null);
-  const [inputPrices, setInputPrices] = useState({});
-  const [activeGydrDetail, setActiveGydrDetail] = useState(null);
-  const [activeDyrrDetail, setActiveDyrrDetail] = useState(null);
+  const [expandedBillId, setExpandedBillId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('all');
-
-  const getFinanceStatusBadge = (status) => {
-    switch (status) {
-      case 'awaiting_approval':
-        return { bg: '#fef3c7', text: '#92400e', label: 'AWAITING APPROVAL', icon: <Clock size={12} /> };
-      case 'approved':
-        return { bg: '#dcfce7', text: '#166534', label: 'APPROVED', icon: <CheckCircle size={12} /> };
-      case 'settled':
-        return { bg: '#dbeafe', text: '#1e40af', label: 'SETTLED', icon: <CheckCircle size={12} /> };
-      default:
-        return { bg: '#f1f5f9', text: '#475569', label: (status || '').toUpperCase(), icon: null };
-    }
-  };
-
-  const filteredForms = forms.filter(form => {
-    if (statusFilter === 'all') return true;
-    if (statusFilter === 'awaiting_approval') return form.finance_status === 'awaiting_approval';
-    if (statusFilter === 'approved') return form.finance_status === 'approved' || form.finance_status === 'settled';
-    return true;
-  });
-
-  const awaitingCount = forms.filter(f => f.finance_status === 'awaiting_approval').length;
-  const approvedCount = forms.filter(f => f.finance_status === 'approved' || f.finance_status === 'settled').length;
+  const [statusFilter, setStatusFilter] = useState('submitted');
 
   useEffect(() => {
-    fetchForms();
+    fetchBills();
   }, []);
 
-  const fetchForms = async () => {
+  const fetchBills = async () => {
     setLoading(true);
     try {
-      const [formsRes, receiptsRes, gydrsRes, gydrItemsRes, dyrrItemsRes, returnsRes, yarnRes] = await Promise.all([
-        supabase
-          .from('dyeing_order_forms')
-          .select(`
-            *,
-            dyeing_unit:master_partners(partner_name),
-            creator:profiles!dyeing_order_forms_created_by_fkey(full_name)
-          `)
-          .in('finance_status', ['awaiting_approval', 'approved', 'settled'])
-          .order('finance_submitted_at', { ascending: false }),
-        supabase
-          .from('dyed_yarn_receipts')
-          .select('id, dof_id, dof_number, received_date, dyrr_number, dc_number, vehicle_no, received_by, created_at'),
-        supabase
-          .from('greige_yarn_delivery_receipts')
-          .select('id, dof_id, dof_number, gydr_number, delivered_by, vehicle_no, remarks, created_at'),
-        supabase
-          .from('greige_yarn_delivery_items')
-          .select('*, receipt:greige_yarn_delivery_receipts(*)'),
-        supabase
-          .from('dyed_yarn_receipt_items')
-          .select('*, receipt:dyed_yarn_receipts(*)'),
-        supabase
-          .from('greige_yarn_receipts')
-          .select('*')
-          .eq('receipt_type', 'production'),
-        supabase
-          .from('master_yarn_counts')
-          .select('*')
-      ]);
-
-      if (formsRes.error) throw formsRes.error;
-      const rawForms = formsRes.data || [];
-      const receipts = receiptsRes.data || [];
-
-      const enriched = await Promise.all(rawForms.map(async (form) => {
-        let orders = [];
-        if (form.order_ids && form.order_ids.length > 0) {
-          const { data: oData } = await supabase
-            .from('orders')
-            .select('id, order_number, design_no, design_name')
-            .in('id', form.order_ids);
-          orders = oData || [];
-        }
-        const formReceipts = receipts.filter(r => r.dof_id === form.id || (r.dof_number && r.dof_number === form.dof_number));
-        const maxReceivedDate = formReceipts.reduce((max, r) => {
-          return (!max || r.received_date > max) ? r.received_date : max;
-        }, null);
-        return { ...form, orders, maxReceivedDate };
-      }));
-
-      setForms(enriched);
-      setAllDyrrs(receipts);
-      setAllGydrs(gydrsRes.data || []);
-      setAllGydrItems(gydrItemsRes.data || []);
-      setAllDyrrItems(dyrrItemsRes.data || []);
-      setAllReturns(returnsRes.data || []);
-      setYarnCounts(yarnRes.data || []);
-
-      // Initialize inputPrices
-      const pricesInit = {};
-      enriched.forEach(form => {
-        pricesInit[form.id] = { ...form.finance_prices };
-      });
-      setInputPrices(pricesInit);
-
+      const { data, error } = await supabase
+        .from('dof_bills')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setBills(data || []);
     } catch (err) {
-      console.error('Error fetching dyeing approvals:', err);
+      console.error('Error fetching dyeing bills:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const openGydrModal = async (gydr) => {
-    try {
-      const { data: items } = await supabase
-        .from('greige_yarn_delivery_items')
-        .select('*')
-        .eq('receipt_id', gydr.id);
-      setActiveGydrDetail({ receipt: gydr, items: items || [] });
-    } catch (err) {
-      console.error(err);
-      alert('Error fetching delivery details');
-    }
-  };
-
-  const openDyrrModal = async (dyrr) => {
-    try {
-      const { data: items } = await supabase
-        .from('dyed_yarn_receipt_items')
-        .select('*')
-        .eq('receipt_id', dyrr.id);
-      setActiveDyrrDetail({ receipt: dyrr, items: items || [] });
-    } catch (err) {
-      console.error(err);
-      alert('Error fetching dyed receipt details');
-    }
-  };
-
-  const getFormFinanceSummary = (form) => {
-    const groups = {};
-    (form.yarn_allocations || []).forEach(alloc => {
-      const key = `${alloc.colour}_${alloc.countId}`;
-      if (!groups[key]) {
-        const y = yarnCounts.find(c => c.id === alloc.countId);
-        const countLabel = y ? `${y.count_value} ${y.material} ${y.product_type || ''}`.trim() : 'Unknown';
-        groups[key] = {
-          key,
-          colour: alloc.colour,
-          countId: alloc.countId,
-          countLabel,
-          allottedQty: 0,
-          sentQty: 0,
-          recQty: 0
-        };
-      }
-      groups[key].allottedQty += parseFloat(alloc.total_kg || 0);
-
-      // Calculate raw sent delivery weight
-      const rawSentValue = allGydrItems
-        .filter(item => item.receipt && (item.receipt.dof_id === form.id || (item.receipt.dof_number && item.receipt.dof_number === form.dof_number)) &&
-          item.yarn_count_id === alloc.countId &&
-          item.colour === alloc.colour &&
-          (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
-          (item.order_id === alloc.orderId || !item.order_id)
-        )
-        .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
-
-      // Calculate returns to subtract
-      const returnedValue = allReturns
-        .filter(item => item.order_form_no === form.dof_number &&
-          item.yarn_count_id === alloc.countId &&
-          item.colour === alloc.colour &&
-          (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
-          (item.order_id === alloc.orderId || !item.order_id)
-        )
-        .reduce((sum, item) => sum + parseFloat(item.total_weight || 0), 0);
-
-      const sentValue = Math.max(0, rawSentValue - returnedValue);
-
-      // Calculate received weight
-      const recValue = allDyrrItems
-        .filter(item => item.receipt && (item.receipt.dof_id === form.id || (item.receipt.dof_number && item.receipt.dof_number === form.dof_number)) &&
-          item.yarn_count_id === alloc.countId &&
-          item.colour === alloc.colour &&
-          (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
-          (item.order_id === alloc.orderId || !item.order_id)
-        )
-        .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
-
-      groups[key].sentQty += sentValue;
-      groups[key].recQty += recValue;
-    });
-
-    return Object.values(groups);
-  };
-
-  const handlePriceChange = (formId, key, value) => {
-    setInputPrices(prev => ({
-      ...prev,
-      [formId]: {
-        ...prev[formId],
-        [key]: value
-      }
-    }));
-  };
-
-  const handleApproveFinance = async (form, summary) => {
-    const pricesForForm = inputPrices[form.id] || {};
-    const updatedPrices = {};
-    let totalDofPrice = 0;
-
-    for (const item of summary) {
-      const priceVal = pricesForForm[item.key] ?? form.finance_prices?.[item.key];
-      const rate = parseFloat(priceVal);
-      if (isNaN(rate) || rate <= 0) {
-        alert(`Please enter a valid price/kg for ${item.colour} (${item.countLabel})`);
-        return;
-      }
-      updatedPrices[item.key] = rate;
-      totalDofPrice += rate * item.sentQty;
-    }
-
-    if (!window.confirm(`Approve Dyeing Order Form ${form.dof_number} for Finance approval?`)) return;
-
+  const handleApproveBill = async (bill) => {
+    if (!window.confirm(`Are you sure you want to APPROVE Bill ${bill.bill_number}?`)) return;
     setSubmitting(true);
     try {
-      const { error } = await supabase
-        .from('dyeing_order_forms')
+      const { error: billErr } = await supabase
+        .from('dof_bills')
         .update({
-          finance_status: 'approved',
-          finance_prices: updatedPrices,
-          finance_total_price: totalDofPrice,
-          finance_approved_at: new Date().toISOString(),
-          finance_approved_by: profile.id
+          status: 'approved',
+          approved_by: profile.id,
+          approved_at: new Date().toISOString()
         })
-        .eq('id', form.id);
+        .eq('id', bill.id);
+      if (billErr) throw billErr;
 
-      if (error) throw error;
-      alert(`✅ Dyeing Order Form ${form.dof_number} approved for finance successfully!\nTotal Price: ₹${totalDofPrice.toFixed(2)}`);
-      setExpandedDofId(null);
-      fetchForms();
+      const { error: dofErr } = await supabase
+        .from('dyeing_order_forms')
+        .update({ bill_status: 'approved' })
+        .in('id', bill.selected_dof_ids || []);
+      if (dofErr) throw dofErr;
+
+      alert(`✅ Bill ${bill.bill_number} has been approved.`);
+      setExpandedBillId(null);
+      fetchBills();
     } catch (err) {
       console.error(err);
-      alert('Error approving for finance: ' + err.message);
+      alert('Error approving bill: ' + err.message);
     } finally {
       setSubmitting(false);
     }
   };
+
+  const handleRejectBill = async (bill) => {
+    if (!window.confirm(`Are you sure you want to REJECT Bill ${bill.bill_number}?`)) return;
+    setSubmitting(true);
+    try {
+      const { error: billErr } = await supabase
+        .from('dof_bills')
+        .update({
+          status: 'rejected',
+          rejected_by: profile.id,
+          rejected_at: new Date().toISOString()
+        })
+        .eq('id', bill.id);
+      if (billErr) throw billErr;
+
+      const { error: dofErr } = await supabase
+        .from('dyeing_order_forms')
+        .update({ bill_status: 'pending' })
+        .in('id', bill.selected_dof_ids || []);
+      if (dofErr) throw dofErr;
+
+      alert(`❌ Bill ${bill.bill_number} has been rejected.`);
+      setExpandedBillId(null);
+      fetchBills();
+    } catch (err) {
+      console.error(err);
+      alert('Error rejecting bill: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const getBillStatusBadge = (status) => {
+    switch (status) {
+      case 'submitted':
+        return { bg: '#fef3c7', text: '#92400e', label: 'AWAITING APPROVAL', icon: <Clock size={11} /> };
+      case 'approved':
+        return { bg: '#dcfce7', text: '#166534', label: 'APPROVED', icon: <CheckCircle size={11} /> };
+      case 'settled':
+        return { bg: '#dbeafe', text: '#1e40af', label: 'SETTLED', icon: <CheckCircle size={11} /> };
+      case 'rejected':
+        return { bg: '#fee2e2', text: '#b91c1c', label: 'REJECTED', icon: <XCircle size={11} /> };
+      default:
+        return { bg: '#f1f5f9', text: '#475569', label: (status || '').toUpperCase(), icon: null };
+    }
+  };
+
+  const filteredBills = bills.filter(bill => {
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'submitted') return bill.status === 'submitted';
+    if (statusFilter === 'approved') return bill.status === 'approved' || bill.status === 'settled';
+    if (statusFilter === 'rejected') return bill.status === 'rejected';
+    return true;
+  });
+
+  const awaitingCount = bills.filter(b => b.status === 'submitted').length;
+  const approvedCount = bills.filter(b => b.status === 'approved' || b.status === 'settled').length;
+  const rejectedCount = bills.filter(b => b.status === 'rejected').length;
 
   if (loading) return (
     <div style={{ textAlign: 'center', padding: '4rem' }}>
@@ -1421,9 +1281,10 @@ function DyeingFinanceApprovals() {
       {/* Status Filter Pills */}
       <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.25rem' }}>
         {[
-          { key: 'all', label: 'All DOFs', count: forms.length },
-          { key: 'awaiting_approval', label: 'Awaiting Approvals', count: awaitingCount },
+          { key: 'submitted', label: 'Awaiting Approvals', count: awaitingCount },
           { key: 'approved', label: 'Approved', count: approvedCount },
+          { key: 'rejected', label: 'Rejected', count: rejectedCount },
+          { key: 'all', label: 'All Bills', count: bills.length },
         ].map(f => (
           <button
             key={f.key}
@@ -1456,575 +1317,160 @@ function DyeingFinanceApprovals() {
         ))}
       </div>
 
-      <div className="desktop-view">
-        <div className="glass-panel" style={{ padding: 0 }}>
-          <div className="table-container" style={{ border: 'none' }}>
-            <table className="table">
-              <thead>
+      <div className="glass-panel" style={{ padding: 0 }}>
+        <div className="table-container" style={{ border: 'none' }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th style={{ width: '40px' }}></th>
+                <th>Bill Number</th>
+                <th>Invoice Details</th>
+                <th>Dyeing Unit</th>
+                <th style={{ textAlign: 'right' }}>Calculated Pre-Tax</th>
+                <th style={{ textAlign: 'right' }}>Tax</th>
+                <th style={{ textAlign: 'right' }}>Total Bill Value</th>
+                <th>Status</th>
+                <th style={{ textAlign: 'center' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredBills.length === 0 ? (
                 <tr>
-                  <th style={{ width: '40px' }}></th>
-                  <th>DOF Number</th>
-                  <th>Created By</th>
-                  <th>Dyeing Unit</th>
-                  <th>Bill Number</th>
-                  <th>Orders</th>
-                  <th>Delivery Dates</th>
-                  <th style={{ textAlign: 'right' }}>Total Qty (kg)</th>
-                  <th style={{ textAlign: 'right' }}>Total Price (₹)</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: 'center' }}>Actions</th>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)' }}>
+                    No Dyeing Bills found.
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {filteredForms.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)' }}>
-                      No Dyeing Order Forms found.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredForms.map(form => {
-                    const isExpanded = expandedDofId === form.id;
-                    const summary = getFormFinanceSummary(form);
-                    const totalDofQty = summary.reduce((sum, item) => sum + item.sentQty, 0);
-                    const totalDofPrice = summary.reduce((sum, item) => {
-                      const priceVal = inputPrices[form.id]?.[item.key] ?? (form.finance_prices?.[item.key] || 0);
-                      return sum + ((parseFloat(priceVal) || 0) * item.sentQty);
-                    }, 0);
-                    const financeBadge = getFinanceStatusBadge(form.finance_status);
-
-                    return (
-                      <React.Fragment key={form.id}>
-                        <tr className="fade-in" style={{ borderBottom: isExpanded ? 'none' : '1px solid var(--border-current)' }}>
-                          <td>
-                            <button
-                              onClick={() => setExpandedDofId(isExpanded ? null : form.id)}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}
-                            >
-                              <ChevronDown size={18} style={{
-                                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                                transition: 'transform 0.2s',
-                                color: 'var(--color-primary)'
-                              }} />
-                            </button>
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{form.dof_number}</span>
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
-                                Created: {new Date(form.created_at).toLocaleDateString()}
-                              </span>
-                            </div>
-                          </td>
-                          <td style={{ fontSize: '0.8125rem' }}>{form.creator?.full_name || '-'}</td>
-                          <td style={{ fontWeight: '500', fontSize: '0.8125rem' }}>{form.dyeing_unit?.partner_name || '-'}</td>
-                          <td style={{ fontWeight: '700', fontSize: '0.8125rem', color: 'var(--color-primary)' }}>{form.finance_bill_no || '-'}</td>
-                          <td style={{ fontSize: '0.8125rem' }}>
-                            {form.orders?.map(o => o.order_number).join(', ') || '-'}
-                          </td>
-                          <td>
-                            {(() => {
-                              const planned = form.expected_delivery_date ? new Date(form.expected_delivery_date).toLocaleDateString() : 'Not set';
-                              const actual = form.maxReceivedDate ? new Date(form.maxReceivedDate).toLocaleDateString() : 'Not received';
-                              const onTime = form.maxReceivedDate && form.expected_delivery_date && form.maxReceivedDate <= form.expected_delivery_date;
-
-                              let delayBadge = null;
-                              if (form.maxReceivedDate) {
-                                delayBadge = onTime ? (
-                                  <span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>On Time</span>
-                                ) : (
-                                  <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>Late</span>
-                                );
-                              } else if (form.expected_delivery_date) {
-                                const today = new Date().toISOString().split('T')[0];
-                                const expected = form.expected_delivery_date;
-                                if (expected < today) {
-                                  delayBadge = <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>Late</span>;
-                                } else {
-                                  delayBadge = <span style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>Pending</span>;
-                                }
-                              }
-
-                              return (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.8125rem' }}>
-                                  <div>Planned: <strong>{planned}</strong></div>
-                                  <div>Actual: <strong>{actual}</strong></div>
-                                  {delayBadge && <div style={{ marginTop: '2px' }}>{delayBadge}</div>}
-                                </div>
-                              );
-                            })()}
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
-                            {totalDofQty.toFixed(2)} kg
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>
-                            ₹{totalDofPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td>
-                            <span style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              backgroundColor: financeBadge.bg,
-                              color: financeBadge.text,
-                              padding: '3px 8px',
-                              borderRadius: '4px',
-                              fontSize: '0.75rem',
-                              fontWeight: '700',
-                              whiteSpace: 'nowrap'
-                            }}>
-                              {financeBadge.icon} {financeBadge.label}
+              ) : (
+                filteredBills.map(bill => {
+                  const isExpanded = expandedBillId === bill.id;
+                  const statusBadge = getBillStatusBadge(bill.status);
+                  
+                  return (
+                    <React.Fragment key={bill.id}>
+                      <tr className="fade-in" style={{ borderBottom: isExpanded ? 'none' : '1px solid var(--border-current)' }}>
+                        <td>
+                          <button
+                            onClick={() => setExpandedBillId(isExpanded ? null : bill.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}
+                          >
+                            <ChevronDown size={18} style={{ 
+                              transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', 
+                              transition: 'transform 0.2s',
+                              color: 'var(--color-primary)'
+                            }} />
+                          </button>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontWeight: 'bold', color: 'var(--color-primary)', fontSize: '0.9rem' }}>
+                              {bill.bill_number}
                             </span>
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            {form.finance_status === 'awaiting_approval' ? (
-                              <button
-                                onClick={() => handleApproveFinance(form, summary)}
-                                disabled={submitting}
-                                className="btn btn-primary"
-                                style={{ padding: '4px 12px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '700' }}
-                              >
-                                ✓ Approve
-                              </button>
-                            ) : (
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Approved</span>
+                            <span style={{ fontSize: '0.725rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
+                              Raised: {new Date(bill.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontWeight: '600' }}>No: {bill.invoice_number}</span>
+                            <span style={{ fontSize: '0.725rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
+                              Date: {new Date(bill.invoice_date).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ fontWeight: '600' }}>
+                          {bill.partner_name}
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: '500' }}>
+                          ₹{bill.calculated_total?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-muted-current)' }}>
+                          ₹{bill.tax_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ({bill.tax_percent}%)
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>
+                          ₹{bill.bill_total?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            backgroundColor: statusBadge.bg, color: statusBadge.text,
+                            padding: '3px 8px', borderRadius: '4px',
+                            fontSize: '0.725rem', fontWeight: '700', whiteSpace: 'nowrap'
+                          }}>
+                            {statusBadge.icon} {statusBadge.label}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', alignItems: 'center' }}>
+                            {bill.status === 'submitted' && (
+                              <>
+                                <button
+                                  onClick={() => handleApproveBill(bill)}
+                                  disabled={submitting}
+                                  className="btn btn-primary"
+                                  style={{ padding: '4px 12px', fontSize: '0.75rem', fontWeight: '700' }}
+                                >
+                                  ✓ Approve
+                                </button>
+                                <button
+                                  onClick={() => handleRejectBill(bill)}
+                                  disabled={submitting}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '4px 12px', fontSize: '0.75rem', fontWeight: '700', backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5' }}
+                                >
+                                  ✗ Reject
+                                </button>
+                              </>
                             )}
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={9} style={{ backgroundColor: '#fcfcfd', padding: '1.5rem', borderBottom: '2px solid var(--border-current)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                              <h4 style={{ margin: 0, fontSize: '0.875rem', fontWeight: '700', borderBottom: '1px solid #eee', paddingBottom: '0.5rem', color: '#475569' }}>
+                                Linked Dyeing Order Forms ({bill.selected_dof_ids?.length || 0})
+                              </h4>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1rem' }}>
+                                {(bill.bill_items || []).map((item, idx) => (
+                                  <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', backgroundColor: '#fff', padding: '0.85rem', boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.875rem', color: 'var(--color-primary)', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.4rem', marginBottom: '0.5rem' }}>
+                                      <span>DOF: {item.dof_number}</span>
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', display: 'flex', flexDirection: 'column', gap: '0.2rem', marginBottom: '0.6rem' }}>
+                                      <span><strong>Orders:</strong> {(item.order_numbers || []).join(', ')}</span>
+                                      <span><strong>Designs:</strong> {(item.design_nos || []).map((n, i) => `${n} (${item.design_names[i] || 'N/A'})`).join(', ')}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.4rem' }}>
+                                      {(item.yarn_details || []).map((yd, yidx) => (
+                                        <div key={yidx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', padding: '0.25rem 0', borderBottom: yidx < item.yarn_details.length - 1 ? '1px dotted #f1f5f9' : 'none' }}>
+                                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                            <span style={{ fontWeight: '600', color: '#334155' }}>{yd.count_label}</span>
+                                            <span style={{ fontSize: '0.675rem', color: '#64748b' }}>Color: <strong style={{ color: 'var(--color-primary)' }}>{yd.colour}</strong></span>
+                                          </div>
+                                          <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: '0.725rem', color: '#475569' }}>{yd.quantity_kg?.toFixed(2)} kg @ ₹{yd.price_per_kg?.toFixed(2)}/kg</div>
+                                            <div style={{ fontWeight: '700', color: 'var(--color-primary)', fontSize: '0.8rem', marginTop: '1px' }}>₹{yd.total_price?.toFixed(2)}</div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           </td>
                         </tr>
-
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan={11} style={{ backgroundColor: '#fcfcfd', padding: '1.5rem', borderBottom: '2px solid var(--border-current)' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                                <div>
-                                  <h4 style={{ margin: '0 0 1rem 0', color: 'var(--color-primary)', fontWeight: '800', fontSize: '0.95rem', borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>
-                                    Review Price & Summary details
-                                  </h4>
-
-                                  <div style={{ border: '1px solid var(--border-current)', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#fff' }}>
-                                    <div style={{ overflowX: 'auto' }}>
-                                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                                        <thead>
-                                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                            <th style={{ padding: '0.6rem 0.75rem', textAlign: 'left', fontWeight: '700', color: '#475569' }}>Yarn Count & Colour</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Total Sent (kg)</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Total Rec (kg)</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Shortage (kg)</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Shortage %</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', fontWeight: '700', color: '#475569', width: '130px' }}>Price / kg (₹)</th>
-                                            <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Total Price (₹)</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {summary.map((item) => {
-                                            const shortageVal = Math.max(0, item.sentQty - item.recQty);
-                                            const shortagePct = item.sentQty > 0 ? (shortageVal / item.sentQty) * 100 : 0;
-                                            const priceVal = inputPrices[form.id]?.[item.key] ?? (form.finance_prices?.[item.key] || '');
-                                            const rate = parseFloat(priceVal) || 0;
-                                            const rowTotal = rate * item.sentQty;
-
-                                            return (
-                                              <tr key={item.key} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                                <td style={{ padding: '0.6rem 0.75rem', fontWeight: '500' }}>
-                                                  <div>{item.countLabel}</div>
-                                                  <div style={{ color: 'var(--color-primary)', fontWeight: '700', fontSize: '0.75rem', marginTop: '2px' }}>
-                                                    {item.colour}
-                                                  </div>
-                                                </td>
-                                                <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '600' }}>
-                                                  {item.sentQty.toFixed(2)}
-                                                </td>
-                                                <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '600' }}>
-                                                  {item.recQty.toFixed(2)}
-                                                </td>
-                                                <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: shortageVal > 0.01 ? '#dc2626' : '#64748b', fontWeight: '600' }}>
-                                                  {shortageVal.toFixed(2)}
-                                                </td>
-                                                <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: shortagePct > 0.01 ? '#dc2626' : '#64748b', fontWeight: '600' }}>
-                                                  {shortagePct.toFixed(2)}%
-                                                </td>
-                                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'center' }}>
-                                                  <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    value={priceVal}
-                                                    disabled={form.finance_status !== 'awaiting_approval'}
-                                                    onChange={(e) => handlePriceChange(form.id, item.key, e.target.value)}
-                                                    className="input-field"
-                                                    style={{
-                                                      width: '100%',
-                                                      textAlign: 'right',
-                                                      padding: '0.3rem 0.5rem',
-                                                      fontSize: '0.8rem',
-                                                      fontWeight: 'bold',
-                                                      borderRadius: '4px',
-                                                      border: '1px solid var(--border-current)'
-                                                    }}
-                                                  />
-                                                </td>
-                                                <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '700', color: 'var(--color-primary)' }}>
-                                                  ₹{rowTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </td>
-                                              </tr>
-                                            );
-                                          })}
-
-                                          <tr style={{ backgroundColor: '#f8fafc', fontWeight: '800', borderTop: '2px solid #e2e8f0' }}>
-                                            <td colSpan="6" style={{ padding: '0.75rem', textAlign: 'right' }}>Total Price:</td>
-                                            <td style={{ padding: '0.75rem', textAlign: 'right', color: 'var(--color-primary)', fontSize: '0.9rem' }}>
-                                              ₹{totalDofPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </td>
-                                          </tr>
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-                                  <div>
-                                    <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: '800', letterSpacing: '0.5px' }}>
-                                      Greige Yarn Delivery Receipts (GYDR)
-                                    </h5>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                      {allGydrs.filter(g => g.dof_id === form.id || (g.dof_number && g.dof_number === form.dof_number)).length === 0 ? (
-                                        <div style={{ fontSize: '0.8rem', color: '#94a3b8', padding: '0.75rem', border: '1px dashed #e2e8f0', borderRadius: '6px', backgroundColor: '#fff', textAlign: 'center' }}>
-                                          No deliveries found.
-                                        </div>
-                                      ) : (
-                                        allGydrs.filter(g => g.dof_id === form.id || (g.dof_number && g.dof_number === form.dof_number)).map(g => (
-                                          <div
-                                            key={g.id}
-                                            onClick={() => openGydrModal(g)}
-                                            style={{ padding: '0.75rem', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-                                          >
-                                            <div>
-                                              <div style={{ fontWeight: '700', fontSize: '0.8rem', color: 'var(--color-primary)' }}>{g.gydr_number}</div>
-                                              <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>{new Date(g.created_at).toLocaleDateString()}</div>
-                                            </div>
-                                            <div style={{ fontSize: '0.75rem', color: '#475569', fontWeight: '500' }}>
-                                              By: <strong>{g.delivered_by}</strong>
-                                            </div>
-                                          </div>
-                                        ))
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  <div>
-                                    <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: '800', letterSpacing: '0.5px' }}>
-                                      Dyed Yarn Received Receipts (DYRR)
-                                    </h5>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                      {allDyrrs.filter(d => d.dof_id === form.id || (d.dof_number && d.dof_number === form.dof_number)).length === 0 ? (
-                                        <div style={{ fontSize: '0.8rem', color: '#94a3b8', padding: '0.75rem', border: '1px dashed #e2e8f0', borderRadius: '6px', backgroundColor: '#fff', textAlign: 'center' }}>
-                                          No receipts found.
-                                        </div>
-                                      ) : (
-                                        allDyrrs.filter(d => d.dof_id === form.id || (d.dof_number && d.dof_number === form.dof_number)).map(d => (
-                                          <div
-                                            key={d.id}
-                                            onClick={() => openDyrrModal(d)}
-                                            style={{ padding: '0.75rem', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-                                          >
-                                            <div>
-                                              <div style={{ fontWeight: '700', fontSize: '0.8rem', color: 'var(--color-primary)' }}>{d.dyrr_number}</div>
-                                              <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>{new Date(d.created_at).toLocaleDateString()}</div>
-                                            </div>
-                                            <div style={{ fontSize: '0.75rem', color: '#475569', fontWeight: '500' }}>
-                                              DC: <strong>{d.dc_number || 'N/A'}</strong>
-                                            </div>
-                                          </div>
-                                        ))
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {form.finance_status === 'awaiting_approval' && (
-                                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                                    <button
-                                      onClick={() => handleApproveFinance(form, summary)}
-                                      disabled={submitting}
-                                      className="btn btn-primary"
-                                      style={{ padding: '0.5rem 1.5rem', fontWeight: '700' }}
-                                    >
-                                      Approve for Finance
-                                    </button>
-                                  </div>
-                                )}
-
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
-
-      <div className="mobile-view">
-        {filteredForms.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)', backgroundColor: 'var(--surface-current)', borderRadius: '8px', border: '1px solid var(--border-current)', fontSize: '0.8rem' }}>
-            No Dyeing Order Forms found.
-          </div>
-        ) : (
-          filteredForms.map(form => {
-            const isExpanded = expandedDofId === form.id;
-            const summary = getFormFinanceSummary(form);
-            const totalDofQty = summary.reduce((sum, item) => sum + item.sentQty, 0);
-            const totalDofPrice = summary.reduce((sum, item) => {
-              const priceVal = inputPrices[form.id]?.[item.key] ?? (form.finance_prices?.[item.key] || 0);
-              return sum + ((parseFloat(priceVal) || 0) * item.sentQty);
-            }, 0);
-            const financeBadge = getFinanceStatusBadge(form.finance_status);
-
-            return (
-              <div key={form.id} className="mobile-card" style={{ borderLeft: isExpanded ? '3px solid var(--color-primary)' : '1px solid var(--border-current)' }}>
-                <div className="mobile-card-header">
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{form.dof_number}</span>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
-                      Created: {new Date(form.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <span style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    backgroundColor: financeBadge.bg,
-                    color: financeBadge.text,
-                    padding: '3px 8px',
-                    borderRadius: '4px',
-                    fontSize: '0.7rem',
-                    fontWeight: '700',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {financeBadge.icon} {financeBadge.label}
-                  </span>
-                </div>
-                <div className="mobile-card-body">
-                  <div className="mobile-card-row">
-                    <span className="mobile-card-label">Created By</span>
-                    <span className="mobile-card-value">{form.creator?.full_name || '-'}</span>
-                  </div>
-                  <div className="mobile-card-row">
-                    <span className="mobile-card-label">Dyeing Unit</span>
-                    <span className="mobile-card-value">{form.dyeing_unit?.partner_name || '-'}</span>
-                  </div>
-                  <div className="mobile-card-row">
-                    <span className="mobile-card-label">Bill Number</span>
-                    <span className="mobile-card-value" style={{ fontWeight: '700', color: 'var(--color-primary)' }}>
-                      {form.finance_bill_no || '-'}
-                    </span>
-                  </div>
-                  <div className="mobile-card-row">
-                    <span className="mobile-card-label">Orders</span>
-                    <span className="mobile-card-value" style={{ maxWidth: '60%', textAlign: 'right' }}>
-                      {form.orders?.map(o => o.order_number).join(', ') || '-'}
-                    </span>
-                  </div>
-
-                  {(() => {
-                    const planned = form.expected_delivery_date ? new Date(form.expected_delivery_date).toLocaleDateString() : 'Not set';
-                    const actual = form.maxReceivedDate ? new Date(form.maxReceivedDate).toLocaleDateString() : 'Not received';
-                    const onTime = form.maxReceivedDate && form.expected_delivery_date && form.maxReceivedDate <= form.expected_delivery_date;
-
-                    let delayBadge = null;
-                    if (form.maxReceivedDate) {
-                      delayBadge = onTime ? (
-                        <span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold' }}>On Time</span>
-                      ) : (
-                        <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold' }}>Late</span>
-                      );
-                    } else if (form.expected_delivery_date) {
-                      const today = new Date().toISOString().split('T')[0];
-                      const expected = form.expected_delivery_date;
-                      if (expected < today) {
-                        delayBadge = <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold' }}>Late</span>;
-                      } else {
-                        delayBadge = <span style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold' }}>Pending</span>;
-                      }
-                    }
-
-                    return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', borderTop: '1px dashed var(--border-current)', borderBottom: '1px dashed var(--border-current)', padding: '0.4rem 0', margin: '0.2rem 0' }}>
-                        <div className="mobile-card-row">
-                          <span className="mobile-card-label">Planned Deliv</span>
-                          <span className="mobile-card-value">{planned}</span>
-                        </div>
-                        <div className="mobile-card-row">
-                          <span className="mobile-card-label">Actual Deliv</span>
-                          <span className="mobile-card-value" style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                            {actual} {delayBadge}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  <div className="mobile-card-row">
-                    <span className="mobile-card-label">Total Qty</span>
-                    <span className="mobile-card-value" style={{ fontWeight: 'bold' }}>{totalDofQty.toFixed(2)} kg</span>
-                  </div>
-                  <div className="mobile-card-row">
-                    <span className="mobile-card-label">Total Price</span>
-                    <span className="mobile-card-value" style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>
-                      ₹{totalDofPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-
-                  {isExpanded && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', borderTop: '1px solid var(--border-current)', paddingTop: '1rem', marginTop: '0.5rem' }}>
-                      <h4 style={{ margin: 0, color: 'var(--color-primary)', fontWeight: '800', fontSize: '0.85rem' }}>
-                        Review Price & Summary details
-                      </h4>
-                      <div className="mobile-sub-list">
-                        {summary.map(item => {
-                          const shortageVal = Math.max(0, item.sentQty - item.recQty);
-                          const shortagePct = item.sentQty > 0 ? (shortageVal / item.sentQty) * 100 : 0;
-                          const priceVal = inputPrices[form.id]?.[item.key] ?? (form.finance_prices?.[item.key] || '');
-                          const rate = parseFloat(priceVal) || 0;
-                          const rowTotal = rate * item.sentQty;
-
-                          return (
-                            <div key={item.key} className="mobile-sub-item" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                              <div style={{ fontWeight: '700', color: 'var(--text-current)', fontSize: '0.78rem' }}>{item.countLabel}</div>
-                              <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--color-primary)' }}>{item.colour}</div>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', fontSize: '0.72rem' }}>
-                                <div>Sent: <strong>{item.sentQty.toFixed(2)}</strong></div>
-                                <div>Rec: <strong>{item.recQty.toFixed(2)}</strong></div>
-                                <div style={{ color: shortageVal > 0.01 ? '#dc2626' : 'inherit' }}>
-                                  Short: <strong>{shortageVal.toFixed(2)} ({shortagePct.toFixed(1)}%)</strong>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', gridColumn: 'span 2' }}>
-                                  <span className="mobile-card-label" style={{ fontSize: '0.7rem' }}>Price/kg (₹)</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={priceVal}
-                                    disabled={form.finance_status !== 'awaiting_approval'}
-                                    onChange={(e) => handlePriceChange(form.id, item.key, e.target.value)}
-                                    style={{
-                                      width: '80px',
-                                      textAlign: 'right',
-                                      padding: '2px 6px',
-                                      fontSize: '0.75rem',
-                                      fontWeight: 'bold',
-                                      borderRadius: '4px',
-                                      border: '1px solid var(--border-current)'
-                                    }}
-                                  />
-                                </div>
-                                <div style={{ gridColumn: 'span 2', textAlign: 'right', color: 'var(--color-primary)', fontWeight: 'bold' }}>
-                                  Row Total: ₹{rowTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                        <div>
-                          <h5 style={{ margin: '0 0 0.4rem 0', fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-muted-current)' }}>
-                            DELIVERIES (GYDR)
-                          </h5>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                            {allGydrs.filter(g => g.dof_id === form.id || (g.dof_number && g.dof_number === form.dof_number)).length === 0 ? (
-                              <div style={{ fontSize: '0.75rem', color: '#94a3b8', padding: '0.4rem', border: '1px dashed #e2e8f0', borderRadius: '4px', textAlign: 'center' }}>No deliveries.</div>
-                            ) : (
-                              allGydrs.filter(g => g.dof_id === form.id || (g.dof_number && g.dof_number === form.dof_number)).map(g => (
-                                <div key={g.id} onClick={() => openGydrModal(g)} style={{ padding: '0.5rem', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontSize: '0.75rem' }}>
-                                  <span style={{ fontWeight: '700', color: 'var(--color-primary)' }}>{g.gydr_number}</span>
-                                  <span>{new Date(g.created_at).toLocaleDateString()}</span>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                        <div>
-                          <h5 style={{ margin: '0 0 0.4rem 0', fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-muted-current)' }}>
-                            RECEIPTS (DYRR)
-                          </h5>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                            {allDyrrs.filter(d => d.dof_id === form.id || (d.dof_number && d.dof_number === form.dof_number)).length === 0 ? (
-                              <div style={{ fontSize: '0.75rem', color: '#94a3b8', padding: '0.4rem', border: '1px dashed #e2e8f0', borderRadius: '4px', textAlign: 'center' }}>No receipts.</div>
-                            ) : (
-                              allDyrrs.filter(d => d.dof_id === form.id || (d.dof_number && d.dof_number === form.dof_number)).map(d => (
-                                <div key={d.id} onClick={() => openDyrrModal(d)} style={{ padding: '0.5rem', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontSize: '0.75rem' }}>
-                                  <span style={{ fontWeight: '700', color: 'var(--color-primary)' }}>{d.dyrr_number}</span>
-                                  <span>{new Date(d.created_at).toLocaleDateString()}</span>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {form.finance_status === 'awaiting_approval' && (
-                        <button
-                          onClick={() => handleApproveFinance(form, summary)}
-                          disabled={submitting}
-                          className="btn btn-primary"
-                          style={{ width: '100%', padding: '10px', fontWeight: '700', marginTop: '0.5rem' }}
-                        >
-                          Approve for Finance
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="mobile-card-actions">
-                  <button
-                    onClick={() => setExpandedDofId(isExpanded ? null : form.id)}
-                    style={{
-                      backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1',
-                      padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '600',
-                      display: 'inline-flex', alignItems: 'center', gap: '2px'
-                    }}
-                  >
-                    <Eye size={12} /> {isExpanded ? 'Hide' : 'Review Details'}
-                  </button>
-                  {form.finance_status === 'awaiting_approval' && !isExpanded && (
-                    <button
-                      onClick={() => handleApproveFinance(form, summary)}
-                      disabled={submitting}
-                      className="btn btn-primary"
-                      style={{ padding: '6px 12px', fontSize: '0.75rem', fontWeight: '700' }}
-                    >
-                      ✓ Approve
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {activeGydrDetail && (
-        <ApprovalsGYDRDetailModal
-          data={activeGydrDetail}
-          yarnCounts={yarnCounts}
-          onClose={() => setActiveGydrDetail(null)}
-        />
-      )}
-
-      {activeDyrrDetail && (
-        <ApprovalsDYRRDetailModal
-          data={activeDyrrDetail}
-          yarnCounts={yarnCounts}
-          onClose={() => setActiveDyrrDetail(null)}
-        />
-      )}
     </div>
   );
 }

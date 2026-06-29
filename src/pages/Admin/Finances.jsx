@@ -547,240 +547,102 @@ function FinancesDYRRDetailModal({ data, yarnCounts, onClose }) {
 
 function DyeingFinances({ profile }) {
   const [loading, setLoading] = useState(true);
-  const [forms, setForms] = useState([]);
-  const [allDyrrs, setAllDyrrs] = useState([]);
-  const [allGydrs, setAllGydrs] = useState([]);
-  const [allGydrItems, setAllGydrItems] = useState([]);
-  const [allDyrrItems, setAllDyrrItems] = useState([]);
-  const [allReturns, setAllReturns] = useState([]);
-  const [yarnCounts, setYarnCounts] = useState([]);
-  const [expandedMills, setExpandedMills] = useState({});
-  const [expandedDofId, setExpandedDofId] = useState(null);
-  const [activeGydrDetail, setActiveGydrDetail] = useState(null);
-  const [activeDyrrDetail, setActiveDyrrDetail] = useState(null);
-  const [settlingDofId, setSettlingDofId] = useState(null);
+  const [bills, setBills] = useState([]);
+  const [expandedPartners, setExpandedPartners] = useState({});
+  const [expandedBillId, setExpandedBillId] = useState(null);
+  const [settlingBillId, setSettlingBillId] = useState(null);
 
   useEffect(() => {
-    fetchForms();
+    fetchBills();
   }, []);
 
-  const fetchForms = async () => {
+  const fetchBills = async () => {
     setLoading(true);
     try {
-      const [formsRes, receiptsRes, gydrsRes, gydrItemsRes, dyrrItemsRes, returnsRes, yarnRes] = await Promise.all([
-        supabase
-          .from('dyeing_order_forms')
-          .select(`
-            *,
-            dyeing_unit:master_partners(partner_name),
-            creator:profiles!dyeing_order_forms_created_by_fkey(full_name)
-          `)
-          .in('finance_status', ['approved', 'settled'])
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('dyed_yarn_receipts')
-          .select('id, dof_id, dof_number, received_date, dyrr_number, dc_number, vehicle_no, received_by, created_at'),
-        supabase
-          .from('greige_yarn_delivery_receipts')
-          .select('id, dof_id, dof_number, gydr_number, delivered_by, vehicle_no, remarks, created_at'),
-        supabase
-          .from('greige_yarn_delivery_items')
-          .select('*, receipt:greige_yarn_delivery_receipts(*)'),
-        supabase
-          .from('dyed_yarn_receipt_items')
-          .select('*, receipt:dyed_yarn_receipts(*)'),
-        supabase
-          .from('greige_yarn_receipts')
-          .select('*')
-          .eq('receipt_type', 'production'),
-        supabase
-          .from('master_yarn_counts')
-          .select('*')
-      ]);
+      const { data, error } = await supabase
+        .from('dof_bills')
+        .select('*')
+        .in('status', ['approved', 'settled'])
+        .order('created_at', { ascending: false });
 
-      if (formsRes.error) throw formsRes.error;
-      const rawForms = formsRes.data || [];
-      const receipts = receiptsRes.data || [];
-
-      const enriched = await Promise.all(rawForms.map(async (form) => {
-        let orders = [];
-        if (form.order_ids && form.order_ids.length > 0) {
-          const { data: oData } = await supabase
-            .from('orders')
-            .select('id, order_number, design_no, design_name')
-            .in('id', form.order_ids);
-          orders = oData || [];
-        }
-        const formReceipts = receipts.filter(r => r.dof_id === form.id || (r.dof_number && r.dof_number === form.dof_number));
-        const maxReceivedDate = formReceipts.reduce((max, r) => {
-          return (!max || r.received_date > max) ? r.received_date : max;
-        }, null);
-        return { ...form, orders, maxReceivedDate };
-      }));
-
-      setForms(enriched);
-      setAllDyrrs(receipts);
-      setAllGydrs(gydrsRes.data || []);
-      setAllGydrItems(gydrItemsRes.data || []);
-      setAllDyrrItems(dyrrItemsRes.data || []);
-      setAllReturns(returnsRes.data || []);
-      setYarnCounts(yarnRes.data || []);
+      if (error) throw error;
+      setBills(data || []);
     } catch (err) {
-      console.error('Error fetching dyeing finances:', err);
+      console.error('Error fetching dyeing bills:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSettle = async (form) => {
-    if (!window.confirm(`Mark Dyeing Order Form ${form.dof_number} as Settled?`)) return;
-    setSettlingDofId(form.id);
+  const handleSettle = async (bill) => {
+    if (!window.confirm(`Are you sure you want to mark Bill ${bill.bill_number} as Settled?`)) return;
+    setSettlingBillId(bill.id);
     try {
-      const { error } = await supabase
-        .from('dyeing_order_forms')
+      const { error: billErr } = await supabase
+        .from('dof_bills')
         .update({
-          finance_status: 'settled',
-          finance_settled_at: new Date().toISOString(),
-          finance_settled_by: profile?.id
+          status: 'settled',
+          settled_at: new Date().toISOString(),
+          settled_by: profile?.id
         })
-        .eq('id', form.id);
+        .eq('id', bill.id);
+      if (billErr) throw billErr;
 
-      if (error) throw error;
-      alert(`✅ Dyeing Order Form ${form.dof_number} marked as settled.`);
-      fetchForms();
+      const { error: dofErr } = await supabase
+        .from('dyeing_order_forms')
+        .update({ bill_status: 'settled' })
+        .in('id', bill.selected_dof_ids || []);
+      if (dofErr) throw dofErr;
+
+      alert(`✅ Bill ${bill.bill_number} marked as settled successfully.`);
+      fetchBills();
     } catch (err) {
-      alert('Error settling DOF: ' + err.message);
+      console.error(err);
+      alert('Error settling bill: ' + err.message);
     } finally {
-      setSettlingDofId(null);
+      setSettlingBillId(null);
     }
   };
 
-  const toggleMillExpand = (millName) => {
-    setExpandedMills(prev => ({
+  const togglePartnerExpand = (partnerName) => {
+    setExpandedPartners(prev => ({
       ...prev,
-      [millName]: !prev[millName]
+      [partnerName]: !prev[partnerName]
     }));
   };
 
-  const getFormFinanceSummary = (form) => {
-    const groups = {};
-    (form.yarn_allocations || []).forEach(alloc => {
-      const key = `${alloc.colour}_${alloc.countId}`;
-      if (!groups[key]) {
-        const y = yarnCounts.find(c => c.id === alloc.countId);
-        const countLabel = y ? `${y.count_value} ${y.material} ${y.product_type || ''}`.trim() : 'Unknown';
-        groups[key] = {
-          key,
-          colour: alloc.colour,
-          countId: alloc.countId,
-          countLabel,
-          allottedQty: 0,
-          sentQty: 0,
-          recQty: 0
-        };
-      }
-      groups[key].allottedQty += parseFloat(alloc.total_kg || 0);
-
-      // Calculate raw sent delivery weight
-      const rawSentValue = allGydrItems
-        .filter(item => item.receipt && (item.receipt.dof_id === form.id || (item.receipt.dof_number && item.receipt.dof_number === form.dof_number)) && 
-          item.yarn_count_id === alloc.countId && 
-          item.colour === alloc.colour && 
-          (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
-          (item.order_id === alloc.orderId || !item.order_id)
-        )
-        .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
-
-      // Calculate returns to subtract
-      const returnedValue = allReturns
-        .filter(item => item.order_form_no === form.dof_number &&
-          item.yarn_count_id === alloc.countId &&
-          item.colour === alloc.colour &&
-          (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
-          (item.order_id === alloc.orderId || !item.order_id)
-        )
-        .reduce((sum, item) => sum + parseFloat(item.total_weight || 0), 0);
-
-      const sentValue = Math.max(0, rawSentValue - returnedValue);
-      
-      // Calculate received weight
-      const recValue = allDyrrItems
-        .filter(item => item.receipt && (item.receipt.dof_id === form.id || (item.receipt.dof_number && item.receipt.dof_number === form.dof_number)) && 
-          item.yarn_count_id === alloc.countId && 
-          item.colour === alloc.colour && 
-          (item.yarn_type || 'warp') === (alloc.type || 'warp') &&
-          (item.order_id === alloc.orderId || !item.order_id)
-        )
-        .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0);
-
-      groups[key].sentQty += sentValue;
-      groups[key].recQty += recValue;
-    });
-
-    return Object.values(groups);
-  };
-
-  const openGydrModal = async (gydr) => {
-    try {
-      const { data: items } = await supabase
-        .from('greige_yarn_delivery_items')
-        .select('*')
-        .eq('receipt_id', gydr.id);
-      setActiveGydrDetail({ receipt: gydr, items: items || [] });
-    } catch (err) {
-      console.error(err);
-      alert('Error fetching delivery details');
-    }
-  };
-
-  const openDyrrModal = async (dyrr) => {
-    try {
-      const { data: items } = await supabase
-        .from('dyed_yarn_receipt_items')
-        .select('*')
-        .eq('receipt_id', dyrr.id);
-      setActiveDyrrDetail({ receipt: dyrr, items: items || [] });
-    } catch (err) {
-      console.error(err);
-      alert('Error fetching dyed receipt details');
-    }
-  };
-
-  const dyeingUnitsList = React.useMemo(() => {
+  const partnerGroupsList = React.useMemo(() => {
     const grouped = {};
-
-    forms.forEach(form => {
-      const unitName = form.dyeing_unit?.partner_name || 'Unknown Dyeing Unit';
-      if (!grouped[unitName]) {
-        grouped[unitName] = {
-          unitName,
-          forms: [],
-          totalDOFs: 0,
-          needSettling: 0,
+    bills.forEach(bill => {
+      const name = bill.partner_name || 'Unknown Dyeing Unit';
+      if (!grouped[name]) {
+        grouped[name] = {
+          partnerName: name,
+          bills: [],
+          totalBillsCount: 0,
+          needSettlingCount: 0,
           totalValue: 0,
           valueSettled: 0
         };
       }
-
-      const g = grouped[unitName];
-      g.forms.push(form);
-      g.totalDOFs += 1;
-
-      const isSettled = form.finance_status === 'settled';
+      const g = grouped[name];
+      g.bills.push(bill);
+      g.totalBillsCount += 1;
+      
+      const isSettled = bill.status === 'settled';
       if (!isSettled) {
-        g.needSettling += 1;
+        g.needSettlingCount += 1;
       }
-      const val = parseFloat(form.finance_total_price) || 0;
+      const val = parseFloat(bill.bill_total) || 0;
       g.totalValue += val;
       if (isSettled) {
         g.valueSettled += val;
       }
     });
+    return Object.values(grouped).sort((a, b) => a.partnerName.localeCompare(b.partnerName));
+  }, [bills]);
 
-    return Object.values(grouped).sort((a, b) => a.unitName.localeCompare(b.unitName));
-  }, [forms]);
-
-  const getFinanceStatusBadge = (status) => {
+  const getBillStatusBadge = (status) => {
     if (status === 'settled') {
       return { bg: '#dcfce7', text: '#166534', label: 'SETTLED', icon: <CheckCircle size={11} /> };
     }
@@ -793,25 +655,25 @@ function DyeingFinances({ profile }) {
     </div>
   );
 
-  if (dyeingUnitsList.length === 0) {
+  if (partnerGroupsList.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted-current)' }} className="glass-panel">
-        <h3 style={{ margin: 0 }}>No Approved Dyeing Invoices</h3>
-        <p style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>Approved dyeing order forms will appear here for payment settlement.</p>
+        <h3 style={{ margin: 0 }}>No Approved Dyeing Bills</h3>
+        <p style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>Approved dyeing bills will appear here for payment settlement.</p>
       </div>
     );
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }} className="fade-in">
-      {dyeingUnitsList.map(unit => {
-        const isExpanded = !!expandedMills[unit.unitName];
+      {partnerGroupsList.map(group => {
+        const isExpanded = !!expandedPartners[group.partnerName];
         return (
-          <div key={unit.unitName} className="glass-panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-current)' }}>
+          <div key={group.partnerName} className="glass-panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-current)' }}>
             
             {/* Header Accordion Bar */}
             <div 
-              onClick={() => toggleMillExpand(unit.unitName)}
+              onClick={() => togglePartnerExpand(group.partnerName)}
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -825,27 +687,27 @@ function DyeingFinances({ profile }) {
               }}
             >
               <div>
-                <h3 style={{ fontSize: '1.1rem', color: 'var(--text-current)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  {unit.unitName}
+                <h3 style={{ fontSize: '1.1rem', color: 'var(--text-current)', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                  {group.partnerName}
                 </h3>
               </div>
 
               <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontWeight: 'bold' }}>Total DOFs</span>
-                  <span style={{ fontSize: '1rem', fontWeight: '700' }}>{unit.totalDOFs}</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontWeight: 'bold' }}>Total Bills</span>
+                  <span style={{ fontSize: '1rem', fontWeight: '700' }}>{group.totalBillsCount}</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.7rem', color: '#b45309', textTransform: 'uppercase', fontWeight: 'bold' }}>Need Settling</span>
-                  <span style={{ fontSize: '1rem', fontWeight: '700', color: '#d97706' }}>{unit.needSettling}</span>
+                  <span style={{ fontSize: '1rem', fontWeight: '700', color: '#d97706' }}>{group.needSettlingCount}</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontWeight: 'bold' }}>Total Value</span>
-                  <span style={{ fontSize: '1rem', fontWeight: '700' }}>₹{unit.totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                  <span style={{ fontSize: '1rem', fontWeight: '700' }}>₹{group.totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                   <span style={{ fontSize: '0.7rem', color: 'var(--color-primary-light)', textTransform: 'uppercase', fontWeight: 'bold' }}>Value Settled</span>
-                  <span style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--color-primary)' }}>₹{unit.valueSettled.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                  <span style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--color-primary)' }}>₹{group.valueSettled.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 </div>
                 <div style={{ color: 'var(--text-muted-current)', marginLeft: '0.5rem' }}>
                   {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
@@ -860,34 +722,31 @@ function DyeingFinances({ profile }) {
                   <thead>
                     <tr style={{ backgroundColor: 'rgba(0,0,0,0.015)' }}>
                       <th style={{ width: '40px' }}></th>
-                      <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>DOF Number</th>
                       <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Bill Number</th>
-                      <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Orders</th>
-                      <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Delivery Dates</th>
-                      <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Total Qty (kg)</th>
-                      <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Value (₹)</th>
+                      <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Invoice Number</th>
+                      <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Invoice Date</th>
+                      <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Pre-Tax (₹)</th>
+                      <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Tax (₹)</th>
+                      <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Bill Total (₹)</th>
                       <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Status</th>
                       <th style={{ padding: '0.5rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {unit.forms.map(form => {
-                      const isDofExpanded = expandedDofId === form.id;
-                      const statusVal = form.finance_status || 'approved';
-                      const badge = getFinanceStatusBadge(statusVal);
-                      const summary = getFormFinanceSummary(form);
-                      const totalQtyVal = summary.reduce((sum, item) => sum + item.sentQty, 0);
+                    {group.bills.map(bill => {
+                      const isBillExpanded = expandedBillId === bill.id;
+                      const badge = getBillStatusBadge(bill.status);
 
                       return (
-                        <React.Fragment key={form.id}>
-                          <tr style={{ backgroundColor: 'transparent', borderBottom: isDofExpanded ? 'none' : '1px solid var(--border-current)' }}>
+                        <React.Fragment key={bill.id}>
+                          <tr style={{ backgroundColor: 'transparent', borderBottom: isBillExpanded ? 'none' : '1px solid var(--border-current)' }}>
                             <td>
                               <button
-                                onClick={() => setExpandedDofId(isDofExpanded ? null : form.id)}
+                                onClick={() => setExpandedBillId(isBillExpanded ? null : bill.id)}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}
                               >
                                 <ChevronDown size={16} style={{ 
-                                  transform: isDofExpanded ? 'rotate(180deg)' : 'rotate(0deg)', 
+                                  transform: isBillExpanded ? 'rotate(180deg)' : 'rotate(0deg)', 
                                   transition: 'transform 0.2s',
                                   color: 'var(--color-primary)'
                                 }} />
@@ -895,53 +754,22 @@ function DyeingFinances({ profile }) {
                             </td>
                             <td style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
                               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ fontWeight: '700', color: 'var(--color-primary)' }}>{form.dof_number}</span>
+                                <span style={{ fontWeight: '700', color: 'var(--color-primary)' }}>{bill.bill_number}</span>
                                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)' }}>
-                                  Created: {new Date(form.created_at).toLocaleDateString()}
+                                  Raised: {new Date(bill.created_at).toLocaleDateString()}
                                 </span>
                               </div>
                             </td>
-                            <td style={{ padding: '0.5rem', fontSize: '0.8rem', fontWeight: 'bold' }}>{form.finance_bill_no || '-'}</td>
-                            <td style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
-                              {form.orders?.map(o => o.order_number).join(', ') || '-'}
-                            </td>
-                            <td style={{ padding: '0.5rem' }}>
-                              {(() => {
-                                const planned = form.expected_delivery_date ? new Date(form.expected_delivery_date).toLocaleDateString() : 'Not set';
-                                const actual = form.maxReceivedDate ? new Date(form.maxReceivedDate).toLocaleDateString() : 'Not received';
-                                const onTime = form.maxReceivedDate && form.expected_delivery_date && form.maxReceivedDate <= form.expected_delivery_date;
-                                
-                                let delayBadge = null;
-                                if (form.maxReceivedDate) {
-                                  delayBadge = onTime ? (
-                                    <span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>On Time</span>
-                                  ) : (
-                                    <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>Late</span>
-                                  );
-                                } else if (form.expected_delivery_date) {
-                                  const today = new Date().toISOString().split('T')[0];
-                                  const expected = form.expected_delivery_date;
-                                  if (expected < today) {
-                                    delayBadge = <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>Late</span>;
-                                  } else {
-                                    delayBadge = <span style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>Pending</span>;
-                                  }
-                                }
-
-                                return (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.8rem' }}>
-                                    <div>Planned: <strong>{planned}</strong></div>
-                                    <div>Actual: <strong>{actual}</strong></div>
-                                    {delayBadge && <div style={{ marginTop: '2px' }}>{delayBadge}</div>}
-                                  </div>
-                                );
-                              })()}
-                            </td>
+                            <td style={{ padding: '0.5rem', fontSize: '0.8rem', fontWeight: 'bold' }}>{bill.invoice_number}</td>
+                            <td style={{ padding: '0.5rem', fontSize: '0.8rem' }}>{new Date(bill.invoice_date).toLocaleDateString()}</td>
                             <td style={{ padding: '0.5rem', fontSize: '0.8rem', textAlign: 'right', fontWeight: '600' }}>
-                              {totalQtyVal.toFixed(2)} kg
+                              ₹{bill.calculated_total?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '0.5rem', fontSize: '0.75rem', textAlign: 'right', color: 'var(--text-muted-current)' }}>
+                              ₹{bill.tax_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ({bill.tax_percent}%)
                             </td>
                             <td style={{ padding: '0.5rem', fontSize: '0.8rem', textAlign: 'right', fontWeight: '700', color: 'var(--color-primary)' }}>
-                              ₹{Number(form.finance_total_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ₹{bill.bill_total?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
                             <td style={{ padding: '0.5rem' }}>
                               <span style={{
@@ -960,10 +788,10 @@ function DyeingFinances({ profile }) {
                               </span>
                             </td>
                             <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                              {statusVal === 'approved' && (
+                              {bill.status === 'approved' && (
                                 <button
-                                  onClick={() => handleSettle(form)}
-                                  disabled={settlingDofId === form.id}
+                                  onClick={() => handleSettle(bill)}
+                                  disabled={settlingBillId === bill.id}
                                   style={{
                                     backgroundColor: '#dcfce7',
                                     color: '#166534',
@@ -972,8 +800,8 @@ function DyeingFinances({ profile }) {
                                     borderRadius: '4px',
                                     fontSize: '0.7rem',
                                     fontWeight: '700',
-                                    cursor: settlingDofId === form.id ? 'wait' : 'pointer',
-                                    opacity: settlingDofId === form.id ? 0.6 : 1,
+                                    cursor: settlingBillId === bill.id ? 'wait' : 'pointer',
+                                    opacity: settlingBillId === bill.id ? 0.6 : 1,
                                     display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: '2px'
@@ -985,131 +813,46 @@ function DyeingFinances({ profile }) {
                             </td>
                           </tr>
 
-                          {isDofExpanded && (
+                          {isBillExpanded && (
                             <tr>
                               <td colSpan={9} style={{ backgroundColor: '#fcfcfd', padding: '1.25rem', borderBottom: '1px solid var(--border-current)' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                                  
-                                  {/* Read-only details summary table */}
-                                  <div>
-                                    <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--color-primary)', fontWeight: '800', fontSize: '0.85rem' }}>
-                                      Color and Count Wise Summary
-                                    </h5>
-                                    <div style={{ border: '1px solid var(--border-current)', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#fff' }}>
-                                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
-                                        <thead>
-                                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                            <th style={{ padding: '0.5rem 0.75rem', textAlign: 'left', fontWeight: '700', color: '#475569' }}>Yarn Count & Colour</th>
-                                            <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Total Sent (kg)</th>
-                                            <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Total Rec (kg)</th>
-                                            <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Shortage (kg)</th>
-                                            <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Shortage %</th>
-                                            <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Price / kg (₹)</th>
-                                            <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700', color: '#475569' }}>Total Price (₹)</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {summary.map((item) => {
-                                            const shortageVal = Math.max(0, item.sentQty - item.recQty);
-                                            const shortagePct = item.sentQty > 0 ? (shortageVal / item.sentQty) * 100 : 0;
-                                            const rate = parseFloat(form.finance_prices?.[item.key]) || 0;
-                                            const rowTotal = rate * item.sentQty;
-
-                                            return (
-                                              <tr key={item.key} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                                <td style={{ padding: '0.5rem 0.75rem', fontWeight: '500' }}>
-                                                  <div>{item.countLabel}</div>
-                                                  <div style={{ color: 'var(--color-primary)', fontWeight: '700', fontSize: '0.7rem', marginTop: '2px' }}>
-                                                    {item.colour}
-                                                  </div>
-                                                </td>
-                                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '600' }}>{item.sentQty.toFixed(2)}</td>
-                                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '600' }}>{item.recQty.toFixed(2)}</td>
-                                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: shortageVal > 0.01 ? '#dc2626' : '#64748b', fontWeight: '600' }}>{shortageVal.toFixed(2)}</td>
-                                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: shortagePct > 0.01 ? '#dc2626' : '#64748b', fontWeight: '600' }}>{shortagePct.toFixed(2)}%</td>
-                                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '600' }}>₹{rate.toFixed(2)}</td>
-                                                <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: '700', color: 'var(--color-primary)' }}>
-                                                  ₹{rowTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </td>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                  <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: '800', color: '#475569' }}>
+                                    Linked Dyeing Order Forms Breakdown
+                                  </h4>
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                                    {(bill.bill_items || []).map((item, idx) => (
+                                      <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#fff', padding: '0.75rem' }}>
+                                        <div style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--color-primary)', marginBottom: '0.4rem' }}>
+                                          DOF: {item.dof_number}
+                                        </div>
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted-current)', display: 'flex', flexDirection: 'column', gap: '0.2rem', marginBottom: '0.4rem' }}>
+                                          <span>Orders: {(item.order_numbers || []).join(', ')}</span>
+                                          <span>Designs: {(item.design_nos || []).map((n, i) => `${n} (${item.design_names[i] || 'N/A'})`).join(', ')}</span>
+                                        </div>
+                                        <table style={{ width: '100%', fontSize: '0.72rem', borderCollapse: 'collapse' }}>
+                                          <thead>
+                                            <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#475569', fontWeight: '700' }}>
+                                              <th style={{ textAlign: 'left', padding: '2px 0' }}>Yarn Count & Color</th>
+                                              <th style={{ textAlign: 'right', padding: '2px 0' }}>Weight</th>
+                                              <th style={{ textAlign: 'right', padding: '2px 0' }}>Rate</th>
+                                              <th style={{ textAlign: 'right', padding: '2px 0' }}>Total</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {(item.yarn_details || []).map((yd, yidx) => (
+                                              <tr key={yidx} style={{ borderBottom: '1px dotted #f1f5f9' }}>
+                                                <td style={{ padding: '3px 0' }}>{yd.count_label} - <span style={{ fontWeight: '600' }}>{yd.colour}</span></td>
+                                                <td style={{ textAlign: 'right', padding: '3px 0' }}>{yd.quantity_kg?.toFixed(2)} kg</td>
+                                                <td style={{ textAlign: 'right', padding: '3px 0' }}>₹{yd.price_per_kg?.toFixed(2)}</td>
+                                                <td style={{ textAlign: 'right', padding: '3px 0', fontWeight: '600', color: 'var(--color-primary)' }}>₹{yd.total_price?.toFixed(2)}</td>
                                               </tr>
-                                            );
-                                          })}
-                                          <tr style={{ backgroundColor: '#f8fafc', fontWeight: '800', borderTop: '2px solid #e2e8f0' }}>
-                                            <td colSpan="6" style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Total DOF Price:</td>
-                                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: 'var(--color-primary)', fontSize: '0.85rem' }}>
-                                              ₹{Number(form.finance_total_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </td>
-                                          </tr>
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  </div>
-
-                                  {/* Associated receipts list */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem' }}>
-                                    <div>
-                                      <h6 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontSize: '0.7rem', fontWeight: '800', letterSpacing: '0.5px' }}>
-                                        Greige Yarn Delivery Receipts (GYDR)
-                                      </h6>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                                        {allGydrs.filter(g => g.dof_id === form.id || (g.dof_number && g.dof_number === form.dof_number)).length === 0 ? (
-                                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', padding: '0.6rem', border: '1px dashed #e2e8f0', borderRadius: '6px', backgroundColor: '#fff', textAlign: 'center' }}>
-                                            No deliveries found.
-                                          </div>
-                                        ) : (
-                                          allGydrs.filter(g => g.dof_id === form.id || (g.dof_number && g.dof_number === form.dof_number)).map(g => (
-                                            <div 
-                                              key={g.id} 
-                                              onClick={() => openGydrModal(g)}
-                                              style={{ padding: '0.6rem', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-                                            >
-                                              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                                                <div>
-                                                  <div style={{ fontWeight: '700', fontSize: '0.75rem', color: 'var(--color-primary)' }}>{g.gydr_number}</div>
-                                                  <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{new Date(g.created_at).toLocaleDateString()}</div>
-                                                </div>
-                                                <div style={{ fontSize: '0.7rem', color: '#475569' }}>
-                                                  By: <strong>{g.delivered_by}</strong>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          ))
-                                        )}
+                                            ))}
+                                          </tbody>
+                                        </table>
                                       </div>
-                                    </div>
-
-                                    <div>
-                                      <h6 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-muted-current)', textTransform: 'uppercase', fontSize: '0.7rem', fontWeight: '800', letterSpacing: '0.5px' }}>
-                                        Dyed Yarn Received Receipts (DYRR)
-                                      </h6>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                                        {allDyrrs.filter(d => d.dof_id === form.id || (d.dof_number && d.dof_number === form.dof_number)).length === 0 ? (
-                                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', padding: '0.6rem', border: '1px dashed #e2e8f0', borderRadius: '6px', backgroundColor: '#fff', textAlign: 'center' }}>
-                                            No receipts found.
-                                          </div>
-                                        ) : (
-                                          allDyrrs.filter(d => d.dof_id === form.id || (d.dof_number && d.dof_number === form.dof_number)).map(d => (
-                                            <div 
-                                              key={d.id} 
-                                              onClick={() => openDyrrModal(d)}
-                                              style={{ padding: '0.6rem', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', cursor: 'pointer' }}
-                                            >
-                                              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                                                <div>
-                                                  <div style={{ fontWeight: '700', fontSize: '0.75rem', color: 'var(--color-primary)' }}>{d.dyrr_number}</div>
-                                                  <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{new Date(d.created_at).toLocaleDateString()}</div>
-                                                </div>
-                                                <div style={{ fontSize: '0.7rem', color: '#475569' }}>
-                                                  DC: <strong>{d.dc_number || 'N/A'}</strong>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          ))
-                                        )}
-                                      </div>
-                                    </div>
+                                    ))}
                                   </div>
-
                                 </div>
                               </td>
                             </tr>
@@ -1124,14 +867,6 @@ function DyeingFinances({ profile }) {
           </div>
         );
       })}
-
-      {activeDyrrDetail && (
-        <FinancesDYRRDetailModal
-          data={activeDyrrDetail}
-          yarnCounts={yarnCounts}
-          onClose={() => setActiveDyrrDetail(null)}
-        />
-      )}
     </div>
   );
 }
@@ -2201,12 +1936,9 @@ function AllSettledBills({ profile }) {
           .select('*')
           .eq('status', 'settled'),
         supabase
-          .from('dyeing_order_forms')
-          .select(`
-            *,
-            dyeing_unit:master_partners(partner_name)
-          `)
-          .eq('finance_status', 'settled'),
+          .from('dof_bills')
+          .select('*')
+          .eq('status', 'settled'),
         supabase
           .from('greige_yarn_receipts')
           .select(`
@@ -2310,38 +2042,36 @@ function AllSettledBills({ profile }) {
         });
       });
 
-      // Map dyeing order forms
-      (dyeRes.data || []).forEach(f => {
-        const orderNumbers = [];
-        const designs = [];
-        if (f.order_ids && f.order_ids.length > 0) {
-          f.order_ids.forEach(oid => {
-            const ord = ordersMap[oid];
-            if (ord) {
-              if (ord.order_number) orderNumbers.push(ord.order_number);
-              const dName = ord.design_name || '';
-              const dNo = ord.design_no || '';
-              const desc = dName && dNo ? `${dName} (${dNo})` : (dName || dNo);
-              if (desc) designs.push(desc);
-            }
+      // Map dyeing bills
+      (dyeRes.data || []).forEach(b => {
+        const dofNumbers = Array.from(new Set((b.bill_items || []).map(item => item.dof_number).filter(Boolean)));
+        const orderNumbersSet = new Set();
+        const designsSet = new Set();
+
+        (b.bill_items || []).forEach(item => {
+          (item.order_numbers || []).forEach(on => orderNumbersSet.add(on));
+          (item.design_nos || []).forEach((n, i) => {
+            const name = item.design_names[i] || '';
+            const desc = name && n ? `${name} (${n})` : (name || n);
+            if (desc) designsSet.add(desc);
           });
-        }
+        });
 
         unified.push({
-          id: `dyeing-${f.id}`,
-          billDate: f.finance_submitted_at ? f.finance_submitted_at.split('T')[0] : (f.created_at ? f.created_at.split('T')[0] : ''),
-          settlingDate: f.finance_settled_at ? f.finance_settled_at.split('T')[0] : '',
-          billNumber: f.finance_bill_no || f.dof_number,
-          partnerName: f.dyeing_unit?.partner_name || 'Unknown Dyeing Unit',
-          orderFormNumbers: [f.dof_number],
-          orderNumbers: Array.from(new Set(orderNumbers)),
-          designs: Array.from(new Set(designs)),
-          calcTotal: parseFloat(f.finance_total_price || 0),
-          tax: 0,
-          invoiceTotal: parseFloat(f.finance_total_price || 0),
-          status: f.finance_status,
+          id: `dyeing-${b.id}`,
+          billDate: b.invoice_date,
+          settlingDate: b.settled_at ? b.settled_at.split('T')[0] : '',
+          billNumber: b.bill_number,
+          partnerName: b.partner_name,
+          orderFormNumbers: dofNumbers,
+          orderNumbers: Array.from(orderNumbersSet),
+          designs: Array.from(designsSet),
+          calcTotal: parseFloat(b.calculated_total || 0),
+          tax: parseFloat(b.tax_amount || 0),
+          invoiceTotal: parseFloat(b.bill_total || 0),
+          status: b.status,
           billType: 'Dyeing',
-          rawRecord: f
+          rawRecord: b
         });
       });
 
@@ -2622,30 +2352,41 @@ function AllSettledBills({ profile }) {
       return (
         <div style={{ padding: '1.25rem 1.5rem', borderLeft: '3px solid #800000', borderBottom: '1px solid var(--border-current)', backgroundColor: 'rgba(128,0,0,0.005)' }}>
           <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-current)', fontWeight: '800', fontSize: '0.85rem', textTransform: 'uppercase' }}>
-            Dyeing Yarn Allocations
+            Dyeing Bill Breakdown
           </h4>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', border: '1px solid var(--border-current)', backgroundColor: 'white' }}>
-            <thead>
-              <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)', fontWeight: '700', textAlign: 'left' }}>
-                <th style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-current)' }}>Yarn Count</th>
-                <th style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-current)' }}>Colour</th>
-                <th style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Allotted Qty</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(bill.rawRecord.yarn_allocations || []).map((alloc, idx) => {
-                const y = yarnCounts.find(c => c.id === alloc.countId);
-                const countLabel = y ? `${y.count_value} ${y.material} ${y.product_type || ''}`.trim() : 'Unknown';
-                return (
-                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
-                    <td style={{ padding: '0.5rem', fontWeight: '700' }}>{countLabel}</td>
-                    <td style={{ padding: '0.5rem' }}>{alloc.colour}</td>
-                    <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '750' }}>{parseFloat(alloc.total_kg || 0).toFixed(2)} kg</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {(bill.rawRecord.bill_items || []).map((item, idx) => (
+              <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#fff', padding: '0.75rem' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: 'var(--color-primary)', marginBottom: '0.4rem' }}>
+                  DOF: {item.dof_number}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted-current)', display: 'flex', flexDirection: 'column', gap: '0.2rem', marginBottom: '0.4rem' }}>
+                  <span>Orders: {(item.order_numbers || []).join(', ')}</span>
+                  <span>Designs: {(item.design_nos || []).map((n, i) => `${n} (${item.design_names[i] || 'N/A'})`).join(', ')}</span>
+                </div>
+                <table style={{ width: '100%', fontSize: '0.72rem', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#475569', fontWeight: '700' }}>
+                      <th style={{ textAlign: 'left', padding: '2px 0' }}>Yarn Count & Color</th>
+                      <th style={{ textAlign: 'right', padding: '2px 0' }}>Weight</th>
+                      <th style={{ textAlign: 'right', padding: '2px 0' }}>Rate</th>
+                      <th style={{ textAlign: 'right', padding: '2px 0' }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(item.yarn_details || []).map((yd, yidx) => (
+                      <tr key={yidx} style={{ borderBottom: '1px dotted #f1f5f9' }}>
+                        <td style={{ padding: '3px 0' }}>{yd.count_label} - <span style={{ fontWeight: '600' }}>{yd.colour}</span></td>
+                        <td style={{ textAlign: 'right', padding: '3px 0' }}>{yd.quantity_kg?.toFixed(2)} kg</td>
+                        <td style={{ textAlign: 'right', padding: '3px 0' }}>₹{yd.price_per_kg?.toFixed(2)}</td>
+                        <td style={{ textAlign: 'right', padding: '3px 0', fontWeight: '600', color: 'var(--color-primary)' }}>₹{yd.total_price?.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
         </div>
       );
     }

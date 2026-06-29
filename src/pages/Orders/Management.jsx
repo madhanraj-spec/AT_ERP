@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Plus, ArrowLeft, Trash2, Loader, 
@@ -6,7 +6,7 @@ import {
   Zap, Search, Check, Eye, FileText, 
   Truck, ArrowRight, Package, Calculator,
   ExternalLink, X, CheckCircle, Clock, XCircle,
-  SlidersHorizontal, Printer, Edit
+  SlidersHorizontal, Printer, Edit, Upload
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -404,6 +404,11 @@ function OrderCard({
   onViewDYDR, 
   onViewPOF,
   onViewPOFRR,
+  onCreatePI,
+  onUploadPO,
+  onPrintPI,
+  onEditPI,
+  refreshTrigger,
   orderDofs = [], 
   allDyrrs = [],
   orderWofs = [],
@@ -411,7 +416,8 @@ function OrderCard({
   orderWvofs = [],
   orderDydis = [],
   allPofs = [],
-  hideDeleteButton = false
+  hideDeleteButton = false,
+  onRefresh
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState('order_info');
@@ -757,6 +763,13 @@ function OrderCard({
               <TabOrderInfo 
                 order={order} 
                 onImageClick={() => setShowImageLightbox(true)} 
+                onCreatePI={onCreatePI}
+                onUploadPO={onUploadPO}
+                onPrintPI={onPrintPI}
+                onEditPI={onEditPI}
+                refreshTrigger={refreshTrigger}
+                countString={getShortCountsString(order.technical_specs)}
+                onRefresh={onRefresh}
               />
             )}
             {activeTab === 'dyeing' && (
@@ -864,8 +877,73 @@ function OrderCard({
 // Sub-Tabs Implementation
 // ──────────────────────────────────────────────────────────────────────────────
 
-function TabOrderInfo({ order, onImageClick }) {
+function TabOrderInfo({ order, onImageClick, onCreatePI, onUploadPO, onPrintPI, onEditPI, refreshTrigger, countString, onRefresh }) {
   const specs = order.technical_specs || {};
+  const [existingPIs, setExistingPIs] = useState([]);
+  const [loadingPIs, setLoadingPIs] = useState(true);
+
+  useEffect(() => {
+    async function fetchPIs() {
+      if (!order?.id) return;
+      setLoadingPIs(true);
+      try {
+        const { data, error } = await supabase
+          .from('proforma_invoices')
+          .select('*')
+          .eq('order_id', order.id)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        setExistingPIs(data || []);
+      } catch (err) {
+        console.error("Error fetching PIs:", err);
+      } finally {
+        setLoadingPIs(false);
+      }
+    }
+    fetchPIs();
+  }, [order?.id, refreshTrigger]);
+
+  const handleDeletePO = async () => {
+    if (!window.confirm("Are you sure you want to delete this Buyer PO and unlink it from all Proforma Invoices? This will delete the file permanently.")) {
+      return;
+    }
+    try {
+      if (order.buyer_po_file_url) {
+        const parts = order.buyer_po_file_url.split('/order-images/');
+        if (parts.length > 1) {
+          const filePath = parts[1];
+          const { error: storageErr } = await supabase.storage.from('order-images').remove([filePath]);
+          if (storageErr) throw storageErr;
+        }
+      }
+
+      const { error: orderErr } = await supabase
+        .from('orders')
+        .update({
+          buyer_po_number: null,
+          buyer_po_date: null,
+          buyer_po_file_url: null
+        })
+        .eq('id', order.id);
+      if (orderErr) throw orderErr;
+
+      const { error: piErr } = await supabase
+        .from('proforma_invoices')
+        .update({
+          buyer_po_number: null,
+          buyer_po_date: null
+        })
+        .eq('order_id', order.id);
+      if (piErr) throw piErr;
+
+      alert('Buyer PO details deleted successfully!');
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error(err);
+      alert('Error deleting PO: ' + err.message);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
       <div style={{ flex: '1 1 500px' }} className="grid-4-to-2">
@@ -886,6 +964,107 @@ function TabOrderInfo({ order, onImageClick }) {
         
         <DetailItem label="Order Construction" value={`${specs.order_reed} / ${specs.order_pick}`} />
         <DetailItem label="Production Construction" value={`${specs.on_loom_reed} / ${specs.on_loom_pick}`} />
+
+        <div style={{ gridColumn: '1 / -1', borderTop: '1px dashed #ddd', margin: '0.5rem 0' }}></div>
+        
+        <DetailItem 
+          label="Buyer PO" 
+          value={order.buyer_po_number ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span>{order.buyer_po_number} ({order.buyer_po_date ? new Date(order.buyer_po_date).toLocaleDateString() : '-'})</span>
+              {order.buyer_po_file_url && (
+                <a 
+                  href={order.buyer_po_file_url} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  style={{ color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem', textDecoration: 'underline' }}
+                >
+                  <ExternalLink size={12} /> View File
+                </a>
+              )}
+            </span>
+          ) : 'Not uploaded'} 
+        />
+
+        {/* Buttons section */}
+        <div style={{ gridColumn: '1 / -1', marginTop: '1.25rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <button 
+            onClick={() => onCreatePI(order)}
+            className="btn btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontWeight: '700' }}
+          >
+            <Plus size={16} /> Create PI
+          </button>
+          <button 
+            onClick={() => onUploadPO(order)}
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontWeight: '700' }}
+          >
+            <Upload size={16} /> {order.buyer_po_number ? 'Update PO' : 'Upload PO'}
+          </button>
+          {order.buyer_po_number && (
+            <button 
+              onClick={handleDeletePO}
+              className="btn btn-danger"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontWeight: '700', backgroundColor: '#fee2e2', color: '#dc2626', borderColor: '#fca5a5' }}
+            >
+              <Trash2 size={16} /> Delete PO
+            </button>
+          )}
+        </div>
+
+        {/* Existing PIs List */}
+        <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #eee', paddingTop: '1rem', marginTop: '1rem' }}>
+          <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', fontWeight: '800', color: '#800000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Proforma Invoices ({existingPIs.length})
+          </h4>
+          {loadingPIs ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
+              <Loader size={12} className="spin" /> Loading PIs...
+            </div>
+          ) : existingPIs.length === 0 ? (
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)', fontStyle: 'italic', padding: '0.5rem' }}>
+              No Proforma Invoices created for this order yet.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {existingPIs.map(pi => (
+                <div key={pi.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fcfcfc', border: '1px solid #eee', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
+                  <div>
+                    <span style={{ fontWeight: '700', color: 'var(--text-current)' }}>{pi.invoice_number}</span>
+                    <span style={{ margin: '0 0.5rem', color: '#ccc' }}>|</span>
+                    <span style={{ color: 'var(--text-muted-current)' }}>Date: {new Date(pi.invoice_date).toLocaleDateString()}</span>
+                    <span style={{ margin: '0 0.5rem', color: '#ccc' }}>|</span>
+                    <span style={{ fontWeight: '700', color: 'var(--color-primary)' }}>Total: ₹{Number(pi.total_invoice_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button 
+                      onClick={() => onEditPI(pi, order)}
+                      className="btn btn-secondary"
+                      style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                    >
+                      <Edit size={12} /> Edit
+                    </button>
+                    <button 
+                      onClick={() => onPrintPI({
+                        ...pi,
+                        order_number: order.order_number,
+                        design_name: order.design_name,
+                        design_no: order.design_no,
+                        count: countString || '—',
+                        construction: `${specs.order_reed || specs.on_loom_reed || '—'} / ${specs.order_pick || specs.on_loom_pick || '—'}`
+                      })}
+                      className="btn btn-secondary"
+                      style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                    >
+                      <Printer size={12} /> Print/View
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {order.design_image_url && (
@@ -2674,6 +2853,11 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
   const [viewPofData, setViewPofData] = useState(null);
   const [viewPofrrData, setViewPofrrData] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [showCreatePIOrder, setShowCreatePIOrder] = useState(null);
+  const [editPIData, setEditPIData] = useState(null);
+  const [showUploadPOOrder, setShowUploadPOOrder] = useState(null);
+  const [printPIData, setPrintPIData] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -2682,7 +2866,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
 
   useEffect(() => {
     fetchOrders();
-  }, [filter]);
+  }, [filter, refreshTrigger]);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -3182,6 +3366,14 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
                 onViewDYDR={fetchDYDRDetail}
                 onViewPOF={(pof) => setViewPofData({ pof, order })}
                 onViewPOFRR={(pofrr) => setViewPofrrData({ pofrr, order })}
+                onCreatePI={setShowCreatePIOrder}
+                onUploadPO={setShowUploadPOOrder}
+                onPrintPI={setPrintPIData}
+                onEditPI={(pi, order) => {
+                  setEditPIData(pi);
+                  setShowCreatePIOrder(order);
+                }}
+                refreshTrigger={refreshTrigger}
                 orderDofs={orderDofs}
                 allDyrrs={allDyrrs}
                 orderWofs={orderWofs}
@@ -3189,6 +3381,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
                 orderWvofs={orderWvofs}
                 orderDydis={orderDydis}
                 allPofs={allPofs}
+                onRefresh={() => setRefreshTrigger(prev => prev + 1)}
               />
             );
           })
@@ -3513,6 +3706,41 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
           onClose={() => setViewPofrrData(null)} 
         />
       )}
+      {showCreatePIOrder && (
+        <CreatePIModal 
+          order={showCreatePIOrder} 
+          partners={partners}
+          yarnCounts={yarnCounts}
+          pi={editPIData}
+          onClose={() => {
+            setShowCreatePIOrder(null);
+            setEditPIData(null);
+          }} 
+          onSuccess={(piData) => {
+            setShowCreatePIOrder(null);
+            setEditPIData(null);
+            setRefreshTrigger(prev => prev + 1);
+            setPrintPIData(piData);
+          }}
+        />
+      )}
+      {showUploadPOOrder && (
+        <UploadPOModal 
+          order={showUploadPOOrder} 
+          onClose={() => setShowUploadPOOrder(null)} 
+          onSuccess={() => {
+            setShowUploadPOOrder(null);
+            setRefreshTrigger(prev => prev + 1);
+            fetchOrders();
+          }}
+        />
+      )}
+      {printPIData && (
+        <PrintPIModal 
+          pi={printPIData} 
+          onClose={() => setPrintPIData(null)} 
+        />
+      )}
       {loadingDetail && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(255,255,255,0.7)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Loader size={32} className="spin" color="var(--color-primary)" />
@@ -3527,10 +3755,10 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
 // Modal Sub-components
 // ──────────────────────────────────────────────
 
-function ModalWrapper({ title, onClose, children }) {
+function ModalWrapper({ title, onClose, children, maxWidth }) {
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-      <div className="fade-in" style={{ backgroundColor: '#fff', borderRadius: '12px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', position: 'relative' }}>
+      <div className="fade-in" style={{ backgroundColor: '#fff', borderRadius: '12px', width: '100%', maxWidth: maxWidth || '900px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', position: 'relative' }}>
         <div style={{ position: 'sticky', top: 0, backgroundColor: '#fff', borderBottom: '1px solid #eee', padding: '1rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
           <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: 'var(--color-primary)' }}>{title}</h3>
           <X size={24} style={{ cursor: 'pointer', color: '#666' }} onClick={onClose} />
@@ -4560,3 +4788,1537 @@ function POFRRModal({ data, onClose }) {
   );
 }
 
+function convertNumberToWords(amount) {
+  let words = "";
+  const num = Math.floor(amount);
+  
+  if (num === 0) return "Zero Rupees Only";
+  
+  const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  
+  function numToWords(n, suffix) {
+    let str = "";
+    if (n > 19) {
+      str += b[Math.floor(n / 10)] + " " + a[n % 10];
+    } else {
+      str += a[n];
+    }
+    if (n) {
+      str += suffix;
+    }
+    return str;
+  }
+  
+  words += numToWords(Math.floor(num / 10000000), "Crore ");
+  words += numToWords(Math.floor((num / 100000) % 100), "Lakh ");
+  words += numToWords(Math.floor((num / 1000) % 100), "Thousand ");
+  words += numToWords(Math.floor((num / 100) % 10), "Hundred ");
+  
+  let rest = num % 100;
+  if (num > 100 && rest > 0) {
+    words += "and ";
+  }
+  
+  words += numToWords(rest, "");
+  
+  return "Rupees " + words.trim().replace(/\s+/g, ' ') + " Only";
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Modal components for PO and PI
+// ──────────────────────────────────────────────────────────────────────────────
+
+function UploadPOModal({ order, onClose, onSuccess }) {
+  const [poNumber, setPoNumber] = useState(order.buyer_po_number || '');
+  const [poDate, setPoDate] = useState(order.buyer_po_date || '');
+  const [poFile, setPoFile] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const compressImage = (file) => {
+    return new Promise((resolve) => {
+      if (!file || !file.type.startsWith('image/')) {
+        return resolve(file);
+      }
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          const MAX_WIDTH = 1600;
+          const MAX_HEIGHT = 1600;
+          
+          if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+            if (width > height) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            } else {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                type: 'image/jpeg',
+                lastModified: Date.now()
+              });
+              resolve(compressedFile);
+            } else {
+              resolve(file);
+            }
+          }, 'image/jpeg', 0.75);
+        };
+      };
+      reader.onerror = () => resolve(file);
+    });
+  };
+
+  const handleDeletePO = async () => {
+    if (!window.confirm("Are you sure you want to delete this Buyer PO and unlink it from all Proforma Invoices? This will delete the file permanently.")) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      if (order.buyer_po_file_url) {
+        const parts = order.buyer_po_file_url.split('/order-images/');
+        if (parts.length > 1) {
+          const filePath = parts[1];
+          const { error: storageErr } = await supabase.storage.from('order-images').remove([filePath]);
+          if (storageErr) throw storageErr;
+        }
+      }
+
+      const { error: orderErr } = await supabase
+        .from('orders')
+        .update({
+          buyer_po_number: null,
+          buyer_po_date: null,
+          buyer_po_file_url: null
+        })
+        .eq('id', order.id);
+      if (orderErr) throw orderErr;
+
+      const { error: piErr } = await supabase
+        .from('proforma_invoices')
+        .update({
+          buyer_po_number: null,
+          buyer_po_date: null
+        })
+        .eq('order_id', order.id);
+      if (piErr) throw piErr;
+
+      alert('Buyer PO details deleted successfully!');
+      onSuccess();
+    } catch (err) {
+      console.error(err);
+      alert('Error deleting PO: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      let fileUrl = order.buyer_po_file_url || '';
+      
+      if (poFile) {
+        const fileToUpload = poFile.type.startsWith('image/') ? await compressImage(poFile) : poFile;
+        const fileExt = fileToUpload.name.split('.').pop();
+        const fileName = `${order.order_number}_po_${Date.now()}.${fileExt}`;
+        const filePath = `buyer_pos/${fileName}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('order-images')
+          .upload(filePath, fileToUpload, {
+            cacheControl: '3600',
+            upsert: true
+          });
+          
+        if (uploadError) throw uploadError;
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('order-images')
+          .getPublicUrl(filePath);
+          
+        fileUrl = publicUrl;
+      }
+      
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({
+          buyer_po_number: poNumber,
+          buyer_po_date: poDate || null,
+          buyer_po_file_url: fileUrl
+        })
+        .eq('id', order.id);
+        
+      if (updateError) throw updateError;
+      
+      // Update any proforma invoices linked to this order
+      const { error: piUpdateError } = await supabase
+        .from('proforma_invoices')
+        .update({
+          buyer_po_number: poNumber,
+          buyer_po_date: poDate || null
+        })
+        .eq('order_id', order.id);
+
+      if (piUpdateError) throw piUpdateError;
+
+      alert('Buyer PO uploaded and linked to order & Proforma Invoices successfully!');
+      onSuccess();
+    } catch (err) {
+      console.error(err);
+      alert('Error uploading PO: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ModalWrapper title={`Upload Buyer PO — ${order.order_number}`} onClose={onClose}>
+      <form onSubmit={handleSubmit} style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div className="input-group">
+          <label className="input-label">Buyer PO Number</label>
+          <input 
+            type="text" 
+            className="input-field" 
+            value={poNumber} 
+            onChange={e => setPoNumber(e.target.value)} 
+            required 
+            placeholder="e.g. PO-123456"
+          />
+        </div>
+        <div className="input-group">
+          <label className="input-label">PO Date</label>
+          <input 
+            type="date" 
+            className="input-field" 
+            value={poDate} 
+            onChange={e => setPoDate(e.target.value)} 
+            required 
+          />
+        </div>
+        <div className="input-group">
+          <label className="input-label">PO Document File (PDF or Image)</label>
+          <input 
+            type="file" 
+            className="input-field" 
+            accept=".pdf,image/*" 
+            onChange={e => setPoFile(e.target.files[0])} 
+            required={!order.buyer_po_file_url}
+          />
+          {order.buyer_po_file_url && (
+            <p style={{ fontSize: '0.75rem', color: '#6b7280', margin: '4px 0 0 0' }}>
+              Current file: <a href={order.buyer_po_file_url} target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>View existing file</a> (Uploading a new file will replace it)
+            </p>
+          )}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
+          {order.buyer_po_number ? (
+            <button 
+              type="button" 
+              onClick={handleDeletePO} 
+              className="btn btn-secondary" 
+              style={{ backgroundColor: '#fee2e2', color: '#dc2626', borderColor: '#fca5a5', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+              disabled={submitting}
+            >
+              <Trash2 size={16} /> Delete PO
+            </button>
+          ) : <div />}
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button type="button" onClick={onClose} className="btn btn-secondary" disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={submitting}>
+              {submitting ? <Loader size={16} className="spin" /> : 'Save PO Details'}
+            </button>
+          </div>
+        </div>
+      </form>
+    </ModalWrapper>
+  );
+}
+
+function SearchableSelect({ value, onChange, options, placeholder, className }) {
+  const [search, setSearch] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    const selected = options.find(o => o.value === value);
+    if (selected) {
+      setSearch(selected.label);
+    } else {
+      setSearch('');
+    }
+  }, [value, options]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+        const selected = options.find(o => o.value === value);
+        if (selected) {
+          setSearch(selected.label);
+        } else {
+          setSearch('');
+        }
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [value, options]);
+
+  const filteredOptions = useMemo(() => {
+    if (!search) return options;
+    return options.filter(opt => 
+      opt.label.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [search, options]);
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative', width: '100%' }}>
+      <input 
+        type="text" 
+        className={className} 
+        value={search} 
+        onChange={e => {
+          setSearch(e.target.value);
+          setIsOpen(true);
+        }} 
+        placeholder={placeholder}
+        onFocus={() => setIsOpen(true)}
+      />
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          maxHeight: '200px',
+          overflowY: 'auto',
+          backgroundColor: '#fff',
+          border: '1px solid #d1d5db',
+          borderRadius: '6px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          zIndex: 9999,
+          marginTop: '0.25rem'
+        }}>
+          {filteredOptions.length === 0 ? (
+            <div style={{ padding: '0.5rem 0.75rem', color: '#9ca3af', fontSize: '0.85rem' }}>
+              No matches found
+            </div>
+          ) : (
+            filteredOptions.map(opt => (
+              <div
+                key={opt.value}
+                onClick={() => {
+                  onChange(opt.value);
+                  setSearch(opt.label);
+                  setIsOpen(false);
+                }}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  backgroundColor: value === opt.value ? '#f3f4f6' : 'transparent',
+                  color: '#111827',
+                  textAlign: 'left',
+                  transition: 'background-color 0.15s ease'
+                }}
+                onMouseEnter={e => e.target.style.backgroundColor = '#f3f4f6'}
+                onMouseLeave={e => {
+                  if (value !== opt.value) {
+                    e.target.style.backgroundColor = 'transparent';
+                  }
+                }}
+              >
+                {opt.label}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CreatePIModal({ order, partners, yarnCounts, pi, onClose, onSuccess }) {
+  const specs = order.technical_specs || {};
+  
+  const vendorOptions = useMemo(() => {
+    return (partners || [])
+      .filter(p => p.partner_type?.toLowerCase() === 'vendor')
+      .map(p => ({
+        value: p.id,
+        label: `${p.partner_name} (${p.partner_type})`
+      }));
+  }, [partners]);
+  
+  const [invoiceDate, setInvoiceDate] = useState(pi ? pi.invoice_date : new Date().toISOString().split('T')[0]);
+  const [invoiceNumber, setInvoiceNumber] = useState(pi ? pi.invoice_number : '');
+  
+  const [buyerPoNumber, setBuyerPoNumber] = useState(pi ? (pi.buyer_po_number || '') : (order.buyer_po_number || ''));
+  const [buyerPoDate, setBuyerPoDate] = useState(pi ? (pi.buyer_po_date || '') : (order.buyer_po_date || ''));
+  const [vehicleNumber, setVehicleNumber] = useState(pi ? (pi.vehicle_number || '') : '');
+  
+  const [billedToPartnerId, setBilledToPartnerId] = useState(pi ? (pi.billed_to_partner_id || '') : '');
+  const [billedToName, setBilledToName] = useState(pi ? pi.billed_to_name : '');
+  const [billedToAddress, setBilledToAddress] = useState(pi ? (pi.billed_to_address || '') : '');
+  const [billedToGstin, setBilledToGstin] = useState(pi ? (pi.billed_to_gstin || '') : '');
+  const [billedToState, setBilledToState] = useState(pi ? (pi.billed_to_state || '') : '');
+  const [billedToStateCode, setBilledToStateCode] = useState(pi ? (pi.billed_to_state_code || '') : '');
+  
+  const [shippedToPartnerId, setShippedToPartnerId] = useState(pi ? (pi.shipped_to_partner_id || '') : '');
+  const [shippedToName, setShippedToName] = useState(pi ? pi.shipped_to_name : '');
+  const [shippedToAddress, setShippedToAddress] = useState(pi ? (pi.shipped_to_address || '') : '');
+  const [shippedToGstin, setShippedToGstin] = useState(pi ? (pi.shipped_to_gstin || '') : '');
+  const [shippedToState, setShippedToState] = useState(pi ? (pi.shipped_to_state || '') : '');
+  const [shippedToStateCode, setShippedToStateCode] = useState(pi ? (pi.shipped_to_state_code || '') : '');
+  
+  const [sameAsBilled, setSameAsBilled] = useState(
+    pi ? (pi.shipped_to_partner_id === pi.billed_to_partner_id && pi.shipped_to_name === pi.billed_to_name) : false
+  );
+  
+  const [hsnCode, setHsnCode] = useState(pi ? (pi.hsn_code || '') : '');
+  const [qty, setQty] = useState(pi ? pi.qty : (specs.production_quantity || order.total_quantity || 0));
+  const [rate, setRate] = useState(pi ? pi.rate : '');
+  const [discountPercent, setDiscountPercent] = useState(pi ? pi.discount_percent : '0');
+  
+  const [cgstPercent, setCgstPercent] = useState(pi ? pi.cgst_percent : '0');
+  const [sgstPercent, setSgstPercent] = useState(pi ? pi.sgst_percent : '0');
+  const [igstPercent, setIgstPercent] = useState(pi ? pi.igst_percent : '0');
+  
+  const [submitting, setSubmitting] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  
+  const [transportMode, setTransportMode] = useState(pi ? (pi.transport_mode || '') : '');
+  const [deliveryDate, setDeliveryDate] = useState(pi ? (pi.delivery_date || '') : '');
+  const [paymentTerms, setPaymentTerms] = useState(pi ? (pi.payment_terms || 'Delivery against current date cheque') : 'Delivery against current date cheque');
+  const [qualityTolerance, setQualityTolerance] = useState(pi ? (pi.quality_tolerance || '+/- 5%') : '+/- 5%');
+  const [remarks, setRemarks] = useState(pi ? (pi.remarks || 'Partial shipment to be permitted') : 'Partial shipment to be permitted');
+  const [bankDetails, setBankDetails] = useState(
+    pi ? (pi.bank_details || 'TAMILNAD MERCANTILE BANK, A/C: 028700150960232, SHEVAPET, SALEM, IFSC: TMBL0000028') : 'TAMILNAD MERCANTILE BANK, A/C: 028700150960232, SHEVAPET, SALEM, IFSC: TMBL0000028'
+  );
+
+  const getShortCountsString = (specs) => {
+    if (!specs) return '-';
+    const allWarpIds = specs.warp_selections?.flat() || [];
+    const allWeftIds = specs.weft_selections?.flat() || [];
+    const warpStr = allWarpIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
+    const weftStr = allWeftIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
+    return `${warpStr || '-'} X ${weftStr || '-'}`;
+  };
+
+  useEffect(() => {
+    async function updateInvoiceNo() {
+      if (pi) return;
+      const num = await generateInvoiceNo(invoiceDate);
+      setInvoiceNumber(num);
+    }
+    updateInvoiceNo();
+  }, [invoiceDate, pi]);
+
+  // Auto-populate Billed To and Shipped To details from master partners when editing/initializing
+  useEffect(() => {
+    if (partners && partners.length > 0) {
+      if (billedToPartnerId) {
+        const partner = partners.find(p => p.id === billedToPartnerId);
+        if (partner) {
+          if (!billedToName) setBilledToName(partner.partner_name || '');
+          if (!billedToAddress) setBilledToAddress(partner.address || '');
+          if (!billedToGstin) setBilledToGstin(partner.gstin || '');
+          if (!billedToState) setBilledToState(partner.state || '');
+          if (!billedToStateCode) setBilledToStateCode(partner.state_code || '');
+        }
+      }
+      if (shippedToPartnerId && !sameAsBilled) {
+        const partner = partners.find(p => p.id === shippedToPartnerId);
+        if (partner) {
+          if (!shippedToName) setShippedToName(partner.partner_name || '');
+          if (!shippedToAddress) setShippedToAddress(partner.address || '');
+          if (!shippedToGstin) setShippedToGstin(partner.gstin || '');
+          if (!shippedToState) setShippedToState(partner.state || '');
+          if (!shippedToStateCode) setShippedToStateCode(partner.state_code || '');
+        }
+      }
+    }
+  }, [partners, billedToPartnerId, shippedToPartnerId, sameAsBilled]);
+
+  useEffect(() => {
+    if (sameAsBilled) {
+      setShippedToPartnerId(billedToPartnerId);
+      setShippedToName(billedToName);
+      setShippedToAddress(billedToAddress);
+      setShippedToGstin(billedToGstin);
+      setShippedToState(billedToState);
+      setShippedToStateCode(billedToStateCode);
+    }
+  }, [sameAsBilled, billedToPartnerId, billedToName, billedToAddress, billedToGstin, billedToState, billedToStateCode]);
+
+  const generateInvoiceNo = async (dateStr) => {
+    try {
+      const date = new Date(dateStr);
+      let year = date.getFullYear();
+      let month = date.getMonth(); // 0-indexed
+      let fyStart, fyEnd;
+      
+      if (month >= 3) { // April or later
+        fyStart = year;
+        fyEnd = year + 1;
+      } else {
+        fyStart = year - 1;
+        fyEnd = year;
+      }
+      
+      const fyStr = `${String(fyStart).substring(2)}-${String(fyEnd).substring(2)}`;
+      
+      const { data, error } = await supabase
+        .from('proforma_invoices')
+        .select('invoice_number')
+        .like('invoice_number', `AT/${fyStr}/PI/%`)
+        .order('created_at', { ascending: false });
+        
+      if (error) throw error;
+      
+      let nextNum = 1;
+      if (data && data.length > 0) {
+        const lastNo = data[0].invoice_number;
+        const parts = lastNo.split('/');
+        const lastSeq = parseInt(parts[parts.length - 1], 10);
+        if (!isNaN(lastSeq)) {
+          nextNum = lastSeq + 1;
+        }
+      }
+      
+      const seqStr = String(nextNum).padStart(6, '0');
+      return `AT/${fyStr}/PI/${seqStr}`;
+    } catch (err) {
+      console.error(err);
+      return `AT/26-27/PI/000001`;
+    }
+  };
+
+  const handleBilledToChange = (partnerId) => {
+    setBilledToPartnerId(partnerId);
+    const partner = partners.find(p => p.id === partnerId);
+    if (partner) {
+      setBilledToName(partner.partner_name);
+      setBilledToAddress(partner.address || '');
+      setBilledToGstin(partner.gstin || '');
+      setBilledToState(partner.state || '');
+      setBilledToStateCode(partner.state_code || '');
+      
+      // Auto compute tax rate
+      if (partner.state_code === '33' || partner.state?.toLowerCase() === 'tamil nadu' || partner.state?.toLowerCase() === 'tamilnadu') {
+        setCgstPercent('2.5');
+        setSgstPercent('2.5');
+        setIgstPercent('0');
+      } else {
+        setCgstPercent('0');
+        setSgstPercent('0');
+        setIgstPercent('5');
+      }
+    } else {
+      setBilledToName('');
+      setBilledToAddress('');
+      setBilledToGstin('');
+      setBilledToState('');
+      setBilledToStateCode('');
+      setCgstPercent('0');
+      setSgstPercent('0');
+      setIgstPercent('0');
+    }
+  };
+
+  const handleShippedToChange = (partnerId) => {
+    setShippedToPartnerId(partnerId);
+    const partner = partners.find(p => p.id === partnerId);
+    if (partner) {
+      setShippedToName(partner.partner_name);
+      setShippedToAddress(partner.address || '');
+      setShippedToGstin(partner.gstin || '');
+      setShippedToState(partner.state || '');
+      setShippedToStateCode(partner.state_code || '');
+    } else {
+      setShippedToName('');
+      setShippedToAddress('');
+      setShippedToGstin('');
+      setShippedToState('');
+      setShippedToStateCode('');
+    }
+  };
+
+  // Financial calculations
+  const parsedQty = parseFloat(qty) || 0;
+  const parsedRate = parseFloat(rate) || 0;
+  const parsedDiscountP = parseFloat(discountPercent) || 0;
+  
+  const amount = parsedQty * parsedRate;
+  const discountAmount = amount * (parsedDiscountP / 100);
+  const taxableValue = amount - discountAmount;
+  
+  const cgstP = parseFloat(cgstPercent) || 0;
+  const sgstP = parseFloat(sgstPercent) || 0;
+  const igstP = parseFloat(igstPercent) || 0;
+  
+  const cgstAmount = taxableValue * (cgstP / 100);
+  const sgstAmount = taxableValue * (sgstP / 100);
+  const igstAmount = taxableValue * (igstP / 100);
+  
+  const totalGstAmount = cgstAmount + sgstAmount + igstAmount;
+  const totalInvoicePrice = taxableValue + totalGstAmount;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!invoiceNumber) {
+      alert('Invoice number is still generating, please wait.');
+      return;
+    }
+    if (!billedToName || !billedToGstin || !billedToState) {
+      alert('Please fill out all billed to fields.');
+      return;
+    }
+    if (!shippedToName || !shippedToGstin || !shippedToState) {
+      alert('Please fill out all shipped to fields.');
+      return;
+    }
+    
+    setSubmitting(true);
+    try {
+      const payload = {
+        order_id: order.id,
+        invoice_number: invoiceNumber,
+        invoice_date: invoiceDate,
+        buyer_po_number: buyerPoNumber || null,
+        buyer_po_date: buyerPoDate || null,
+        vehicle_number: vehicleNumber || null,
+        
+        billed_to_partner_id: billedToPartnerId || null,
+        billed_to_name: billedToName,
+        billed_to_address: billedToAddress || null,
+        billed_to_gstin: billedToGstin || null,
+        billed_to_state: billedToState || null,
+        billed_to_state_code: billedToStateCode || null,
+        
+        shipped_to_partner_id: shippedToPartnerId || null,
+        shipped_to_name: shippedToName,
+        shipped_to_address: shippedToAddress || null,
+        shipped_to_gstin: shippedToGstin || null,
+        shipped_to_state: shippedToState || null,
+        shipped_to_state_code: shippedToStateCode || null,
+        
+        hsn_code: hsnCode,
+        qty: parsedQty,
+        rate: parsedRate,
+        discount_percent: parsedDiscountP,
+        taxable_value: taxableValue,
+        cgst_percent: cgstP,
+        cgst_amount: cgstAmount,
+        sgst_percent: sgstP,
+        sgst_amount: sgstAmount,
+        igst_percent: igstP,
+        igst_amount: igstAmount,
+        total_gst_amount: totalGstAmount,
+        total_invoice_price: totalInvoicePrice,
+        
+        transport_mode: transportMode || null,
+        delivery_date: deliveryDate || null,
+        payment_terms: paymentTerms || null,
+        quality_tolerance: qualityTolerance || null,
+        remarks: remarks || null,
+        bank_details: bankDetails || null
+      };
+
+      let data, error;
+      if (pi) {
+        const { data: updatedData, error: updateError } = await supabase
+          .from('proforma_invoices')
+          .update(payload)
+          .eq('id', pi.id)
+          .select()
+          .single();
+        data = updatedData;
+        error = updateError;
+      } else {
+        const { data: insertedData, error: insertError } = await supabase
+          .from('proforma_invoices')
+          .insert([payload])
+          .select()
+          .single();
+        data = insertedData;
+        error = insertError;
+      }
+      
+      if (error) throw error;
+      
+      alert(pi ? 'Proforma Invoice updated successfully!' : 'Proforma Invoice created successfully!');
+      onSuccess({
+        ...data,
+        order_number: order.order_number,
+        design_name: order.design_name,
+        design_no: order.design_no,
+        count: getShortCountsString(specs),
+        construction: `${specs.order_reed || specs.on_loom_reed || '—'} / ${specs.order_pick || specs.on_loom_pick || '—'}`
+      });
+    } catch (err) {
+      console.error(err);
+      alert(`Error ${pi ? 'updating' : 'creating'} Proforma Invoice: ` + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ModalWrapper title={`${pi ? 'Edit' : 'Create'} Proforma Invoice — ${order.order_number}`} onClose={onClose} maxWidth="1200px">
+      <form onSubmit={handleSubmit} style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', maxHeight: '75vh', overflowY: 'auto' }}>
+        
+        {/* Step Indicator */}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1.25rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '1rem', marginBottom: '0.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{
+              width: '26px', height: '26px', borderRadius: '50%',
+              backgroundColor: wizardStep === 1 ? 'var(--color-primary)' : '#10b981',
+              color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 'bold'
+            }}>{wizardStep > 1 ? '✓' : '1'}</div>
+            <span style={{ fontSize: '0.825rem', fontWeight: 'bold', color: wizardStep === 1 ? 'var(--color-primary)' : '#10b981' }}>
+              Billing & Consignee
+            </span>
+          </div>
+          <div style={{ width: '40px', height: '2px', backgroundColor: wizardStep > 1 ? '#10b981' : '#e5e7eb' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{
+              width: '26px', height: '26px', borderRadius: '50%',
+              backgroundColor: wizardStep === 2 ? 'var(--color-primary)' : (wizardStep > 2 ? '#10b981' : '#e5e7eb'),
+              color: wizardStep >= 2 ? '#fff' : '#4b5563',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 'bold'
+            }}>{wizardStep > 2 ? '✓' : '2'}</div>
+            <span style={{ fontSize: '0.825rem', fontWeight: wizardStep === 2 ? 'bold' : 'normal', color: wizardStep === 2 ? 'var(--color-primary)' : (wizardStep > 2 ? '#10b981' : '#4b5563') }}>
+              Items & Financials
+            </span>
+          </div>
+          <div style={{ width: '40px', height: '2px', backgroundColor: wizardStep > 2 ? '#10b981' : '#e5e7eb' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{
+              width: '26px', height: '26px', borderRadius: '50%',
+              backgroundColor: wizardStep === 3 ? 'var(--color-primary)' : '#e5e7eb',
+              color: wizardStep === 3 ? '#fff' : '#4b5563',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 'bold'
+            }}>3</div>
+            <span style={{ fontSize: '0.825rem', fontWeight: wizardStep === 3 ? 'bold' : 'normal', color: wizardStep === 3 ? 'var(--color-primary)' : '#4b5563' }}>
+              Terms & Conditions
+            </span>
+          </div>
+        </div>
+
+        {wizardStep === 1 && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', borderBottom: '1px solid #eee', paddingBottom: '1rem' }}>
+              <div className="input-group">
+                <label className="input-label">Invoice Number</label>
+                <input type="text" className="input-field" value={invoiceNumber} readOnly style={{ backgroundColor: '#f3f4f6', fontWeight: 'bold' }} />
+              </div>
+              <div className="input-group">
+                <label className="input-label">Invoice Date</label>
+                <input type="date" className="input-field" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} required />
+              </div>
+              <div className="input-group">
+                <label className="input-label">Vehicle Number</label>
+                <input type="text" className="input-field" value={vehicleNumber} onChange={e => setVehicleNumber(e.target.value)} placeholder="e.g. TN-33-AB-1234" />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', borderBottom: '1px solid #eee', paddingBottom: '1rem' }}>
+              <div className="input-group">
+                <label className="input-label">Buyer PO Number</label>
+                <input type="text" className="input-field" value={buyerPoNumber} onChange={e => setBuyerPoNumber(e.target.value)} placeholder="Enter PO Number" />
+              </div>
+              <div className="input-group">
+                <label className="input-label">PO Date</label>
+                <input type="date" className="input-field" value={buyerPoDate} onChange={e => setBuyerPoDate(e.target.value)} />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+              {/* Billed To */}
+              <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <h4 style={{ margin: 0, fontWeight: '800', fontSize: '0.85rem', color: '#800000', textTransform: 'uppercase' }}>Billed To (Receiver)</h4>
+                
+                <div className="input-group">
+                  <label className="input-label">Select Vendor (from Master)</label>
+                  <SearchableSelect 
+                    className="input-field" 
+                    value={billedToPartnerId} 
+                    onChange={handleBilledToChange} 
+                    options={vendorOptions}
+                    placeholder="Type and select billing partner..."
+                  />
+                </div>
+                
+                <div className="input-group">
+                  <label className="input-label">Vendor Billing Name</label>
+                  <input type="text" className="input-field" value={billedToName} onChange={e => setBilledToName(e.target.value)} required />
+                </div>
+                
+                <div className="input-group">
+                  <label className="input-label">Billing Address</label>
+                  <textarea className="input-field" value={billedToAddress} onChange={e => setBilledToAddress(e.target.value)} rows={2} required />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="input-group">
+                    <label className="input-label">State</label>
+                    <input type="text" className="input-field" value={billedToState} onChange={e => setBilledToState(e.target.value)} required />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">State Code</label>
+                    <input type="text" className="input-field" value={billedToStateCode} onChange={e => setBilledToStateCode(e.target.value)} required />
+                  </div>
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label">GST Number</label>
+                  <input type="text" className="input-field" value={billedToGstin} onChange={e => setBilledToGstin(e.target.value)} required />
+                </div>
+              </div>
+
+              {/* Shipped To */}
+              <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h4 style={{ margin: 0, fontWeight: '800', fontSize: '0.85rem', color: '#800000', textTransform: 'uppercase' }}>Shipped To (Consignee)</h4>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 'bold' }}>
+                    <input type="checkbox" checked={sameAsBilled} onChange={e => setSameAsBilled(e.target.checked)} />
+                    Same as Billed To
+                  </label>
+                </div>
+
+                {!sameAsBilled && (
+                  <>
+                    <div className="input-group">
+                      <label className="input-label">Select Consignee Vendor</label>
+                      <SearchableSelect 
+                        className="input-field" 
+                        value={shippedToPartnerId} 
+                        onChange={handleShippedToChange} 
+                        options={vendorOptions}
+                        placeholder="Type and select consignee partner..."
+                      />
+                    </div>
+                    
+                    <div className="input-group">
+                      <label className="input-label">Consignee Name</label>
+                      <input type="text" className="input-field" value={shippedToName} onChange={e => setShippedToName(e.target.value)} required />
+                    </div>
+                    
+                    <div className="input-group">
+                      <label className="input-label">Shipping Address</label>
+                      <textarea className="input-field" value={shippedToAddress} onChange={e => setShippedToAddress(e.target.value)} rows={2} required />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                      <div className="input-group">
+                        <label className="input-label">State</label>
+                        <input type="text" className="input-field" value={shippedToState} onChange={e => setShippedToState(e.target.value)} required />
+                      </div>
+                      <div className="input-group">
+                        <label className="input-label">State Code</label>
+                        <input type="text" className="input-field" value={shippedToStateCode} onChange={e => setShippedToStateCode(e.target.value)} required />
+                      </div>
+                    </div>
+
+                    <div className="input-group">
+                      <label className="input-label">GST Number</label>
+                      <input type="text" className="input-field" value={shippedToGstin} onChange={e => setShippedToGstin(e.target.value)} required />
+                    </div>
+                  </>
+                )}
+
+                {sameAsBilled && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, backgroundColor: '#f9fafb', border: '1px dashed #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>
+                    Shipping address is same as billing address
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
+              <button type="button" onClick={onClose} className="btn btn-secondary" disabled={submitting}>
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  if (!billedToName || !billedToGstin || !billedToState) {
+                    alert("Please fill out Billed To details.");
+                    return;
+                  }
+                  if (!shippedToName || !shippedToGstin || !shippedToState) {
+                    alert("Please fill out Shipped To details.");
+                    return;
+                  }
+                  setWizardStep(2);
+                }} 
+                className="btn btn-primary"
+              >
+                Next to Items & Financials
+              </button>
+            </div>
+          </>
+        )}
+
+        {wizardStep === 2 && (
+          <>
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.25rem', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb', textAlign: 'left', fontWeight: 'bold' }}>
+                    <th style={{ padding: '0.75rem 0.5rem' }}>Order Number</th>
+                    <th style={{ padding: '0.75rem 0.5rem' }}>Design Name</th>
+                    <th style={{ padding: '0.75rem 0.5rem' }}>Design Number</th>
+                    <th style={{ padding: '0.75rem 0.5rem' }}>Count</th>
+                    <th style={{ padding: '0.75rem 0.5rem' }}>Construction</th>
+                    <th style={{ padding: '0.75rem 0.5rem', width: '100px' }}>HSN Code</th>
+                    <th style={{ padding: '0.75rem 0.5rem', width: '90px' }}>UOM</th>
+                    <th style={{ padding: '0.75rem 0.5rem', width: '100px' }}>Qty (Mtrs)</th>
+                    <th style={{ padding: '0.75rem 0.5rem', width: '100px' }}>Rate (₹)</th>
+                    <th style={{ padding: '0.75rem 0.5rem', width: '80px' }}>Disc %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                    <td style={{ padding: '0.75rem 0.5rem', fontWeight: 'bold' }}>{order.order_number}</td>
+                    <td style={{ padding: '0.75rem 0.5rem' }}>{order.design_name || '—'}</td>
+                    <td style={{ padding: '0.75rem 0.5rem' }}>{order.design_no || '—'}</td>
+                    <td style={{ padding: '0.75rem 0.5rem' }}>{getShortCountsString(specs)}</td>
+                    <td style={{ padding: '0.75rem 0.5rem' }}>{`${specs.order_reed || specs.on_loom_reed || '—'} / ${specs.order_pick || specs.on_loom_pick || '—'}`}</td>
+                    <td style={{ padding: '0.5rem 0.25rem' }}>
+                      <input type="text" className="input-field" style={{ padding: '0.35rem', fontSize: '0.8rem' }} value={hsnCode} onChange={e => setHsnCode(e.target.value)} placeholder="HSN" required />
+                    </td>
+                    <td style={{ padding: '0.75rem 0.5rem' }}>METER</td>
+                    <td style={{ padding: '0.5rem 0.25rem' }}>
+                      <input type="number" className="input-field" style={{ padding: '0.35rem', fontSize: '0.8rem' }} value={qty} onChange={e => setQty(e.target.value)} placeholder="Qty" required />
+                    </td>
+                    <td style={{ padding: '0.5rem 0.25rem' }}>
+                      <input type="number" step="0.01" className="input-field" style={{ padding: '0.35rem', fontSize: '0.8rem' }} value={rate} onChange={e => setRate(e.target.value)} placeholder="Rate" required />
+                    </td>
+                    <td style={{ padding: '0.5rem 0.25rem' }}>
+                      <input type="number" step="0.1" className="input-field" style={{ padding: '0.35rem', fontSize: '0.8rem' }} value={discountPercent} onChange={e => setDiscountPercent(e.target.value)} placeholder="%" />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Financial Summary & Taxes */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '2rem', alignItems: 'start' }}>
+              {/* Taxes configuration */}
+              <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <h4 style={{ margin: 0, fontWeight: '800', fontSize: '0.85rem', color: '#800000', textTransform: 'uppercase' }}>Tax Settings (%)</h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                  <div className="input-group">
+                    <label className="input-label">CGST %</label>
+                    <input type="number" step="0.1" className="input-field" value={cgstPercent} onChange={e => setCgstPercent(e.target.value)} />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">SGST %</label>
+                    <input type="number" step="0.1" className="input-field" value={sgstPercent} onChange={e => setSgstPercent(e.target.value)} />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">IGST %</label>
+                    <input type="number" step="0.1" className="input-field" value={igstPercent} onChange={e => setIgstPercent(e.target.value)} />
+                  </div>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.72rem', color: '#6b7280', fontStyle: 'italic' }}>
+                  For supply inside Tamil Nadu: CGST 2.5% + SGST 2.5%. For interstate supply: IGST 5.0%.
+                </p>
+              </div>
+
+              {/* Price calculations review sheet */}
+              <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.25rem', backgroundColor: '#fafafa', display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.85rem' }}>
+                <h4 style={{ margin: 0, fontWeight: '800', fontSize: '0.85rem', color: '#111827', borderBottom: '1px solid #e5e7eb', paddingBottom: '0.5rem' }}>Price Calculations Sheet</h4>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#555' }}>Sub-Total value (Qty × Rate):</span>
+                    <span style={{ fontWeight: '600' }}>₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#555' }}>Discount ({discountPercent}%):</span>
+                    <span style={{ fontWeight: '600', color: '#dc2626' }}>-₹{discountAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #ccc', paddingTop: '0.4rem', fontWeight: 'bold' }}>
+                    <span style={{ color: '#111' }}>Taxable Value:</span>
+                    <span style={{ color: '#111' }}>₹{taxableValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#666', marginTop: '0.25rem' }}>
+                    <span>CGST ({cgstPercent}%):</span>
+                    <span>₹{cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#666' }}>
+                    <span>SGST ({sgstPercent}%):</span>
+                    <span>₹{sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#666' }}>
+                    <span>IGST ({igstPercent}%):</span>
+                    <span>₹{igstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #ddd', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                    <span style={{ color: '#111', fontWeight: 'bold' }}>Total GST:</span>
+                    <span style={{ fontWeight: '800' }}>₹{totalGstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #000', paddingTop: '0.5rem', marginTop: '0.25rem', fontSize: '1rem' }}>
+                    <span style={{ color: '#800000', fontWeight: '900' }}>Total Price:</span>
+                    <span style={{ fontWeight: '950', color: '#800000' }}>₹{totalInvoicePrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
+              <button type="button" onClick={() => setWizardStep(1)} className="btn btn-secondary" disabled={submitting}>
+                Back
+              </button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  if (!hsnCode) {
+                    alert("Please enter HSN Code.");
+                    return;
+                  }
+                  if (!qty || parseFloat(qty) <= 0) {
+                    alert("Please enter a valid Quantity.");
+                    return;
+                  }
+                  if (!rate || parseFloat(rate) <= 0) {
+                    alert("Please enter a valid Rate.");
+                    return;
+                  }
+                  setWizardStep(3);
+                }} 
+                className="btn btn-primary"
+              >
+                Next to Terms & Conditions
+              </button>
+            </div>
+          </>
+        )}
+
+        {wizardStep === 3 && (
+          <>
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <h4 style={{ margin: 0, fontWeight: '800', fontSize: '0.85rem', color: '#800000', textTransform: 'uppercase' }}>Terms & Conditions</h4>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
+                <div className="input-group">
+                  <label className="input-label">Transport Mode</label>
+                  <input type="text" className="input-field" value={transportMode} onChange={e => setTransportMode(e.target.value)} placeholder="e.g. Road, Rail, Air" />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Delivery Date</label>
+                  <input type="date" className="input-field" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Quality Tolerance</label>
+                  <input type="text" className="input-field" value={qualityTolerance} onChange={e => setQualityTolerance(e.target.value)} placeholder="e.g. +/- 5%" />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
+                <div className="input-group">
+                  <label className="input-label">Payment Terms</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <input type="text" className="input-field" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} placeholder="Enter payment terms" required />
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button 
+                        type="button" 
+                        onClick={() => setPaymentTerms('Delivery against current date cheque')} 
+                        style={{ 
+                          padding: '0.25rem 0.5rem', 
+                          fontSize: '0.72rem', 
+                          borderRadius: '4px', 
+                          border: '1px solid',
+                          borderColor: paymentTerms === 'Delivery against current date cheque' ? 'var(--color-primary)' : '#ddd',
+                          backgroundColor: paymentTerms === 'Delivery against current date cheque' ? 'var(--color-primary)' : '#f9fafb', 
+                          color: paymentTerms === 'Delivery against current date cheque' ? '#fff' : '#333',
+                          cursor: 'pointer', 
+                          fontWeight: '600',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        Cheque on Delivery
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setPaymentTerms('20% advance, 60% before dispatch, 20% after')} 
+                        style={{ 
+                          padding: '0.25rem 0.5rem', 
+                          fontSize: '0.72rem', 
+                          borderRadius: '4px', 
+                          border: '1px solid',
+                          borderColor: paymentTerms === '20% advance, 60% before dispatch, 20% after' ? 'var(--color-primary)' : '#ddd',
+                          backgroundColor: paymentTerms === '20% advance, 60% before dispatch, 20% after' ? 'var(--color-primary)' : '#f9fafb', 
+                          color: paymentTerms === '20% advance, 60% before dispatch, 20% after' ? '#fff' : '#333',
+                          cursor: 'pointer', 
+                          fontWeight: '600',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        20/60/20 Split
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="input-group">
+                  <label className="input-label">Remarks / Shipment</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <input type="text" className="input-field" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Enter remarks" />
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button 
+                        type="button" 
+                        onClick={() => setRemarks('Partial shipment to be permitted')} 
+                        style={{ 
+                          padding: '0.25rem 0.5rem', 
+                          fontSize: '0.72rem', 
+                          borderRadius: '4px', 
+                          border: '1px solid',
+                          borderColor: remarks === 'Partial shipment to be permitted' ? 'var(--color-primary)' : '#ddd',
+                          backgroundColor: remarks === 'Partial shipment to be permitted' ? 'var(--color-primary)' : '#f9fafb', 
+                          color: remarks === 'Partial shipment to be permitted' ? '#fff' : '#333',
+                          cursor: 'pointer', 
+                          fontWeight: '600',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        Partial Allowed
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setRemarks('Full shipment permitted')} 
+                        style={{ 
+                          padding: '0.25rem 0.5rem', 
+                          fontSize: '0.72rem', 
+                          borderRadius: '4px', 
+                          border: '1px solid',
+                          borderColor: remarks === 'Full shipment permitted' ? 'var(--color-primary)' : '#ddd',
+                          backgroundColor: remarks === 'Full shipment permitted' ? 'var(--color-primary)' : '#f9fafb', 
+                          color: remarks === 'Full shipment permitted' ? '#fff' : '#333',
+                          cursor: 'pointer', 
+                          fontWeight: '600',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        Full Shipment
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Bank Account Details (Ashok Textiles)</label>
+                <textarea className="input-field" value={bankDetails} onChange={e => setBankDetails(e.target.value)} rows={3} placeholder="Enter Bank Coordinates" required />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
+              <button type="button" onClick={() => setWizardStep(2)} className="btn btn-secondary" disabled={submitting}>
+                Back
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={submitting}>
+                {submitting ? <Loader size={16} className="spin" /> : 'Create and Submit PI'}
+              </button>
+            </div>
+          </>
+        )}
+      </form>
+    </ModalWrapper>
+  );
+}
+
+function PrintPIModal({ pi, onClose }) {
+  const amount = parseFloat(pi.amount) || 0;
+  const discountAmount = amount * (parseFloat(pi.discount_percent) || 0) / 100;
+  const taxableValue = parseFloat(pi.taxable_value) || 0;
+  const cgstAmount = parseFloat(pi.cgst_amount) || 0;
+  const sgstAmount = parseFloat(pi.sgst_amount) || 0;
+  const igstAmount = parseFloat(pi.igst_amount) || 0;
+  const totalGstAmount = parseFloat(pi.total_gst_amount) || 0;
+  const totalInvoicePrice = parseFloat(pi.total_invoice_price) || 0;
+  
+  const words = convertNumberToWords(totalInvoicePrice);
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 3000,
+      backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
+      alignItems: 'center', justifyContent: 'center', padding: '1rem'
+    }} className="print-modal-overlay">
+      <div 
+        className="print-container"
+        style={{
+          backgroundColor: '#fff', borderRadius: '12px', width: '100%', maxWidth: '850px',
+          maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column',
+          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid #e5e7eb'
+        }}
+      >
+        {/* Modal Actions (No Print) */}
+        <div className="no-print" style={{
+          padding: '1rem 1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex',
+          justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9fafb',
+          borderTopLeftRadius: '12px', borderTopRightRadius: '12px'
+        }}>
+          <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#111827', fontWeight: '800' }}>
+            Print Proforma Invoice (PI)
+          </h3>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button 
+              onClick={() => window.print()} 
+              className="btn btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}
+            >
+              <Printer size={16} /> Print PI
+            </button>
+            <button 
+              onClick={onClose}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
+            >
+              <X size={24} />
+            </button>
+          </div>
+        </div>
+
+        {/* Printable Area */}
+        <div className="print-body" style={{ padding: '2rem', color: '#000', fontSize: '0.8rem', lineHeight: '1.4' }}>
+          
+          {/* Company Details (Seller) */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '2px solid #000', paddingBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+              <img src="/logo.png" alt="Ashok Textiles" style={{ maxHeight: '58px', objectFit: 'contain' }} />
+              <div>
+                <h1 style={{ margin: '0 0 0.15rem 0', fontSize: '1.6rem', fontWeight: '950', color: '#000', letterSpacing: '0.5px', lineHeight: '1.1' }}>ASHOK TEXTILES</h1>
+                <p style={{ margin: '0 0 0.1rem 0', fontWeight: '800', fontSize: '0.75rem', color: '#800000', letterSpacing: '0.5px', textTransform: 'uppercase' }}>MANUFACTURERS OF GREIGE FABRIC</p>
+                <p style={{ margin: '0 0 0.1rem 0', fontSize: '0.75rem' }}>12-A, East Car Street, Shevapet, Salem - 636002</p>
+                <p style={{ margin: 0, fontSize: '0.75rem' }}>Tamil Nadu, India | <strong>GSTIN:</strong> 33AAZFA6086D1Z6</p>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <h2 style={{ margin: '0 0 0.25rem 0', fontSize: '1.2rem', fontWeight: '900', color: '#800000', letterSpacing: '0.5px' }}>PROFORMA INVOICE</h2>
+              <div style={{ fontSize: '0.8rem', fontWeight: 'bold', border: '1px solid #000', padding: '0.2rem 0.4rem', borderRadius: '4px', display: 'inline-block', marginTop: '0.2rem' }}>
+                ORIGINAL FOR BUYER
+              </div>
+            </div>
+          </div>
+
+          {/* PI Header Metadata Grid */}
+          <div className="print-meta-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 0.8fr', gap: '1rem', marginBottom: '1.25rem', borderBottom: '1px solid #000', paddingBottom: '0.75rem', fontSize: '0.8rem' }}>
+            <div>
+              <p style={{ margin: '0 0 0.35rem 0', whiteSpace: 'nowrap' }}><strong>Invoice No:</strong> <span style={{ fontFamily: 'monospace', fontSize: '0.9rem', fontWeight: 'bold' }}>{pi.invoice_number}</span></p>
+              <p style={{ margin: '0 0 0.35rem 0' }}><strong>Invoice Date:</strong> {new Date(pi.invoice_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+              <p style={{ margin: '0 0 0.35rem 0' }}><strong>State of Supply:</strong> TAMIL NADU (Code: 33)</p>
+            </div>
+            <div>
+              <p style={{ margin: '0 0 0.35rem 0' }}><strong>Buyer PO Number:</strong> {pi.buyer_po_number || '—'}</p>
+              <p style={{ margin: '0 0 0.35rem 0' }}><strong>PO Date:</strong> {pi.buyer_po_date ? new Date(pi.buyer_po_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}</p>
+              <p style={{ margin: '0 0 0.35rem 0' }}><strong>Vehicle Number:</strong> {pi.vehicle_number || '—'}</p>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <p style={{ margin: '0 0 0.35rem 0' }}><strong>Transport Mode:</strong> {pi.transport_mode || '—'}</p>
+              <p style={{ margin: '0 0 0.35rem 0' }}><strong>Delivery Date:</strong> {pi.delivery_date ? new Date(pi.delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}</p>
+            </div>
+          </div>
+
+          {/* Billed To / Shipped To Address Grid */}
+          <div className="print-address-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '1.5rem', borderBottom: '1px solid #000', paddingBottom: '1.5rem' }}>
+            <div>
+              <h4 style={{ margin: '0 0 0.4rem 0', fontWeight: '800', fontSize: '0.8rem', textTransform: 'uppercase', color: '#444' }}>Billed To (Receiver)</h4>
+              <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.85rem', fontWeight: 'bold' }}>{pi.billed_to_name}</p>
+              <p style={{ margin: '0 0 0.35rem 0', whiteSpace: 'pre-wrap', color: '#333' }}>{pi.billed_to_address}</p>
+              <p style={{ margin: '0 0 0.15rem 0' }}><strong>State:</strong> {pi.billed_to_state} (Code: {pi.billed_to_state_code || '—'})</p>
+              <p style={{ margin: 0 }}><strong>GSTIN:</strong> {pi.billed_to_gstin}</p>
+            </div>
+            <div>
+              <h4 style={{ margin: '0 0 0.4rem 0', fontWeight: '800', fontSize: '0.8rem', textTransform: 'uppercase', color: '#444' }}>Shipped To (Consignee)</h4>
+              <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.85rem', fontWeight: 'bold' }}>{pi.shipped_to_name}</p>
+              <p style={{ margin: '0 0 0.35rem 0', whiteSpace: 'pre-wrap', color: '#333' }}>{pi.shipped_to_address}</p>
+              <p style={{ margin: '0 0 0.15rem 0' }}><strong>State:</strong> {pi.shipped_to_state} (Code: {pi.shipped_to_state_code || '—'})</p>
+              <p style={{ margin: 0 }}><strong>GSTIN:</strong> {pi.shipped_to_gstin}</p>
+            </div>
+          </div>
+
+          {/* Particulars Item Table */}
+          <h3 style={{ fontSize: '0.85rem', fontWeight: '800', textTransform: 'uppercase', margin: '0 0 0.5rem 0', color: '#111' }}>Product Details</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1.5rem', fontSize: '0.75rem' }}>
+            <thead>
+              <tr style={{ borderTop: '1.5px solid #000', borderBottom: '1.5px solid #000', textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f9fafb' }}>
+                <th style={{ padding: '0.5rem 0.4rem', width: '50px' }}>S.No</th>
+                <th style={{ padding: '0.5rem 0.4rem' }}>Description of Goods</th>
+                <th style={{ padding: '0.5rem 0.4rem', width: '80px' }}>HSN</th>
+                <th style={{ padding: '0.5rem 0.4rem', width: '60px' }}>UOM</th>
+                <th style={{ padding: '0.5rem 0.4rem', textAlign: 'right', width: '90px' }}>Qty</th>
+                <th style={{ padding: '0.5rem 0.4rem', textAlign: 'right', width: '90px' }}>Rate (₹)</th>
+                <th style={{ padding: '0.5rem 0.4rem', textAlign: 'right', width: '65px' }}>Disc %</th>
+                <th style={{ padding: '0.5rem 0.4rem', textAlign: 'right', width: '100px' }}>Taxable Value</th>
+                {pi.cgst_percent > 0 ? (
+                  <>
+                    <th style={{ padding: '0.5rem 0.4rem', textAlign: 'right', width: '90px' }}>CGST</th>
+                    <th style={{ padding: '0.5rem 0.4rem', textAlign: 'right', width: '90px' }}>SGST</th>
+                  </>
+                ) : (
+                  <th style={{ padding: '0.5rem 0.4rem', textAlign: 'right', width: '100px' }}>IGST</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ borderBottom: '1px solid #ccc', verticalAlign: 'top' }}>
+                <td style={{ padding: '0.5rem 0.4rem' }}>1</td>
+                <td style={{ padding: '0.5rem 0.4rem', lineHeight: '1.45' }}>
+                  <strong>Order No:</strong> {pi.order_number || '—'}<br />
+                  <strong>Design Name:</strong> {pi.design_name || '—'}<br />
+                  <strong>Design No:</strong> {pi.design_no || '—'}<br />
+                  <strong>Count:</strong> {pi.count || '—'}<br />
+                  <strong>Construction:</strong> {pi.construction || '—'}
+                </td>
+                <td style={{ padding: '0.5rem 0.4rem' }}>{pi.hsn_code}</td>
+                <td style={{ padding: '0.5rem 0.4rem' }}>METER</td>
+                <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{Number(pi.qty).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{Number(pi.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{pi.discount_percent}%</td>
+                <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{Number(taxableValue).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                {pi.cgst_percent > 0 ? (
+                  <>
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>
+                      {Number(cgstAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}<br />
+                      <span style={{ fontSize: '0.65rem', color: '#555' }}>({pi.cgst_percent}%)</span>
+                    </td>
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>
+                      {Number(sgstAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}<br />
+                      <span style={{ fontSize: '0.65rem', color: '#555' }}>({pi.sgst_percent}%)</span>
+                    </td>
+                  </>
+                ) : (
+                  <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>
+                    {Number(igstAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}<br />
+                    <span style={{ fontSize: '0.65rem', color: '#555' }}>({pi.igst_percent}%)</span>
+                  </td>
+                )}
+              </tr>
+              {/* Totals row */}
+              <tr style={{ borderBottom: '1.5px solid #000', fontWeight: 'bold' }}>
+                <td style={{ padding: '0.5rem 0.4rem' }}></td>
+                <td style={{ padding: '0.5rem 0.4rem' }}>Total</td>
+                <td></td>
+                <td></td>
+                <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{Number(pi.qty).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                <td></td>
+                <td></td>
+                <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{Number(taxableValue).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                {pi.cgst_percent > 0 ? (
+                  <>
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{Number(cgstAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{Number(sgstAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                  </>
+                ) : (
+                  <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{Number(igstAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                )}
+              </tr>
+            </tbody>
+          </table>
+
+          {/* Amount in words & signatures */}
+          <div className="print-bottom-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '2rem', marginTop: '1.5rem' }}>
+            <div>
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.8rem', textTransform: 'uppercase', color: '#444' }}>
+                <strong>Amount in Words:</strong>
+              </p>
+              <p style={{ margin: '0 0 1.5rem 0', fontWeight: 'bold', fontSize: '0.85rem', color: '#111', borderBottom: '1px solid #ccc', paddingBottom: '0.5rem' }}>
+                {words}
+              </p>
+
+              <div className="print-bank-details" style={{ fontSize: '0.75rem', color: '#333', lineHeight: '1.5', border: '1px solid #ddd', padding: '0.75rem', borderRadius: '4px', backgroundColor: '#fafafa', whiteSpace: 'pre-wrap' }}>
+                <p style={{ margin: '0 0 0.35rem 0', fontWeight: 'bold', color: '#800000', textTransform: 'uppercase' }}>Bank Account Details</p>
+                {pi.bank_details || 'TAMILNAD MERCANTILE BANK, A/C: 028700150960232, SHEVAPET, SALEM, IFSC: TMBL0000028'}
+              </div>
+
+              <div className="print-terms-conditions" style={{ fontSize: '0.72rem', color: '#333', marginTop: '1rem', lineHeight: '1.4', border: '1px solid #ddd', padding: '0.75rem', borderRadius: '4px', backgroundColor: '#fafafa' }}>
+                <p style={{ margin: '0 0 0.35rem 0', fontWeight: 'bold', color: '#800000', textTransform: 'uppercase' }}>Terms & Conditions</p>
+                <p style={{ margin: '0 0 0.25rem 0' }}><strong>Payment Terms:</strong> {pi.payment_terms || '—'}</p>
+                <p style={{ margin: '0 0 0.25rem 0' }}><strong>Quality Tolerance:</strong> {pi.quality_tolerance || '—'}</p>
+                <p style={{ margin: '0 0 0.25rem 0' }}><strong>Remarks / Shipment:</strong> {pi.remarks || '—'}</p>
+                <p style={{ margin: 0 }}><strong>Other Terms:</strong> All payments must be made in favour of ASHOK TEXTILES. Discrepancies if any should be reported within 3 days of invoice date. Interest @18% p.a. will be charged for delayed payments beyond due date.</p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #ddd', paddingBottom: '0.35rem' }}>
+                <span style={{ color: '#555' }}>Total Amount Before Tax:</span>
+                <span style={{ fontWeight: 'bold' }}>₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #ddd', paddingBottom: '0.35rem' }}>
+                <span style={{ color: '#555' }}>Discount:</span>
+                <span style={{ fontWeight: 'bold', color: '#dc2626' }}>-₹{discountAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #ddd', paddingBottom: '0.35rem' }}>
+                <span style={{ color: '#555' }}>Taxable Value:</span>
+                <span style={{ fontWeight: 'bold' }}>₹{taxableValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+              
+              {cgstAmount > 0 && (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #ddd', paddingBottom: '0.35rem' }}>
+                    <span style={{ color: '#555' }}>Add: CGST ({pi.cgst_percent}%):</span>
+                    <span style={{ fontWeight: 'bold' }}>₹{cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #ddd', paddingBottom: '0.35rem' }}>
+                    <span style={{ color: '#555' }}>Add: SGST ({pi.sgst_percent}%):</span>
+                    <span style={{ fontWeight: 'bold' }}>₹{sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </>
+              )}
+              {igstAmount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #ddd', paddingBottom: '0.35rem' }}>
+                  <span style={{ color: '#555' }}>Add: IGST ({pi.igst_percent}%):</span>
+                  <span style={{ fontWeight: 'bold' }}>₹{igstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1.5px solid #000', paddingBottom: '0.4rem' }}>
+                <span style={{ color: '#555' }}>Total Tax Amount (GST):</span>
+                <span style={{ fontWeight: 'bold' }}>₹{totalGstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2.5px solid #000', paddingBottom: '0.5rem', fontSize: '1.05rem' }}>
+                <span style={{ color: '#800000', fontWeight: '900' }}>Total Amount After Tax:</span>
+                <span style={{ fontWeight: '950', color: '#800000' }}>₹{totalInvoicePrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+
+              <div className="print-signature-section" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginTop: '2.5rem' }}>
+                <p style={{ margin: 0, fontWeight: 'bold', fontSize: '0.75rem' }}>For ASHOK TEXTILES,</p>
+                <div style={{ height: '45px' }} />
+                <p style={{ margin: 0, fontWeight: 'bold', fontSize: '0.75rem', borderTop: '1px dashed #000', width: '160px', textAlign: 'center', paddingTop: '4px' }}>
+                  Authorised Signatory
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <style>{`
+          @media print {
+            @page {
+              size: A4;
+              margin: 8mm 10mm;
+            }
+            body * {
+              visibility: hidden !important;
+            }
+            .print-modal-overlay, .print-modal-overlay * {
+              visibility: visible !important;
+            }
+            .print-modal-overlay {
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              height: auto !important;
+              background: none !important;
+              padding: 0 !important;
+              margin: 0 !important;
+              overflow: visible !important;
+            }
+            .print-container {
+              box-shadow: none !important;
+              max-height: none !important;
+              overflow: visible !important;
+              width: 100% !important;
+              border: none !important;
+              border-radius: 0 !important;
+            }
+            .no-print {
+              display: none !important;
+            }
+            .print-body {
+              padding: 0.25rem !important;
+              font-size: 10.5px !important;
+              line-height: 1.25 !important;
+            }
+            .print-body h1 {
+              font-size: 1.45rem !important;
+              margin-bottom: 0.1rem !important;
+            }
+            .print-body h2 {
+              font-size: 1.1rem !important;
+              margin-bottom: 0.1rem !important;
+            }
+            .print-body p {
+              margin-bottom: 0.15rem !important;
+            }
+            .print-meta-grid {
+              margin-bottom: 0.75rem !important;
+              padding-bottom: 0.5rem !important;
+              gap: 0.5rem !important;
+            }
+            .print-address-grid {
+              margin-bottom: 0.75rem !important;
+              padding-bottom: 0.5rem !important;
+              gap: 1rem !important;
+            }
+            .print-address-grid p {
+              margin-bottom: 0.15rem !important;
+            }
+            .print-body h3 {
+              font-size: 0.75rem !important;
+              margin-bottom: 0.25rem !important;
+            }
+            .print-body table {
+              margin-bottom: 0.75rem !important;
+              font-size: 9.5px !important;
+            }
+            .print-body table th, .print-body table td {
+              padding: 0.35rem 0.3rem !important;
+            }
+            .print-bottom-grid {
+              margin-top: 0.75rem !important;
+              gap: 1rem !important;
+            }
+            .print-bottom-grid p {
+              margin-bottom: 0.25rem !important;
+            }
+            .print-bank-details {
+              padding: 0.4rem !important;
+              margin-bottom: 0.5rem !important;
+              font-size: 9px !important;
+            }
+            .print-terms-conditions {
+              padding: 0.4rem !important;
+              margin-top: 0.4rem !important;
+              font-size: 8.5px !important;
+            }
+            .print-signature-section {
+              margin-top: 1.25rem !important;
+            }
+          }
+        `}</style>
+      </div>
+    </div>
+  );
+}
