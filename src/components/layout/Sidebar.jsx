@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { 
   LayoutDashboard, 
   ShoppingCart, 
@@ -15,13 +16,56 @@ import {
   ChevronRight,
   ChevronDown,
   X,
-  Coins
+  Coins,
+  Users
 } from 'lucide-react';
+
+const MASTER_LINKS = [
+  { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+  { name: 'Orders', path: '/admin/orders', icon: ShoppingCart },
+  { name: 'Orders', path: '/merchandiser/orders', icon: ShoppingCart },
+  { name: 'Dyeing Order Forms', path: '/admin/dyeing-forms', icon: Droplet },
+  { name: 'Dyeing Order Forms', path: '/merchandiser/dyeing-forms', icon: Droplet },
+  { name: 'Approvals', path: '/admin/approvals', icon: CheckSquare },
+  { name: 'Finances', path: '/admin/finances', icon: Coins },
+  { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch },
+  { name: 'Dyed Yarn', path: '/dyed-yarn', icon: Droplet },
+  { name: 'Production Management', path: '/production', icon: Scissors },
+  { name: 'Warping and Sizing', path: '/warping-sizing', icon: Layers },
+  { name: 'Weaving', path: '/weaving', icon: Layers },
+  { 
+    name: 'Inspection', 
+    icon: CheckSquare,
+    subLinks: [
+      { name: '4 Point Inspection', path: '/inspection/four-point' },
+      { name: 'Un Washed Inspection', path: '/inspection/unwashed' },
+      { name: 'Washed Inspection', path: '/inspection/washed' },
+      { name: 'Inspection Report', path: '/inspection/report' }
+    ]
+  },
+  { name: 'Processing', path: '/processing', icon: Layers },
+  { name: 'Masters', path: '/masters', icon: Settings },
+  { name: 'User Management', path: '/admin/users', icon: Users }
+];
 
 export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [rolePermissions, setRolePermissions] = useState(null);
+
+  useEffect(() => {
+    if (user?.role) {
+      supabase
+        .from('role_permissions')
+        .select('*')
+        .eq('role_name', user.role)
+        .single()
+        .then(({ data }) => {
+          if (data) setRolePermissions(data);
+        });
+    }
+  }, [user?.role]);
   
   const handleLogout = async () => {
     await logout();
@@ -29,90 +73,106 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
   };
 
   const getNavLinks = () => {
-    switch(user?.role) {
-      case 'admin':
-        return [
-          { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-          { name: 'Orders', path: '/admin/orders', icon: ShoppingCart },
-          { name: 'Dyeing Order Forms', path: '/admin/dyeing-forms', icon: Droplet },
-          { name: 'Approvals', path: '/admin/approvals', icon: CheckSquare },
-          { name: 'Finances', path: '/admin/finances', icon: Coins },
-          { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch },
-          { name: 'Dyed Yarn', path: '/dyed-yarn', icon: Droplet },
-          { name: 'Production Management', path: '/production', icon: Scissors },
-          { name: 'Warping and Sizing', path: '/warping-sizing', icon: Layers },
-          { name: 'Weaving', path: '/weaving', icon: Layers },
-          { 
-            name: 'Inspection', 
-            icon: CheckSquare,
-            subLinks: [
-              { name: '4 Point Inspection', path: '/inspection/four-point' },
-              { name: 'Un Washed Inspection', path: '/inspection/unwashed' },
-              { name: 'Washed Inspection', path: '/inspection/washed' },
-              { name: 'Inspection Report', path: '/inspection/report' }
-            ]
-          },
-          { name: 'Processing', path: '/processing', icon: Layers },
-          { name: 'Masters', path: '/masters', icon: Settings }
-        ];
-      case 'merchandiser':
-        return [
-          { name: 'Orders', path: '/merchandiser/orders', icon: ShoppingCart },
-          { name: 'Dyeing Order Forms', path: '/merchandiser/dyeing-forms', icon: Droplet },
-          { name: 'Masters', path: '/masters', icon: Settings }
-        ];
-      case 'yarn':
-        return [
-          { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch },
-          { name: 'Dyed Yarn', path: '/dyed-yarn', icon: Droplet },
-          { name: 'Processing', path: '/processing', icon: Layers },
-          { name: 'Masters', path: '/masters', icon: Settings }
-        ];
-      case 'greige_yarn':
-        return [
-          { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-          { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch }
-        ];
-      case 'dyed_yarn':
-        return [
-          { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-          { name: 'Dyed Yarn', path: '/dyed-yarn', icon: Droplet },
-        ];
-      case 'production':
-        return [
-          { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-          { name: 'Production Management', path: '/production', icon: Scissors },
-          { name: 'Processing', path: '/processing', icon: Layers },
-          { name: 'Masters', path: '/masters', icon: Settings }
-        ];
-      case 'warping_sizing':
-        return [
-          { name: 'Warping and Sizing', path: '/warping-sizing', icon: Layers }
-        ];
-      case 'weaving':
-        return [
-          { name: 'Weaving', path: '/weaving', icon: Layers },
-          { name: 'Processing', path: '/processing', icon: Layers }
-        ];
-      case 'inspection':
-        return [
-          { 
-            name: 'Inspection', 
-            icon: CheckSquare,
-            subLinks: [
-              { name: '4 Point Inspection', path: '/inspection/four-point' },
-              { name: 'Un Washed Inspection', path: '/inspection/unwashed' },
-              { name: 'Washed Inspection', path: '/inspection/washed' },
-              { name: 'Inspection Report', path: '/inspection/report' }
-            ]
-          },
-          { name: 'Processing', path: '/processing', icon: Layers }
-        ];
-      default:
-        return [
-          { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard }
-        ];
+    if (!rolePermissions) {
+      // Fallback static links matching initial config while loading
+      switch(user?.role) {
+        case 'admin':
+          return [
+            { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+            { name: 'Orders', path: '/admin/orders', icon: ShoppingCart },
+            { name: 'Dyeing Order Forms', path: '/admin/dyeing-forms', icon: Droplet },
+            { name: 'Approvals', path: '/admin/approvals', icon: CheckSquare },
+            { name: 'Finances', path: '/admin/finances', icon: Coins },
+            { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch },
+            { name: 'Dyed Yarn', path: '/dyed-yarn', icon: Droplet },
+            { name: 'Production Management', path: '/production', icon: Scissors },
+            { name: 'Warping and Sizing', path: '/warping-sizing', icon: Layers },
+            { name: 'Weaving', path: '/weaving', icon: Layers },
+            { 
+              name: 'Inspection', 
+              icon: CheckSquare,
+              subLinks: [
+                { name: '4 Point Inspection', path: '/inspection/four-point' },
+                { name: 'Un Washed Inspection', path: '/inspection/unwashed' },
+                { name: 'Washed Inspection', path: '/inspection/washed' },
+                { name: 'Inspection Report', path: '/inspection/report' }
+              ]
+            },
+            { name: 'Processing', path: '/processing', icon: Layers },
+            { name: 'Masters', path: '/masters', icon: Settings },
+            { name: 'User Management', path: '/admin/users', icon: Users }
+          ];
+        case 'merchandiser':
+          return [
+            { name: 'Orders', path: '/merchandiser/orders', icon: ShoppingCart },
+            { name: 'Dyeing Order Forms', path: '/merchandiser/dyeing-forms', icon: Droplet },
+            { name: 'Masters', path: '/masters', icon: Settings }
+          ];
+        case 'yarn':
+          return [
+            { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch },
+            { name: 'Dyed Yarn', path: '/dyed-yarn', icon: Droplet },
+            { name: 'Processing', path: '/processing', icon: Layers },
+            { name: 'Masters', path: '/masters', icon: Settings }
+          ];
+        case 'greige_yarn':
+          return [
+            { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+            { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch }
+          ];
+        case 'dyed_yarn':
+          return [
+            { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+            { name: 'Dyed Yarn', path: '/dyed-yarn', icon: Droplet },
+          ];
+        case 'production':
+          return [
+            { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+            { name: 'Production Management', path: '/production', icon: Scissors },
+            { name: 'Processing', path: '/processing', icon: Layers },
+            { name: 'Masters', path: '/masters', icon: Settings }
+          ];
+        case 'warping_sizing':
+          return [
+            { name: 'Warping and Sizing', path: '/warping-sizing', icon: Layers }
+          ];
+        case 'weaving':
+          return [
+            { name: 'Weaving', path: '/weaving', icon: Layers },
+            { name: 'Processing', path: '/processing', icon: Layers }
+          ];
+        case 'inspection':
+          return [
+            { 
+              name: 'Inspection', 
+              icon: CheckSquare,
+              subLinks: [
+                { name: '4 Point Inspection', path: '/inspection/four-point' },
+                { name: 'Un Washed Inspection', path: '/inspection/unwashed' },
+                { name: 'Washed Inspection', path: '/inspection/washed' },
+                { name: 'Inspection Report', path: '/inspection/report' }
+              ]
+            },
+            { name: 'Processing', path: '/processing', icon: Layers }
+          ];
+        default:
+          return [
+            { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard }
+          ];
+      }
     }
+
+    const allowedPaths = rolePermissions.sidebar_links || [];
+    return MASTER_LINKS.map(link => {
+      if (link.subLinks) {
+        const filteredSubs = link.subLinks.filter(sub => allowedPaths.includes(sub.path));
+        if (filteredSubs.length > 0) {
+          return { ...link, subLinks: filteredSubs };
+        }
+        return null;
+      }
+      return allowedPaths.includes(link.path) ? link : null;
+    }).filter(Boolean);
   };
 
   const location = useLocation();

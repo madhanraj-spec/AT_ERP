@@ -27,6 +27,7 @@ import FabricInput from './pages/Production/FabricInput';
 import FabricCut from './pages/Production/FabricCut'; // Import the new FabricCut component
 import MastersDashboard from './pages/Masters/Dashboard';
 import MasterDetail from './pages/Masters/MasterDetail';
+import UserManagement from './pages/Admin/UserManagement';
 import DyeingFormsList from './pages/Merchandiser/DyeingFormsList';
 import CreateDyeingForm from './pages/Merchandiser/CreateDyeingForm';
 import DyeingFormView from './pages/Merchandiser/DyeingFormView';
@@ -91,6 +92,7 @@ function AppRoutes() {
               <Route path="dyeing-forms/:id" element={<DyeingFormView />} />
               <Route path="approvals" element={<AdminApprovals />} />
               <Route path="finances" element={<AdminFinances />} />
+              <Route path="users" element={<UserManagement />} />
             </Route>
 
             {/* Inventory Routes */}
