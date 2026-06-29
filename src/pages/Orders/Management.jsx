@@ -878,6 +878,9 @@ function OrderCard({
 // ──────────────────────────────────────────────────────────────────────────────
 
 function TabOrderInfo({ order, onImageClick, onCreatePI, onUploadPO, onPrintPI, onEditPI, refreshTrigger, countString, onRefresh }) {
+  const { profile } = useAuth();
+  const isAllowed = profile?.role === 'admin' || profile?.role === 'merchandiser';
+
   const specs = order.technical_specs || {};
   const [existingPIs, setExistingPIs] = useState([]);
   const [loadingPIs, setLoadingPIs] = useState(true);
@@ -965,106 +968,110 @@ function TabOrderInfo({ order, onImageClick, onCreatePI, onUploadPO, onPrintPI, 
         <DetailItem label="Order Construction" value={`${specs.order_reed} / ${specs.order_pick}`} />
         <DetailItem label="Production Construction" value={`${specs.on_loom_reed} / ${specs.on_loom_pick}`} />
 
-        <div style={{ gridColumn: '1 / -1', borderTop: '1px dashed #ddd', margin: '0.5rem 0' }}></div>
-        
-        <DetailItem 
-          label="Buyer PO" 
-          value={order.buyer_po_number ? (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <span>{order.buyer_po_number} ({order.buyer_po_date ? new Date(order.buyer_po_date).toLocaleDateString() : '-'})</span>
-              {order.buyer_po_file_url && (
-                <a 
-                  href={order.buyer_po_file_url} 
-                  target="_blank" 
-                  rel="noreferrer" 
-                  style={{ color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem', textDecoration: 'underline' }}
+        {isAllowed && (
+          <>
+            <div style={{ gridColumn: '1 / -1', borderTop: '1px dashed #ddd', margin: '0.5rem 0' }}></div>
+            
+            <DetailItem 
+              label="Buyer PO" 
+              value={order.buyer_po_number ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <span>{order.buyer_po_number} ({order.buyer_po_date ? new Date(order.buyer_po_date).toLocaleDateString() : '-'})</span>
+                  {order.buyer_po_file_url && (
+                    <a 
+                      href={order.buyer_po_file_url} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      style={{ color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem', textDecoration: 'underline' }}
+                    >
+                      <ExternalLink size={12} /> View File
+                    </a>
+                  )}
+                </span>
+              ) : 'Not uploaded'} 
+            />
+
+            {/* Buttons section */}
+            <div style={{ gridColumn: '1 / -1', marginTop: '1.25rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <button 
+                onClick={() => onCreatePI(order)}
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontWeight: '700' }}
+              >
+                <Plus size={16} /> Create PI
+              </button>
+              <button 
+                onClick={() => onUploadPO(order)}
+                className="btn btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontWeight: '700' }}
+              >
+                <Upload size={16} /> {order.buyer_po_number ? 'Update PO' : 'Upload PO'}
+              </button>
+              {order.buyer_po_number && (
+                <button 
+                  onClick={handleDeletePO}
+                  className="btn btn-danger"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontWeight: '700', backgroundColor: '#fee2e2', color: '#dc2626', borderColor: '#fca5a5' }}
                 >
-                  <ExternalLink size={12} /> View File
-                </a>
+                  <Trash2 size={16} /> Delete PO
+                </button>
               )}
-            </span>
-          ) : 'Not uploaded'} 
-        />
-
-        {/* Buttons section */}
-        <div style={{ gridColumn: '1 / -1', marginTop: '1.25rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <button 
-            onClick={() => onCreatePI(order)}
-            className="btn btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontWeight: '700' }}
-          >
-            <Plus size={16} /> Create PI
-          </button>
-          <button 
-            onClick={() => onUploadPO(order)}
-            className="btn btn-secondary"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontWeight: '700' }}
-          >
-            <Upload size={16} /> {order.buyer_po_number ? 'Update PO' : 'Upload PO'}
-          </button>
-          {order.buyer_po_number && (
-            <button 
-              onClick={handleDeletePO}
-              className="btn btn-danger"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontWeight: '700', backgroundColor: '#fee2e2', color: '#dc2626', borderColor: '#fca5a5' }}
-            >
-              <Trash2 size={16} /> Delete PO
-            </button>
-          )}
-        </div>
-
-        {/* Existing PIs List */}
-        <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #eee', paddingTop: '1rem', marginTop: '1rem' }}>
-          <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', fontWeight: '800', color: '#800000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Proforma Invoices ({existingPIs.length})
-          </h4>
-          {loadingPIs ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
-              <Loader size={12} className="spin" /> Loading PIs...
             </div>
-          ) : existingPIs.length === 0 ? (
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)', fontStyle: 'italic', padding: '0.5rem' }}>
-              No Proforma Invoices created for this order yet.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {existingPIs.map(pi => (
-                <div key={pi.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fcfcfc', border: '1px solid #eee', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
-                  <div>
-                    <span style={{ fontWeight: '700', color: 'var(--text-current)' }}>{pi.invoice_number}</span>
-                    <span style={{ margin: '0 0.5rem', color: '#ccc' }}>|</span>
-                    <span style={{ color: 'var(--text-muted-current)' }}>Date: {new Date(pi.invoice_date).toLocaleDateString()}</span>
-                    <span style={{ margin: '0 0.5rem', color: '#ccc' }}>|</span>
-                    <span style={{ fontWeight: '700', color: 'var(--color-primary)' }}>Total: ₹{Number(pi.total_invoice_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button 
-                      onClick={() => onEditPI(pi, order)}
-                      className="btn btn-secondary"
-                      style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                    >
-                      <Edit size={12} /> Edit
-                    </button>
-                    <button 
-                      onClick={() => onPrintPI({
-                        ...pi,
-                        order_number: order.order_number,
-                        design_name: order.design_name,
-                        design_no: order.design_no,
-                        count: countString || '—',
-                        construction: `${specs.order_reed || specs.on_loom_reed || '—'} / ${specs.order_pick || specs.on_loom_pick || '—'}`
-                      })}
-                      className="btn btn-secondary"
-                      style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                    >
-                      <Printer size={12} /> Print/View
-                    </button>
-                  </div>
+
+            {/* Existing PIs List */}
+            <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #eee', paddingTop: '1rem', marginTop: '1rem' }}>
+              <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', fontWeight: '800', color: '#800000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Proforma Invoices ({existingPIs.length})
+              </h4>
+              {loadingPIs ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
+                  <Loader size={12} className="spin" /> Loading PIs...
                 </div>
-              ))}
+              ) : existingPIs.length === 0 ? (
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)', fontStyle: 'italic', padding: '0.5rem' }}>
+                  No Proforma Invoices created for this order yet.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {existingPIs.map(pi => (
+                    <div key={pi.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fcfcfc', border: '1px solid #eee', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem' }}>
+                      <div>
+                        <span style={{ fontWeight: '700', color: 'var(--text-current)' }}>{pi.invoice_number}</span>
+                        <span style={{ margin: '0 0.5rem', color: '#ccc' }}>|</span>
+                        <span style={{ color: 'var(--text-muted-current)' }}>Date: {new Date(pi.invoice_date).toLocaleDateString()}</span>
+                        <span style={{ margin: '0 0.5rem', color: '#ccc' }}>|</span>
+                        <span style={{ fontWeight: '700', color: 'var(--color-primary)' }}>Total: ₹{Number(pi.total_invoice_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button 
+                          onClick={() => onEditPI(pi, order)}
+                          className="btn btn-secondary"
+                          style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        >
+                          <Edit size={12} /> Edit
+                        </button>
+                        <button 
+                          onClick={() => onPrintPI({
+                            ...pi,
+                            order_number: order.order_number,
+                            design_name: order.design_name,
+                            design_no: order.design_no,
+                            count: countString || '—',
+                            construction: `${specs.order_reed || specs.on_loom_reed || '—'} / ${specs.order_pick || specs.on_loom_pick || '—'}`
+                          })}
+                          className="btn btn-secondary"
+                          style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        >
+                          <Printer size={12} /> Print/View
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       {order.design_image_url && (
@@ -4830,6 +4837,10 @@ function convertNumberToWords(amount) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 function UploadPOModal({ order, onClose, onSuccess }) {
+  const { profile } = useAuth();
+  if (profile?.role !== 'admin' && profile?.role !== 'merchandiser') {
+    return null;
+  }
   const [poNumber, setPoNumber] = useState(order.buyer_po_number || '');
   const [poDate, setPoDate] = useState(order.buyer_po_date || '');
   const [poFile, setPoFile] = useState(null);
@@ -5161,6 +5172,10 @@ function SearchableSelect({ value, onChange, options, placeholder, className }) 
 }
 
 function CreatePIModal({ order, partners, yarnCounts, pi, onClose, onSuccess }) {
+  const { profile } = useAuth();
+  if (profile?.role !== 'admin' && profile?.role !== 'merchandiser') {
+    return null;
+  }
   const specs = order.technical_specs || {};
   
   const vendorOptions = useMemo(() => {
