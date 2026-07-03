@@ -2281,6 +2281,7 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
         let totalReceivedRolls = 0;
 
         activePofs.forEach(pof => {
+          if (pof.is_rewash) return;
           const rolls = pof.fabric_rolls || [];
           totalSentRolls += rolls.length;
           totalSentQty += rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
@@ -2384,6 +2385,9 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             <span style={{ fontWeight: '800', color: '#800000', fontFamily: 'monospace' }}>{pof.pof_number}</span>
+                            {pof.is_rewash && (
+                              <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px', fontWeight: 'bold', marginLeft: '0.4rem' }}>Rewash</span>
+                            )}
                             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', fontWeight: 'normal' }}>({createdDate})</span>
                           </div>
                         </td>
@@ -2531,20 +2535,6 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
                                   <h5 style={{ margin: '0 0 0.75rem 0', fontWeight: '800', color: '#047857', fontSize: '0.8rem', borderBottom: '1px solid #eee', paddingBottom: '0.3rem' }}>
                                     📥 Received Rolls & Details
                                   </h5>
-                                  {pof.status !== 'sent_to_processing' && (
-                                    <div className="grid-label-value" style={{ fontSize: '0.78rem', marginBottom: '1rem', borderBottom: '1px dashed #eee', paddingBottom: '0.5rem' }}>
-                                      <span style={{ color: 'var(--text-muted-current)' }}>POFRR Receipt No:</span>
-                                      <strong style={{ color: '#047857', fontFamily: 'monospace' }}>{pof.pofrr_number || '—'}</strong>
-                                      <span style={{ color: 'var(--text-muted-current)' }}>Received Date:</span>
-                                      <strong>{pof.received_at ? new Date(pof.received_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</strong>
-                                      <span style={{ color: 'var(--text-muted-current)' }}>Received By:</span>
-                                      <strong>{pof.received_by || '—'}</strong>
-                                      <span style={{ color: 'var(--text-muted-current)' }}>Return Place:</span>
-                                      <strong>{pof.received_place || '—'}</strong>
-                                      <span style={{ color: 'var(--text-muted-current)' }}>Return Vehicle:</span>
-                                      <strong>{pof.receive_vehicle_details || '—'}</strong>
-                                    </div>
-                                  )}
 
                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                                     <thead>
@@ -2599,6 +2589,7 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
                                               received_by: roll.received_by || pof.received_by || 'N/A',
                                               received_place: roll.received_place || pof.received_place || 'N/A',
                                               receive_vehicle_details: roll.receive_vehicle_details || pof.receive_vehicle_details || 'N/A',
+                                              processing_dc_no: roll.processing_dc_no || '—',
                                               rolls: []
                                             };
                                           }
@@ -2644,13 +2635,27 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
                                                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', display: 'inline-block', transform: isPofrrExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
                                                     <ChevronRight size={14} />
                                                   </span>
-                                                  <div>
-                                                    <strong style={{ display: 'block', color: '#047857', fontFamily: 'monospace' }}>
-                                                      {receipt.pofrr_number}
-                                                    </strong>
-                                                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)' }}>
-                                                      Received {receipt.rolls.length} rolls ({totalReceiptQty.toFixed(2)} m) on {new Date(receipt.received_at).toLocaleDateString('en-IN')}
-                                                    </span>
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1.5rem', fontSize: '0.78rem', alignItems: 'center' }}>
+                                                    <div>
+                                                      <span style={{ color: 'var(--text-muted-current)', fontWeight: '600', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase' }}>POFRR NO</span>
+                                                      <strong style={{ color: '#047857', fontFamily: 'monospace' }}>{receipt.pofrr_number}</strong>
+                                                    </div>
+                                                    <div>
+                                                      <span style={{ color: 'var(--text-muted-current)', fontWeight: '600', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase' }}>DC NUMBER</span>
+                                                      <strong style={{ color: 'var(--text-current)' }}>{receipt.processing_dc_no || '—'}</strong>
+                                                    </div>
+                                                    <div>
+                                                      <span style={{ color: 'var(--text-muted-current)', fontWeight: '600', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase' }}>RETURN PLACE</span>
+                                                      <strong style={{ color: 'var(--text-current)' }}>{receipt.received_place}</strong>
+                                                    </div>
+                                                    <div>
+                                                      <span style={{ color: 'var(--text-muted-current)', fontWeight: '600', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase' }}>DATE RECEIVED</span>
+                                                      <strong style={{ color: 'var(--text-current)' }}>{new Date(receipt.received_at).toLocaleDateString('en-IN')}</strong>
+                                                    </div>
+                                                    <div>
+                                                      <span style={{ color: 'var(--text-muted-current)', fontWeight: '600', display: 'block', fontSize: '0.62rem', textTransform: 'uppercase' }}>TOTAL QTY</span>
+                                                      <strong style={{ color: '#047857' }}>{totalReceiptQty.toFixed(2)} m</strong>
+                                                    </div>
                                                   </div>
                                                 </div>
                                                 <button
@@ -4494,7 +4499,7 @@ function POFModal({ data, onClose }) {
           {/* POF Metadata info */}
           <div className="grid-print-2col" style={{ marginBottom: '2rem', fontSize: '0.9rem', lineHeight: '1.6' }}>
             <div>
-              <p style={{ margin: '0 0 0.35rem 0' }}><strong>POF Number:</strong> <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold' }}>{pof.pof_number}</span></p>
+              <p style={{ margin: '0 0 0.35rem 0' }}><strong>POF Number:</strong> <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold' }}>{pof.pof_number}</span>{pof.is_rewash && <span style={{ fontWeight: 'bold', color: '#be123c', marginLeft: '0.5rem' }}>[REWASH{!pof.is_billing ? ' - Free of Cost' : ''}]</span>}</p>
               <p style={{ margin: '0 0 0.35rem 0' }}><strong>Processing Partner:</strong> {pof.partner_name}</p>
               <p style={{ margin: '0 0 0.35rem 0' }}><strong>Expected Delivery Date:</strong> {new Date(pof.expected_delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
             </div>
@@ -4675,6 +4680,7 @@ function POFRRModal({ data, onClose }) {
               <p style={{ margin: '0 0 0.35rem 0' }}><strong>POFRR Number:</strong> <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold' }}>{pofrr.pofrr_number}</span></p>
               <p style={{ margin: '0 0 0.35rem 0' }}><strong>POF Reference:</strong> <span style={{ fontFamily: 'monospace', fontSize: '0.95rem' }}>{pofrr.pof_number}</span></p>
               <p style={{ margin: '0 0 0.35rem 0' }}><strong>Processing Partner:</strong> {pofrr.partner_name}</p>
+              <p style={{ margin: '0 0 0.35rem 0' }}><strong>Process:</strong> <span style={{ fontWeight: 'bold', color: '#b45309' }}>{pofrr.processes?.join(', ') || '—'}</span></p>
             </div>
             <div style={{ textAlign: 'right' }}>
               <p style={{ margin: '0 0 0.35rem 0' }}><strong>Date Sent:</strong> {new Date(pofrr.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>

@@ -4832,8 +4832,20 @@ function ProcessingBillApprovals({ adminProfile }) {
                           <td style={{ textAlign: 'center' }}>
                             {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           </td>
-                          <td style={{ fontWeight: '800', color: 'var(--color-primary)', fontFamily: 'monospace', fontSize: '0.78rem' }}>
-                            {bill.bill_number}
+                          <td style={{ padding: '0.75rem 0.5rem' }}>
+                            <div style={{ fontWeight: '800', color: 'var(--color-primary)', fontFamily: 'monospace', fontSize: '0.78rem' }}>
+                              {bill.bill_number}
+                            </div>
+                            {bill.partner_invoice_no && (
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', marginTop: '2px', fontWeight: '500' }}>
+                                Inv: <span style={{ fontWeight: '700', color: 'var(--text-current)' }}>{bill.partner_invoice_no}</span>
+                              </div>
+                            )}
+                            {bill.partner_invoice_date && (
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '500' }}>
+                                Date: <span style={{ fontWeight: '700', color: 'var(--text-current)' }}>{new Date(bill.partner_invoice_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              </div>
+                            )}
                           </td>
                           <td style={{ fontWeight: '500', fontSize: '0.78rem' }}>{bill.partner_name}</td>
                           <td style={{ textAlign: 'right', fontSize: '0.78rem', fontWeight: '600' }}>
@@ -4892,6 +4904,23 @@ function ProcessingBillApprovals({ adminProfile }) {
                             <td colSpan={9} style={{ padding: '1.5rem', backgroundColor: '#f8fafc', borderLeft: '4px solid var(--color-primary)' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                                 
+                                <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', borderBottom: '1px dashed var(--border-current)', paddingBottom: '0.75rem' }}>
+                                  {bill.partner_invoice_no && (
+                                    <div>
+                                      <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', marginRight: '6px' }}>Partner Invoice No:</span>
+                                      <span style={{ fontSize: '0.8rem', fontWeight: '800', fontFamily: 'monospace' }}>{bill.partner_invoice_no}</span>
+                                    </div>
+                                  )}
+                                  {bill.partner_invoice_date && (
+                                    <div>
+                                      <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', marginRight: '6px' }}>Partner Invoice Date:</span>
+                                      <span style={{ fontSize: '0.8rem', fontWeight: '800' }}>
+                                        {new Date(bill.partner_invoice_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+
                                 {/* POF Items list */}
                                 <div>
                                   <h4 style={{ fontSize: '0.82rem', fontWeight: '800', color: 'var(--color-primary)', margin: '0 0 0.5rem 0', textTransform: 'uppercase' }}>

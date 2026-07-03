@@ -36,6 +36,87 @@ import {
 
 
 
+const getGreigeBaseId = (rollId) => {
+  if (!rollId) return '';
+  let base = rollId.replace(/\/P\d+\//i, '/');
+  base = base.replace(/\/\d{2,3}$/, '');
+  return base;
+};
+
+const traceToOriginalGreigeRoll = async (scannedId, weavingOrdersList) => {
+  let currentId = scannedId.trim();
+  
+  // 1. Direct search in weaving_orders
+  for (const order of weavingOrdersList || []) {
+    const rolls = Array.isArray(order.fabric_rolls) ? order.fabric_rolls : [];
+    const m = rolls.find(r => 
+      r.id.toLowerCase() === currentId.toLowerCase() ||
+      (r.processed_roll_id && r.processed_roll_id.toLowerCase() === currentId.toLowerCase())
+    );
+    if (m) {
+      return { roll: m, order };
+    }
+  }
+
+  // 2. Fetch all processing_orders received_rolls to build tracing map
+  try {
+    const { data: pofsWithReceivedRoll } = await supabase
+      .from('processing_orders')
+      .select('received_rolls')
+      .not('received_rolls', 'is', null);
+
+    const receivedMap = {}; // rxRoll.id.toLowerCase() -> rxRoll.greige_roll_id
+    if (pofsWithReceivedRoll) {
+      pofsWithReceivedRoll.forEach(pof => {
+        const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+        rxRolls.forEach(rx => {
+          if (rx.id && rx.greige_roll_id) {
+            receivedMap[rx.id.toLowerCase()] = rx.greige_roll_id;
+          }
+        });
+      });
+    }
+
+    // Trace back step-by-step
+    let visited = new Set();
+    while (currentId && !visited.has(currentId.toLowerCase())) {
+      visited.add(currentId.toLowerCase());
+      const parentId = receivedMap[currentId.toLowerCase()];
+      if (!parentId) break;
+
+      // Check if parentId exists in weaving_orders
+      for (const order of weavingOrdersList || []) {
+        const rolls = Array.isArray(order.fabric_rolls) ? order.fabric_rolls : [];
+        const m = rolls.find(r => 
+          r.id.toLowerCase() === parentId.toLowerCase() ||
+          (r.processed_roll_id && r.processed_roll_id.toLowerCase() === parentId.toLowerCase())
+        );
+        if (m) {
+          return { roll: m, order };
+        }
+      }
+      currentId = parentId;
+    }
+  } catch (err) {
+    console.warn('Trace back failed:', err);
+  }
+
+  // 3. Last fallback: try regex base matching if tracing map didn't resolve it
+  const baseId = getGreigeBaseId(scannedId);
+  for (const order of weavingOrdersList || []) {
+    const rolls = Array.isArray(order.fabric_rolls) ? order.fabric_rolls : [];
+    const m = rolls.find(r => 
+      getGreigeBaseId(r.id).toLowerCase() === baseId.toLowerCase()
+    );
+    if (m) {
+      return { roll: m, order };
+    }
+  }
+
+  return { roll: null, order: null };
+};
+
+
 const isGreigeRollMatch = (rxGreigeRollId, sentRollId) => {
   if (!rxGreigeRollId || !sentRollId) return false;
   const rxLower = rxGreigeRollId.toLowerCase();
@@ -90,8 +171,8 @@ function ProcessedRollsMultiSelectDropdown({ label, options, selected, onChange,
   const isOpen = openDropdown === openDropdownKey;
 
   return (
-    <div ref={containerRef} className="filter-dropdown-container" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', position: 'relative' }}>
-      <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+    <div ref={containerRef} className="filter-dropdown-container" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', position: 'relative' }}>
+      <span style={{ fontSize: '0.78rem', fontWeight: '800', color: 'var(--text-current)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
         {label}
       </span>
       
@@ -107,15 +188,17 @@ function ProcessedRollsMultiSelectDropdown({ label, options, selected, onChange,
           justifyContent: 'space-between',
           alignItems: 'center',
           width: '100%',
-          padding: '8px 12px',
+          padding: '9px 12px',
           borderRadius: '8px',
-          border: '1px solid var(--border-current)',
-          backgroundColor: '#fff',
-          color: selected.length > 0 ? 'var(--text-current)' : 'var(--text-muted-current)',
-          fontSize: '0.8rem',
-          fontWeight: selected.length > 0 ? '700' : '500',
+          border: selected.length > 0 ? '1.5px solid var(--color-primary)' : '1.5px solid #bfc6d0',
+          backgroundColor: selected.length > 0 ? 'rgba(128, 0, 0, 0.04)' : '#fff',
+          color: selected.length > 0 ? 'var(--color-primary)' : 'var(--text-current)',
+          fontSize: '0.82rem',
+          fontWeight: selected.length > 0 ? '700' : '600',
           cursor: 'pointer',
-          textAlign: 'left'
+          textAlign: 'left',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+          transition: 'all 0.15s ease'
         }}
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85%' }}>
@@ -238,6 +321,7 @@ export default function ProcessingModule() {
   const [deliveredBy, setDeliveredBy] = useState('');
   const [width, setWidth] = useState('');
   const [allSystemRolls, setAllSystemRolls] = useState([]); // Cache for auto-add
+  const [isBillingEnabled, setIsBillingEnabled] = useState(false);
   
   // Scanned order metadata for top display
   const [pofOrderNo, setPofOrderNo] = useState('');
@@ -269,6 +353,11 @@ export default function ProcessingModule() {
   const [createdPof, setCreatedPof] = useState(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [pofQrUrl, setPofQrUrl] = useState('');
+  const [printLayout, setPrintLayout] = useState('two-column'); // 'single-column' | 'two-column'
+  const [printDensity, setPrintDensity] = useState('extra-compact'); // 'normal' | 'compact' | 'extra-compact'
+  const [printFontSize, setPrintFontSize] = useState('small'); // 'small' | 'medium' | 'large'
+  const [printShowLogo, setPrintShowLogo] = useState(true);
+  const [printShowQr, setPrintShowQr] = useState(true);
 
   // ---------------------------------------------------------------------------
   // RECEIVE FABRIC STATE VARIABLES
@@ -278,6 +367,7 @@ export default function ProcessingModule() {
   const [receiveReceivedBy, setReceiveReceivedBy] = useState('');
   const [receiveVehicleNo, setReceiveVehicleNo] = useState('');
   const [receiveReceivedPlace, setReceiveReceivedPlace] = useState('');
+  const [receiveDcNumber, setReceiveDcNumber] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'sent_to_processing' | 'partially_received' | 'received'
   const [showFilters, setShowFilters] = useState(false);
   const [selectedDates, setSelectedDates] = useState([]);
@@ -319,6 +409,7 @@ export default function ProcessingModule() {
   const [editPofExpectedDate, setEditPofExpectedDate] = useState('');
   const [editPofFabricRolls, setEditPofFabricRolls] = useState([]);
   const [editPofReceivedRolls, setEditPofReceivedRolls] = useState([]);
+  const [editPofIsBilling, setEditPofIsBilling] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
 
   // ---------------------------------------------------------------------------
@@ -335,7 +426,12 @@ export default function ProcessingModule() {
   const [selectedBillPartnerId, setSelectedBillPartnerId] = useState('');
   const [receivedUnbilledPofs, setReceivedUnbilledPofs] = useState([]); // list of fully received POFs for partner
   const [selectedBillPofIds, setSelectedBillPofIds] = useState([]); // array of selected POF IDs
+  const [selectedBillPofId, setSelectedBillPofId] = useState('');
+  const [selectedBillDcNumbers, setSelectedBillDcNumbers] = useState([]);
+  const [expandedDcNumber, setExpandedDcNumber] = useState(null);
   const [billNumberInput, setBillNumberInput] = useState('');
+  const [partnerInvoiceNo, setPartnerInvoiceNo] = useState('');
+  const [partnerInvoiceDate, setPartnerInvoiceDate] = useState('');
   const [processRates, setProcessRates] = useState({}); // process_name -> rate (string)
   const [taxAmountInput, setTaxAmountInput] = useState('');
   const [taxPercentageInput, setTaxPercentageInput] = useState('');
@@ -628,7 +724,7 @@ export default function ProcessingModule() {
 
   useEffect(() => {
     loadScripts();
-    if (viewMode === 'create') {
+    if (viewMode === 'create' || viewMode === 'rewash') {
       fetchPartners();
       fetchAllRolls();
       resetCreateForm();
@@ -739,64 +835,22 @@ export default function ProcessingModule() {
     const trimmed = val.trim();
     if (!trimmed) return;
 
-    // Search for exact match in preloaded system rolls
+    // Search for base ID match in preloaded system rolls
+    const targetBaseId = getGreigeBaseId(trimmed);
     const match = allSystemRolls.find(r => 
-      r.id.toLowerCase() === trimmed.toLowerCase() ||
-      (r.processed_roll_id && r.processed_roll_id.toLowerCase() === trimmed.toLowerCase())
+      getGreigeBaseId(r.id).toLowerCase() === targetBaseId.toLowerCase()
     );
     if (match) {
-      const isProcessed = (trimmed && /\/P\d+/i.test(trimmed)) || (match.processed_roll_id && match.processed_roll_id.toLowerCase() === trimmed.toLowerCase());
-      
-      const isInspected = match.status === '4_point_inspected' || match.status === 'sent_to_processing' || match.status === 'received_from_processing';
-      if (!isProcessed && !isInspected) {
-        setError(`gregr roll not 4 poitn inspected`);
-        return;
-      }
-
-      // Validate order/design consistency
-      if (scannedRolls.length > 0) {
-        const firstRoll = scannedRolls[0];
-        if (firstRoll.order_number !== match.order_number || firstRoll.design_no !== match.design_no) {
-          setError(`Cannot mix rolls from different orders/designs. Selected POF is locked to Order: ${firstRoll.order_number}, Design: ${firstRoll.design_no}`);
-          return;
-        }
-      }
-
-      const scannedId = isProcessed && match.processed_roll_id ? match.processed_roll_id : match.id;
-
-      // Check duplicates
-      if (scannedRolls.some(r => r.id.toLowerCase() === scannedId.toLowerCase())) {
-        setError(`Roll ID "${scannedId}" has already been added.`);
-        setScanInput(''); // Clear input
-        return;
-      }
-
-      // Add it!
-      const newRollItem = {
-        id: scannedId,
-        qty: isProcessed && match.received_qty !== null ? match.received_qty : match.qty,
-        actual_qty: isProcessed && match.received_qty !== null ? match.received_qty : match.actual_qty,
-        order_number: match.order_number,
-        design_no: match.design_no,
-        design_name: match.design_name,
-        weaving_order_id: match.weaving_order_id
-      };
-
-      setScannedRolls(prev => [newRollItem, ...prev]);
-
-      // Set top details
-      setPofOrderNo(match.order_number);
-      setPofDesignNo(match.design_no);
-      setPofDesignName(match.design_name);
-
-      setScanInput('');
-      setError('');
-      setSuccessMsg(`Roll ID ${scannedId} added successfully!`);
+      handleScanRoll(trimmed);
+    } else if (/^AT\/\d{4}\/[A-Z]\/\d{5}/i.test(trimmed)) {
+      // Roll ID matches valid pattern but not in cache – trigger DB lookup
+      handleScanRoll(trimmed);
     }
   };
 
   const handleScanRoll = async (rollIdToSearch) => {
-    const targetId = (rollIdToSearch || '').trim();
+    if (!rollIdToSearch) return;
+    const targetId = rollIdToSearch.trim();
     if (!targetId) return;
 
     setLoading(true);
@@ -804,129 +858,97 @@ export default function ProcessingModule() {
     setSuccessMsg('');
 
     try {
-      const match = allSystemRolls.find(r => 
-        r.id.toLowerCase() === targetId.toLowerCase() ||
-        (r.processed_roll_id && r.processed_roll_id.toLowerCase() === targetId.toLowerCase())
-      );
+      let foundRoll = null;
+      let foundOrder = null;
 
-      if (!match) {
-        // Double check by querying Supabase just in case a new roll was added since page load
-        const { data: weavingOrdersList, error: queryErr } = await supabase
-          .from('weaving_orders')
-          .select(`
-            *,
-            order:orders(id, order_number, design_no, design_name)
-          `);
+      // 1. Query Weaving Orders List
+      const { data: weavingOrdersList, error: queryErr } = await supabase
+        .from('weaving_orders')
+        .select(`
+          *,
+          order:orders(id, order_number, design_no, design_name)
+        `);
 
-        if (queryErr) throw queryErr;
+      if (queryErr) throw queryErr;
 
-        let foundRoll = null;
-        let foundOrder = null;
-
-        for (const order of weavingOrdersList || []) {
-          const rolls = Array.isArray(order.fabric_rolls) ? order.fabric_rolls : [];
-          const m = rolls.find(r => 
-            r.id.toLowerCase() === targetId.toLowerCase() ||
-            (r.processed_roll_id && r.processed_roll_id.toLowerCase() === targetId.toLowerCase())
-          );
-          if (m) {
-            foundRoll = m;
-            foundOrder = order;
-            break;
+      // 2. Trace the scanned ID to the original greige roll
+      const { roll, order } = await traceToOriginalGreigeRoll(targetId, weavingOrdersList);
+      if (roll) {
+        // Compare process numbers to determine if scanned ID is older or newer
+        if (roll.processed_roll_id && roll.processed_roll_id.toLowerCase() !== targetId.toLowerCase()) {
+          const getPN = (rid) => { const x = rid.match(/\/P(\d+)\//i); return x ? parseInt(x[1]) : 0; };
+          const currentPN = getPN(roll.processed_roll_id);
+          const scannedPN = getPN(targetId);
+          if (scannedPN < currentPN) {
+            setError(`Roll "${targetId}" has been processed. Use the latest processed roll "${roll.processed_roll_id}" instead.`);
+            setLoading(false);
+            return;
           }
         }
+        foundRoll = {
+          ...roll,
+          processed_roll_id: targetId
+        };
+        foundOrder = order;
 
-        if (!foundRoll) {
-          setError(`Fabric roll ID "${targetId}" not found in any weaving order.`);
+        // Add to cache if not present
+        const isAlreadyInCache = allSystemRolls.some(r => r.id.toLowerCase() === foundRoll.id.toLowerCase());
+        if (!isAlreadyInCache) {
+          const rollItemForCache = {
+            id: foundRoll.id,
+            processed_roll_id: foundRoll.processed_roll_id || null,
+            qty: foundRoll.qty,
+            actual_qty: foundRoll.actual_qty || foundRoll.qty,
+            received_qty: foundRoll.received_qty || null,
+            status: foundRoll.status,
+            order_number: foundOrder.order?.order_number || foundOrder.weaving_number || '—',
+            design_no: foundOrder.order?.design_no || foundOrder.design_no || '—',
+            design_name: foundOrder.order?.design_name || '—',
+            weaving_order_id: foundOrder.id
+          };
+          setAllSystemRolls(prev => [...prev, rollItemForCache]);
+        }
+      }
+
+      if (!foundRoll) {
+        setError(`Fabric roll ID "${targetId}" not found in any weaving order.`);
+        setLoading(false);
+        return;
+      }
+
+      // 3. Process the found roll
+      const orderNumber = foundOrder.order?.order_number || foundOrder.weaving_number || '—';
+      const designNo = foundOrder.order?.design_no || foundOrder.design_no || '—';
+      const designName = foundOrder.order?.design_name || '—';
+
+      const isProcessed = (targetId && /\/P\d+/i.test(targetId)) || (foundRoll.processed_roll_id && foundRoll.processed_roll_id.toLowerCase() === targetId.toLowerCase());
+      const isRewashMode = viewMode === 'rewash';
+
+      if (isRewashMode) {
+        if (!isProcessed || (foundRoll.status !== 'received_from_processing' && foundRoll.status !== 'sent_to_processing')) {
+          setError(`Only received processed fabric rolls can be rewashed.`);
           setLoading(false);
           return;
         }
-
-        // Add to our cache
-        const rollItem = {
-          id: foundRoll.id,
-          processed_roll_id: foundRoll.processed_roll_id || null,
-          qty: foundRoll.qty,
-          actual_qty: foundRoll.actual_qty || foundRoll.qty,
-          received_qty: foundRoll.received_qty || null,
-          status: foundRoll.status,
-          order_number: foundOrder.order?.order_number || foundOrder.weaving_number || '—',
-          design_no: foundOrder.order?.design_no || foundOrder.design_no || '—',
-          design_name: foundOrder.order?.design_name || '—',
-          weaving_order_id: foundOrder.id
-        };
-        setAllSystemRolls(prev => [...prev, rollItem]);
-        
-        // Inline processing (avoids recursive stale allSystemRolls bug)
-        const isProcessed = (targetId && /\/P\d+/i.test(targetId)) || (rollItem.processed_roll_id && rollItem.processed_roll_id.toLowerCase() === targetId.toLowerCase());
-
-        const isInspected = rollItem.status === '4_point_inspected' || rollItem.status === 'sent_to_processing' || rollItem.status === 'received_from_processing';
+      } else {
+        const isInspected = foundRoll.status === '4_point_inspected' || foundRoll.status === 'sent_to_processing' || foundRoll.status === 'received_from_processing';
         if (!isProcessed && !isInspected) {
           setError(`gregr roll not 4 poitn inspected`);
           setLoading(false);
           return;
         }
-
-        if (scannedRolls.length > 0) {
-          const firstRoll = scannedRolls[0];
-          if (firstRoll.order_number !== rollItem.order_number || firstRoll.design_no !== rollItem.design_no) {
-            setError(`Cannot mix rolls from different orders/designs. Selected POF is locked to Order: ${firstRoll.order_number}, Design: ${firstRoll.design_no}`);
-            setLoading(false);
-            return;
-          }
-        }
-
-        const scannedId = isProcessed && rollItem.processed_roll_id ? rollItem.processed_roll_id : rollItem.id;
-
-        if (scannedRolls.some(r => r.id.toLowerCase() === scannedId.toLowerCase())) {
-          setError(`Roll ID "${scannedId}" has already been added.`);
-          setLoading(false);
-          return;
-        }
-
-        const newRollItem = {
-          id: scannedId,
-          qty: isProcessed && rollItem.received_qty !== null ? rollItem.received_qty : rollItem.qty,
-          actual_qty: isProcessed && rollItem.received_qty !== null ? rollItem.received_qty : rollItem.actual_qty,
-          order_number: rollItem.order_number,
-          design_no: rollItem.design_no,
-          design_name: rollItem.design_name,
-          weaving_order_id: rollItem.weaving_order_id
-        };
-
-        setScannedRolls(prev => [newRollItem, ...prev]);
-        setPofOrderNo(rollItem.order_number);
-        setPofDesignNo(rollItem.design_no);
-        setPofDesignName(rollItem.design_name);
-        setScanInput('');
-        setSuccessMsg(`Roll ID ${scannedId} added successfully!`);
-        setLoading(false);
-
-        if (qrScanInputRef.current) {
-          qrScanInputRef.current.focus();
-        }
-        return;
-      }
-
-      const isProcessed = (targetId && /\/P\d+/i.test(targetId)) || (match.processed_roll_id && match.processed_roll_id.toLowerCase() === targetId.toLowerCase());
-
-      const isInspected = match.status === '4_point_inspected' || match.status === 'sent_to_processing' || match.status === 'received_from_processing';
-      if (!isProcessed && !isInspected) {
-        setError(`gregr roll not 4 poitn inspected`);
-        setLoading(false);
-        return;
       }
 
       if (scannedRolls.length > 0) {
         const firstRoll = scannedRolls[0];
-        if (firstRoll.order_number !== match.order_number || firstRoll.design_no !== match.design_no) {
+        if (firstRoll.order_number !== orderNumber || firstRoll.design_no !== designNo) {
           setError(`Cannot mix rolls from different orders/designs. Selected POF is locked to Order: ${firstRoll.order_number}, Design: ${firstRoll.design_no}`);
           setLoading(false);
           return;
         }
       }
 
-      const scannedId = isProcessed && match.processed_roll_id ? match.processed_roll_id : match.id;
+      const scannedId = isProcessed && foundRoll.processed_roll_id ? foundRoll.processed_roll_id : foundRoll.id;
 
       if (scannedRolls.some(r => r.id.toLowerCase() === scannedId.toLowerCase())) {
         setError(`Roll ID "${scannedId}" has already been added.`);
@@ -934,22 +956,90 @@ export default function ProcessingModule() {
         return;
       }
 
+      const isAlreadyAllotted = foundRoll.status === 'sent_to_processing';
+      let allotmentErrorMsg = null;
+      if (isAlreadyAllotted) {
+        let allottedPofNo = '';
+        try {
+          const { data: activePofs } = await supabase
+            .from('processing_orders')
+            .select('pof_number, fabric_rolls')
+            .in('status', ['sent_to_processing', 'partially_received']);
+
+          if (activePofs) {
+            const matchingPof = activePofs.find(pof => {
+              const pofRolls = Array.isArray(pof.fabric_rolls) ? pof.fabric_rolls : [];
+              return pofRolls.some(r => 
+                r.id?.toLowerCase() === scannedId.toLowerCase() ||
+                (r.processed_roll_id && r.processed_roll_id.toLowerCase() === scannedId.toLowerCase())
+              );
+            });
+            if (matchingPof) {
+              allottedPofNo = matchingPof.pof_number;
+            }
+          }
+        } catch (pofErr) {
+          console.warn('Failed to find allotted POF:', pofErr);
+        }
+        // Only block if an active POF actually holds this roll.
+        // If no active POF is found, the status is stale (e.g. rewash POF already received) – allow the roll.
+        if (allottedPofNo) {
+          allotmentErrorMsg = `already allotted to POF: ${allottedPofNo}`;
+        }
+      }
+
+      // Check if this roll was already sent for another process/rewash and received back
+      if (!allotmentErrorMsg) {
+        try {
+          const { data: completedPofs } = await supabase
+            .from('processing_orders')
+            .select('pof_number, fabric_rolls, received_rolls')
+            .not('received_rolls', 'is', null);
+
+          if (completedPofs) {
+            const sentPof = completedPofs.find(pof => {
+              const pofRolls = Array.isArray(pof.fabric_rolls) ? pof.fabric_rolls : [];
+              return pofRolls.some(r => r.id?.toLowerCase() === scannedId.toLowerCase());
+            });
+
+            if (sentPof) {
+              const rxRolls = Array.isArray(sentPof.received_rolls) ? sentPof.received_rolls : [];
+              const replacement = rxRolls.find(rx => rx.greige_roll_id?.toLowerCase() === scannedId.toLowerCase());
+              if (replacement) {
+                allotmentErrorMsg = `Roll was processed in ${sentPof.pof_number} and received back as "${replacement.id}". Use the received roll instead.`;
+              } else {
+                allotmentErrorMsg = `Roll was already processed in ${sentPof.pof_number}.`;
+              }
+            }
+          }
+        } catch (histErr) {
+          console.warn('Failed to check processing history:', histErr);
+        }
+      }
+
       const newRollItem = {
         id: scannedId,
-        qty: isProcessed && match.received_qty !== null ? match.received_qty : match.qty,
-        actual_qty: isProcessed && match.received_qty !== null ? match.received_qty : match.actual_qty,
-        order_number: match.order_number,
-        design_no: match.design_no,
-        design_name: match.design_name,
-        weaving_order_id: match.weaving_order_id
+        qty: isProcessed && foundRoll.received_qty !== null ? foundRoll.received_qty : foundRoll.qty,
+        actual_qty: isProcessed && foundRoll.received_qty !== null ? foundRoll.received_qty : foundRoll.actual_qty,
+        order_number: orderNumber,
+        design_no: designNo,
+        design_name: designName,
+        weaving_order_id: foundOrder.id,
       };
 
-      setScannedRolls(prev => [newRollItem, ...prev]);
-      setPofOrderNo(match.order_number);
-      setPofDesignNo(match.design_no);
-      setPofDesignName(match.design_name);
-      setScanInput('');
-      setSuccessMsg(`Roll ID ${scannedId} added successfully!`);
+      // If the roll has an allotment error, show the error but do NOT add it to the list
+      if (allotmentErrorMsg) {
+        setError(`Roll ID "${scannedId}" – ${allotmentErrorMsg}`);
+        setScanInput('');
+      } else {
+        setScannedRolls(prev => [newRollItem, ...prev]);
+        setPofOrderNo(orderNumber);
+        setPofDesignNo(designNo);
+        setPofDesignName(designName);
+        setScanInput('');
+        setError('');
+        setSuccessMsg(`Roll ID ${scannedId} added successfully!`);
+      }
 
       if (qrScanInputRef.current) {
         qrScanInputRef.current.focus();
@@ -1045,10 +1135,12 @@ export default function ProcessingModule() {
       alert('Please select an Expected Delivery Date.');
       return;
     }
+    const isRewashMode = viewMode === 'rewash';
     if (scannedRolls.length === 0) {
-      alert('Please scan/add at least one Greige fabric roll.');
+      alert(isRewashMode ? 'Please scan/add at least one processed fabric roll.' : 'Please scan/add at least one Greige fabric roll.');
       return;
     }
+
     if (selectedProcesses.length === 0) {
       alert('Please select at least one Process option.');
       return;
@@ -1062,26 +1154,67 @@ export default function ProcessingModule() {
       const currentYear = new Date().getFullYear();
       let pofNumber = '';
       
-      // 1. Fetch next POF Number
-      try {
-        const { data, error: rpcErr } = await supabase.rpc('get_next_pof_number', { p_year: currentYear });
-        if (rpcErr) throw rpcErr;
-        pofNumber = data;
-      } catch (rpcErr) {
-        console.warn('RPC failed, using client-side POF number generation fallback:', rpcErr);
-        const { data: latestPOFs } = await supabase
-          .from('processing_orders')
-          .select('pof_number')
-          .like('pof_number', `AT/${currentYear}/POF/%`)
-          .order('pof_number', { ascending: false })
-          .limit(1);
+      if (isRewashMode) {
+        const fyPrefix = (() => {
+          const d = new Date();
+          const year = d.getFullYear();
+          const month = d.getMonth();
+          let startYear, endYear;
+          if (month >= 3) {
+            startYear = year;
+            endYear = year + 1;
+          } else {
+            startYear = year - 1;
+            endYear = year;
+          }
+          return `${String(startYear).slice(-2)}${String(endYear).slice(-2)}`;
+        })();
 
-        if (latestPOFs && latestPOFs.length > 0) {
-          const lastNumStr = latestPOFs[0].pof_number.split('/').pop();
-          const lastNum = parseInt(lastNumStr, 10);
-          pofNumber = `AT/${currentYear}/POF/${String(lastNum + 1).padStart(5, '0')}`;
-        } else {
-          pofNumber = `AT/${currentYear}/POF/00001`;
+        try {
+          const { data: latestRewashes } = await supabase
+            .from('processing_orders')
+            .select('pof_number')
+            .like('pof_number', `AT/${fyPrefix}/POFRW/%`)
+            .order('pof_number', { ascending: false })
+            .limit(1);
+
+          let nextSeq = 1;
+          if (latestRewashes && latestRewashes.length > 0) {
+            const lastPof = latestRewashes[0].pof_number;
+            const parts = lastPof.split('/');
+            const lastNumStr = parts.pop();
+            const lastNum = parseInt(lastNumStr, 10);
+            if (!isNaN(lastNum)) {
+              nextSeq = lastNum + 1;
+            }
+          }
+          pofNumber = `AT/${fyPrefix}/POFRW/${String(nextSeq).padStart(5, '0')}`;
+        } catch (seqErr) {
+          console.warn('POFRW sequence query failed, using fallback:', seqErr);
+          pofNumber = `AT/${fyPrefix}/POFRW/00001`;
+        }
+      } else {
+        // 1. Fetch next POF Number
+        try {
+          const { data, error: rpcErr } = await supabase.rpc('get_next_pof_number', { p_year: currentYear });
+          if (rpcErr) throw rpcErr;
+          pofNumber = data;
+        } catch (rpcErr) {
+          console.warn('RPC failed, using client-side POF number generation fallback:', rpcErr);
+          const { data: latestPOFs } = await supabase
+            .from('processing_orders')
+            .select('pof_number')
+            .like('pof_number', `AT/${currentYear}/POF/%`)
+            .order('pof_number', { ascending: false })
+            .limit(1);
+
+          if (latestPOFs && latestPOFs.length > 0) {
+            const lastNumStr = latestPOFs[0].pof_number.split('/').pop();
+            const lastNum = parseInt(lastNumStr, 10);
+            pofNumber = `AT/${currentYear}/POF/${String(lastNum + 1).padStart(5, '0')}`;
+          } else {
+            pofNumber = `AT/${currentYear}/POF/00001`;
+          }
         }
       }
 
@@ -1102,6 +1235,8 @@ export default function ProcessingModule() {
         delivered_by: deliveredBy,
         width: width,
         status: 'sent_to_processing',
+        is_rewash: isRewashMode,
+        is_billing: isRewashMode ? isBillingEnabled : false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -1155,7 +1290,7 @@ export default function ProcessingModule() {
       }
 
       // Success
-      setSuccessMsg(`Processing Order Form ${pofNumber} created successfully!`);
+      setSuccessMsg(isRewashMode ? `Rewash Processing Order ${pofNumber} created successfully!` : `Processing Order Form ${pofNumber} created successfully!`);
       setCreatedPof(insertData);
       setShowPrintModal(true);
       resetCreateForm();
@@ -1179,6 +1314,7 @@ export default function ProcessingModule() {
     setPofOrderNo('');
     setPofDesignNo('');
     setPofDesignName('');
+    setIsBillingEnabled(false);
   };
 
   // ---------------------------------------------------------------------------
@@ -2242,7 +2378,8 @@ export default function ProcessingModule() {
         .from('processing_orders')
         .select('*')
         .eq('partner_id', partnerId)
-        .eq('status', 'received');
+        .in('status', ['received', 'partially_received'])
+        .or('is_rewash.eq.false,is_billing.eq.true');
 
       if (includePofIds && includePofIds.length > 0) {
         query = query.or(`payment_status.eq.no_bill,payment_status.is.null,id.in.(${includePofIds.map(id => `"${id}"`).join(',')})`);
@@ -2264,10 +2401,15 @@ export default function ProcessingModule() {
   const handleBillPartnerChange = async (partnerId) => {
     setSelectedBillPartnerId(partnerId);
     setSelectedBillPofIds([]);
+    setSelectedBillPofId('');
+    setSelectedBillDcNumbers([]);
+    setExpandedDcNumber(null);
     setProcessRates({});
     setTaxAmountInput('');
     setTaxPercentageInput('');
     setBillNumberInput('');
+    setPartnerInvoiceNo('');
+    setPartnerInvoiceDate('');
     
     if (!partnerId) {
       setReceivedUnbilledPofs([]);
@@ -2309,6 +2451,38 @@ export default function ProcessingModule() {
     }
   };
 
+  const handleBillPofChange = (pofId) => {
+    setSelectedBillPofId(pofId);
+    setSelectedBillPofIds(pofId ? [pofId] : []);
+
+    const pof = receivedUnbilledPofs.find(p => p.id === pofId);
+    if (pof) {
+      const receivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+      const dcNos = Array.from(new Set(receivedRolls.map(r => r.processing_dc_no || '—')));
+      setSelectedBillDcNumbers(dcNos);
+      setExpandedDcNumber(null);
+
+      const uniqueProcs = pof.processes || [];
+      setProcessRates(current => {
+        const updated = {};
+        uniqueProcs.forEach(p => {
+          updated[p] = current[p] !== undefined ? current[p] : '';
+        });
+        return updated;
+      });
+    } else {
+      setSelectedBillDcNumbers([]);
+      setExpandedDcNumber(null);
+      setProcessRates({});
+    }
+  };
+
+  const toggleDcSelection = (dcNo) => {
+    setSelectedBillDcNumbers(prev =>
+      prev.includes(dcNo) ? prev.filter(no => no !== dcNo) : [...prev, dcNo]
+    );
+  };
+
   const toggleBillPofSelection = (pofId) => {
     setSelectedBillPofIds(prev => {
       const next = prev.includes(pofId) ? prev.filter(id => id !== pofId) : [...prev, pofId];
@@ -2330,7 +2504,13 @@ export default function ProcessingModule() {
     setIsCreatingBill(true);
     setSelectedBillPartnerId(bill.partner_id);
     setSelectedBillPofIds(bill.selected_pof_ids || []);
+    setSelectedBillPofId(bill.selected_pof_ids?.[0] || '');
+    const billDcs = (bill.bill_items || []).map(item => item.processing_dc_no).filter(Boolean);
+    setSelectedBillDcNumbers(billDcs);
+    setExpandedDcNumber(null);
     setBillNumberInput(bill.bill_number);
+    setPartnerInvoiceNo(bill.partner_invoice_no || '');
+    setPartnerInvoiceDate(bill.partner_invoice_date || '');
     setTaxAmountInput(bill.tax_amount ? String(bill.tax_amount) : '');
 
     if (bill.calculated_total > 0 && bill.tax_amount > 0) {
@@ -2348,6 +2528,50 @@ export default function ProcessingModule() {
     setProcessRates(ratesMap);
 
     await fetchReceivedUnbilledPofs(bill.partner_id, bill.selected_pof_ids || []);
+  };
+
+  const handleDeleteBill = async (bill) => {
+    if (bill.status === 'approved' || bill.status === 'settled') {
+      alert('Approved or settled bills cannot be deleted.');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete bill "${bill.bill_number}"? This will return the associated POFs to unbilled status.`)) {
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setSuccessMsg('');
+    try {
+      // 1. Reset payment_status & bill_id on associated processing orders
+      if (bill.selected_pof_ids && bill.selected_pof_ids.length > 0) {
+        const { error: orderErr } = await supabase
+          .from('processing_orders')
+          .update({
+            payment_status: 'no_bill',
+            bill_id: null
+          })
+          .in('id', bill.selected_pof_ids);
+
+        if (orderErr) throw orderErr;
+      }
+
+      // 2. Delete the bill itself
+      const { error: deleteErr } = await supabase
+        .from('processing_finance_bills')
+        .delete()
+        .eq('id', bill.id);
+
+      if (deleteErr) throw deleteErr;
+
+      setSuccessMsg(`Bill ${bill.bill_number} deleted successfully!`);
+      fetchBills();
+      fetchAllPofs();
+    } catch (err) {
+      console.error('Error deleting bill:', err);
+      setError('Failed to delete bill: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleApproveBill = async (bill) => {
@@ -2430,8 +2654,12 @@ export default function ProcessingModule() {
       alert('Please select a partner.');
       return;
     }
-    if (selectedBillPofIds.length === 0) {
-      alert('Please select at least one received POF.');
+    if (!selectedBillPofId) {
+      alert('Please select a POF.');
+      return;
+    }
+    if (selectedBillDcNumbers.length === 0) {
+      alert('Please select at least one Delivery Challan (DC).');
       return;
     }
     if (!billNumberInput.trim()) {
@@ -2439,8 +2667,7 @@ export default function ProcessingModule() {
       return;
     }
 
-    const selectedPofs = receivedUnbilledPofs.filter(p => selectedBillPofIds.includes(p.id));
-    const uniqueProcs = Array.from(new Set(selectedPofs.flatMap(p => p.processes || [])));
+    const uniqueProcs = selectedPofObject ? selectedPofObject.processes || [] : [];
 
     for (const proc of uniqueProcs) {
       const rate = parseFloat(processRates[proc]);
@@ -2458,29 +2685,29 @@ export default function ProcessingModule() {
       const partner = partners.find(p => p.id === selectedBillPartnerId);
       const partnerName = partner ? partner.partner_name : 'Partner';
 
-      const billItems = selectedPofs.map(pof => {
-        const rolls = pof.fabric_rolls || [];
-        const qtySent = rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
-        const receivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
-        const qtyReceived = receivedRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
-        const shrinkagePct = qtySent > 0 ? ((qtySent - qtyReceived) / qtySent) * 100 : 0;
+      const selectedDcsObjects = pofDcs.filter(dc => selectedBillDcNumbers.includes(dc.dc_number));
+      const pofTotalSentQty = (selectedPofObject.fabric_rolls || []).reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
+      const pofTotalReceivedQty = (selectedPofObject.received_rolls || []).reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+      const pofShrinkage = pofTotalSentQty > 0 ? ((pofTotalSentQty - pofTotalReceivedQty) / pofTotalSentQty) * 100 : 0;
 
+      const billItems = selectedDcsObjects.map(dc => {
         return {
-          pof_id: pof.id,
-          pof_number: pof.pof_number,
-          greige_sent_rolls: rolls.length,
-          greige_sent_qty: qtySent,
-          processed_rolls_recd: receivedRolls.length,
-          processed_qty_recd: qtyReceived,
-          shrinkage: shrinkagePct,
-          sent_date: pof.created_at,
-          received_date: pof.received_at || pof.updated_at,
-          status: pof.status,
-          processes: pof.processes
+          pof_id: selectedPofObject.id,
+          pof_number: selectedPofObject.pof_number,
+          processing_dc_no: dc.dc_number,
+          pofrr_number: dc.pofrr_number,
+          greige_sent_rolls: (selectedPofObject.fabric_rolls || []).length,
+          greige_sent_qty: pofTotalSentQty,
+          processed_rolls_recd: dc.received_rolls_count,
+          processed_qty_recd: dc.qty_received,
+          shrinkage: pofShrinkage,
+          sent_date: selectedPofObject.created_at,
+          received_date: dc.received_at || selectedPofObject.received_at || selectedPofObject.updated_at,
+          processes: selectedPofObject.processes
         };
       });
 
-      const totalActualQty = billItems.reduce((sum, item) => sum + item.greige_sent_qty, 0);
+      const totalActualQty = pofTotalSentQty;
 
       const processRatesArray = uniqueProcs.map(proc => {
         const rate = parseFloat(processRates[proc]) || 0;
@@ -2496,6 +2723,8 @@ export default function ProcessingModule() {
 
       const billData = {
         bill_number: billNumberInput.trim(),
+        partner_invoice_no: partnerInvoiceNo.trim() || null,
+        partner_invoice_date: partnerInvoiceDate || null,
         partner_id: selectedBillPartnerId,
         partner_name: partnerName,
         selected_pof_ids: selectedBillPofIds,
@@ -2606,6 +2835,8 @@ export default function ProcessingModule() {
       const itemsHtml = (bill.bill_items || []).map(item => `
         <tr style="border-bottom: 1px solid #ddd;">
           <td style="padding: 8px; font-family: monospace; font-weight: bold;">${item.pof_number}</td>
+          <td style="padding: 8px; font-family: monospace;">${item.processing_dc_no || '—'}</td>
+          <td style="padding: 8px; font-family: monospace;">${item.pofrr_number || '—'}</td>
           <td style="padding: 8px; text-align: right;">${item.greige_sent_rolls}</td>
           <td style="padding: 8px; text-align: right;">${Number(item.greige_sent_qty).toFixed(2)} m</td>
           <td style="padding: 8px; text-align: right;">${item.processed_rolls_recd}</td>
@@ -2669,6 +2900,8 @@ export default function ProcessingModule() {
               <thead>
                 <tr>
                   <th>POF Number</th>
+                  <th>DC Number</th>
+                  <th>POFRR Number</th>
                   <th style="text-align: right;">Greige Rolls</th>
                   <th style="text-align: right;">Greige Qty</th>
                   <th style="text-align: right;">Recd Rolls</th>
@@ -2744,6 +2977,10 @@ export default function ProcessingModule() {
       alert('Please enter the Received Place.');
       return;
     }
+    if (!receiveDcNumber) {
+      alert('Please enter the Processing DC Number.');
+      return;
+    }
 
     // Verify all processed quantities are filled and valid
     for (let i = 0; i < receiveProcessedRolls.length; i++) {
@@ -2795,7 +3032,8 @@ export default function ProcessingModule() {
         pofrr_number: nextPofrrNo,
         received_by: receiveReceivedBy,
         receive_vehicle_details: receiveVehicleNo,
-        received_place: receiveReceivedPlace
+        received_place: receiveReceivedPlace,
+        processing_dc_no: receiveDcNumber
       }));
 
       // Combined list of received rolls (existing + new)
@@ -2813,6 +3051,12 @@ export default function ProcessingModule() {
       const overallShrinkage = totalSentQty > 0 ? ((totalSentQty - totalReceivedQty) / totalSentQty) * 100 : 0;
       const overallShrinkageFixed = parseFloat(overallShrinkage.toFixed(2));
 
+      // Calculate new unique list of DC numbers
+      const existingDcNumbers = Array.isArray(selectedPof.processing_dc_numbers) ? selectedPof.processing_dc_numbers : [];
+      const updatedDcNumbers = existingDcNumbers.includes(receiveDcNumber)
+        ? existingDcNumbers
+        : [...existingDcNumbers, receiveDcNumber];
+
       // 3. Update processing_orders record
       const updatePayload = {
         status: updatedStatus,
@@ -2821,6 +3065,7 @@ export default function ProcessingModule() {
         received_place: receiveReceivedPlace,
         pofrr_number: nextPofrrNo,
         received_rolls: combinedReceivedRolls,
+        processing_dc_numbers: updatedDcNumbers,
         received_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -2862,7 +3107,10 @@ export default function ProcessingModule() {
 
         const currentRolls = woData.fabric_rolls || [];
         const updatedRolls = currentRolls.map(r => {
-          const match = items.find(item => item.greige_roll_id === r.id);
+          const match = items.find(item => 
+            item.greige_roll_id === r.id || 
+            (r.processed_roll_id && item.greige_roll_id === r.processed_roll_id)
+          );
           if (match) {
             return {
               ...r,
@@ -2897,6 +3145,7 @@ export default function ProcessingModule() {
         received_by: receiveReceivedBy,
         received_place: receiveReceivedPlace,
         receive_vehicle_details: receiveVehicleNo,
+        processing_dc_no: receiveDcNumber,
         fabric_rolls: selectedPof.fabric_rolls, // sent rolls
         received_rolls: formattedReceivedRolls, // rolls received in this transaction
         all_received_rolls: combinedReceivedRolls, // all rolls received so far
@@ -2922,6 +3171,8 @@ export default function ProcessingModule() {
     setSelectedPof(null);
     setReceiveReceivedBy('');
     setReceiveVehicleNo('');
+    setReceiveReceivedPlace('');
+    setReceiveDcNumber('');
     setReceivedRollIds([]);
     setReceivedRollsData({});
   };
@@ -3243,6 +3494,7 @@ export default function ProcessingModule() {
     setEditPofExpectedDate(dateStr);
     setEditPofFabricRolls(pof.fabric_rolls ? JSON.parse(JSON.stringify(pof.fabric_rolls)) : []);
     setEditPofReceivedRolls(pof.received_rolls ? JSON.parse(JSON.stringify(pof.received_rolls)) : []);
+    setEditPofIsBilling(!!pof.is_billing);
     setShowEditModal(false); // will set true below
     setError('');
     setSuccessMsg('');
@@ -3286,6 +3538,7 @@ export default function ProcessingModule() {
         fabric_rolls: editPofFabricRolls,
         received_rolls: editPofReceivedRolls,
         status: updatedStatus,
+        is_billing: editingPof?.is_rewash ? editPofIsBilling : false,
         updated_at: new Date().toISOString()
       };
 
@@ -3778,11 +4031,55 @@ export default function ProcessingModule() {
   };
 
   const selectedPofsObjects = receivedUnbilledPofs.filter(pof => selectedBillPofIds.includes(pof.id));
+  const selectedPofObject = receivedUnbilledPofs.find(p => p.id === selectedBillPofId);
+
+  const pofDcs = (() => {
+    if (!selectedPofObject) return [];
+    const receivedRolls = Array.isArray(selectedPofObject.received_rolls) ? selectedPofObject.received_rolls : [];
+    const sentRolls = Array.isArray(selectedPofObject.fabric_rolls) ? selectedPofObject.fabric_rolls : [];
+
+    // Group received rolls by processing_dc_no
+    const dcsMap = {};
+    receivedRolls.forEach(roll => {
+      const dcNo = roll.processing_dc_no || '—';
+      if (!dcsMap[dcNo]) {
+        dcsMap[dcNo] = {
+          dc_number: dcNo,
+          pofrr_number: roll.pofrr_number || 'N/A',
+          received_at: roll.received_at || selectedPofObject.received_at,
+          received_place: roll.received_place || selectedPofObject.received_place || 'N/A',
+          rolls: []
+        };
+      }
+      dcsMap[dcNo].rolls.push(roll);
+    });
+
+    return Object.values(dcsMap).map(dc => {
+      const dcSentRolls = sentRolls.filter(sRoll =>
+        dc.rolls.some(r => r.greige_roll_id === sRoll.id)
+      );
+
+      const qtySent = dcSentRolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
+      const qtyReceived = dc.rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+      const shrinkage = qtySent > 0 ? ((qtySent - qtyReceived) / qtySent) * 100 : 0;
+
+      return {
+        ...dc,
+        sent_rolls_count: dcSentRolls.length,
+        qty_sent: qtySent,
+        received_rolls_count: dc.rolls.length,
+        qty_received: qtyReceived,
+        shrinkage: shrinkage,
+        sent_rolls: dcSentRolls,
+        received_rolls: dc.rolls
+      };
+    });
+  })();
 
   const childQtySum = childProcessedRollsInput.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
   const qtyMismatch = parentProcessedRoll ? parseFloat((parseFloat(parentProcessedRoll.qty || 0) - childQtySum).toFixed(2)) : 0;
 
-  const isFullWidthView = viewMode === 'receive' || viewMode === 'all_pofs' || viewMode === 'bills' || viewMode === 'processed_rolls';
+  const isFullWidthView = viewMode === 'menu' || viewMode === 'receive' || viewMode === 'all_pofs' || viewMode === 'bills' || viewMode === 'processed_rolls' || viewMode === 'processed_cut';
 
   return (
     <div style={{ 
@@ -3882,219 +4179,260 @@ export default function ProcessingModule() {
       
       {/* 1. DASHBOARD HUB MENU */}
       {viewMode === 'menu' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '2rem', marginTop: '1rem' }} className="fade-in">
-          {/* Card 1: Create Processing Order Form */}
-          <div 
-            onClick={() => setViewMode('create')}
-            className="hover-lift"
-            style={{
-              backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
-              padding: '2rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1.25rem',
-              boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
-            }}
-          >
-            <div style={{
-              position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
-            }}>
-              <FileText size={160} />
+        <>
+          <style>{`
+            .pof-menu-grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 1rem;
+              margin-top: 1rem;
+            }
+            @media (max-width: 1200px) {
+              .pof-menu-grid {
+                grid-template-columns: repeat(3, 1fr);
+              }
+            }
+            @media (max-width: 768px) {
+              .pof-menu-grid {
+                grid-template-columns: repeat(2, 1fr);
+              }
+            }
+            @media (max-width: 480px) {
+              .pof-menu-grid {
+                grid-template-columns: 1fr;
+              }
+            }
+          `}</style>
+          <div className="pof-menu-grid fade-in">
+            {/* Card 1: Create Processing Order Form */}
+            <div 
+              onClick={() => setViewMode('create')}
+              className="hover-lift"
+              style={{
+                backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
+                padding: '1.5rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1rem',
+                boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
+              }}
+            >
+              <div style={{
+                position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
+              }}>
+                <FileText size={120} />
+              </div>
+              <div style={{ 
+                backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
+                borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <FileText size={24} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-current)', margin: 0 }}>
+                  Create Processing Order Form
+                </h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
+                Start form <ArrowRight size={14} />
+              </div>
             </div>
-            <div style={{ 
-              backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
-              borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <FileText size={24} />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-current)', margin: '0 0 0.5rem 0' }}>
-                Create Processing Order Form
-              </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted-current)', margin: 0, lineHeight: 1.5 }}>
-                Issue a new Processing Order Form (POF) to send Greige rolls out. Choose a partner, select processes like fabric Dyeing or Peaching, scan roll QRs, and print the order.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
-              Start form <ArrowRight size={14} />
-            </div>
-          </div>
 
-          {/* Card 2: Receive Fabric from Processing */}
-          <div 
-            onClick={() => setViewMode('receive')}
-            className="hover-lift"
-            style={{
-              backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
-              padding: '2rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1.25rem',
-              boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
-            }}
-          >
-            <div style={{
-              position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
-            }}>
-              <Inbox size={160} />
+            {/* Card 1b: Rewash Outsource Processing */}
+            <div 
+              onClick={() => {
+                setViewMode('rewash');
+                setIsBillingEnabled(false);
+              }}
+              className="hover-lift"
+              style={{
+                backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
+                padding: '1.5rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1rem',
+                boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
+              }}
+            >
+              <div style={{
+                position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
+              }}>
+                <FileText size={120} />
+              </div>
+              <div style={{ 
+                backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
+                borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <FileText size={24} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-current)', margin: 0 }}>
+                  Rewash Outsource Processing
+                </h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
+                Start Rewash <ArrowRight size={14} />
+              </div>
             </div>
-            <div style={{ 
-              backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
-              borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <Inbox size={24} />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-current)', margin: '0 0 0.5rem 0' }}>
-                Receive Fabric from Processing
-              </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted-current)', margin: 0, lineHeight: 1.5 }}>
-                Record the arrival of processed fabric back at the warehouse. Look up active POFs, verify rolls, update roll status in the weaving history, and complete the order.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
-              Receive items <ArrowRight size={14} />
-            </div>
-          </div>
 
-          {/* Card 3: All POF (Historical Logs) */}
-          <div 
-            onClick={() => setViewMode('all_pofs')}
-            className="hover-lift"
-            style={{
-              backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
-              padding: '2rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1.25rem',
-              boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
-            }}
-          >
-            <div style={{
-              position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
-            }}>
-              <Layers size={160} />
+            {/* Card 2: Receive Fabric from Processing */}
+            <div 
+              onClick={() => setViewMode('receive')}
+              className="hover-lift"
+              style={{
+                backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
+                padding: '1.5rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1rem',
+                boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
+              }}
+            >
+              <div style={{
+                position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
+              }}>
+                <Inbox size={120} />
+              </div>
+              <div style={{ 
+                backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
+                borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <Inbox size={24} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-current)', margin: 0 }}>
+                  Receive Fabric from Processing
+                </h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
+                Receive items <ArrowRight size={14} />
+              </div>
             </div>
-            <div style={{ 
-              backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
-              borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <Layers size={24} />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-current)', margin: '0 0 0.5rem 0' }}>
-                All POF (Historical Logs)
-              </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted-current)', margin: 0, lineHeight: 1.5 }}>
-                View history of all POFs. Check roll details, dispatch details, transport info, received quantities, and shrinkage reports. Print or reprint any form.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
-              View History <ArrowRight size={14} />
-            </div>
-          </div>
 
-          {/* Card 4: Processing Bills */}
-          <div 
-            onClick={() => setViewMode('bills')}
-            className="hover-lift"
-            style={{
-              backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
-              padding: '2rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1.25rem',
-              boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
-            }}
-          >
-            <div style={{
-              position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
-            }}>
-              <FileText size={160} />
+            {/* Card 3: All POF (Historical Logs) */}
+            <div 
+              onClick={() => setViewMode('all_pofs')}
+              className="hover-lift"
+              style={{
+                backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
+                padding: '1.5rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1rem',
+                boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
+              }}
+            >
+              <div style={{
+                position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
+              }}>
+                <Layers size={120} />
+              </div>
+              <div style={{ 
+                backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
+                borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <Layers size={24} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-current)', margin: 0 }}>
+                  All POF (Historical Logs)
+                </h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
+                View History <ArrowRight size={14} />
+              </div>
             </div>
-            <div style={{ 
-              backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
-              borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <FileText size={24} />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-current)', margin: '0 0 0.5rem 0' }}>
-                Processing Bills
-              </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted-current)', margin: 0, lineHeight: 1.5 }}>
-                Manage fabric processing finance and settle amounts for received processing orders. Create new bills, enter process pricing, tax, and track approval states.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
-              Manage Bills <ArrowRight size={14} />
-            </div>
-          </div>
 
-          {/* Card 5: Processed Fabric Rolls Details */}
-          <div 
-            onClick={() => setViewMode('processed_rolls')}
-            className="hover-lift"
-            style={{
-              backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
-              padding: '2rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1.25rem',
-              boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
-            }}
-          >
-            <div style={{
-              position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
-            }}>
-              <CheckCircle size={160} />
+            {/* Card 4: Processing Bills */}
+            <div 
+              onClick={() => setViewMode('bills')}
+              className="hover-lift"
+              style={{
+                backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
+                padding: '1.5rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1rem',
+                boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
+              }}
+            >
+              <div style={{
+                position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
+              }}>
+                <FileText size={120} />
+              </div>
+              <div style={{ 
+                backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
+                borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <FileText size={24} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-current)', margin: 0 }}>
+                  Processing Bills
+                </h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
+                Manage Bills <ArrowRight size={14} />
+              </div>
             </div>
-            <div style={{ 
-              backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
-              borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <CheckCircle size={24} />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-current)', margin: '0 0 0.5rem 0' }}>
-                Processed Fabric Rolls Details
-              </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted-current)', margin: 0, lineHeight: 1.5 }}>
-                View status, POF references, partners, received details, washed inspection logs, and dispatch statuses for all processed rolls.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
-              View Rolls <ArrowRight size={14} />
-            </div>
-          </div>
 
-          {/* Card 6: Processed Fabric Roll Cut */}
-          <div 
-            onClick={() => setViewMode('processed_cut')}
-            className="hover-lift"
-            style={{
-              backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
-              padding: '2rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1.25rem',
-              boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
-            }}
-          >
-            <div style={{
-              position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
-            }}>
-              <Scissors size={160} />
+            {/* Card 5: Processed Fabric Rolls Details */}
+            <div 
+              onClick={() => setViewMode('processed_rolls')}
+              className="hover-lift"
+              style={{
+                backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
+                padding: '1.5rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1rem',
+                boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
+              }}
+            >
+              <div style={{
+                position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
+              }}>
+                <CheckCircle size={120} />
+              </div>
+              <div style={{ 
+                backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
+                borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <CheckCircle size={24} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-current)', margin: 0 }}>
+                  Processed Fabric Rolls Details
+                </h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
+                View Rolls <ArrowRight size={14} />
+              </div>
             </div>
-            <div style={{ 
-              backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
-              borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <Scissors size={24} />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-current)', margin: '0 0 0.5rem 0' }}>
-                Processed Fabric Roll Cut
-              </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted-current)', margin: 0, lineHeight: 1.5 }}>
-                Split processed fabric rolls into smaller child rolls, update the database inventory, and print custom QR labels for each cut.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
-              Cut rolls <ArrowRight size={14} />
+
+            {/* Card 6: Processed Fabric Roll Cut */}
+            <div 
+              onClick={() => setViewMode('processed_cut')}
+              className="hover-lift"
+              style={{
+                backgroundColor: 'white', border: '1px solid var(--border-current)', borderRadius: '16px',
+                padding: '1.5rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '1rem',
+                boxShadow: 'var(--shadow-md)', transition: 'all 0.3s ease-in-out', position: 'relative', overflow: 'hidden'
+              }}
+            >
+              <div style={{
+                position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.04, color: 'var(--color-primary)'
+              }}>
+                <Scissors size={120} />
+              </div>
+              <div style={{ 
+                backgroundColor: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', width: '48px', height: '48px',
+                borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <Scissors size={24} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-current)', margin: 0 }}>
+                  Processed Fabric Roll Cut
+                </h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', fontWeight: '750', color: 'var(--color-primary)', marginTop: 'auto' }}>
+                Cut rolls <ArrowRight size={14} />
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* 2. CREATE POF FORM VIEW */}
-      {viewMode === 'create' && (
+      {(viewMode === 'create' || viewMode === 'rewash') && (
         <form onSubmit={handleCreatePOF} className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             <h2 style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--color-primary)', margin: 0, borderBottom: '2px solid var(--color-primary)', paddingBottom: '0.5rem', width: 'max-content' }}>
-              Create Processing Order Form (POF)
+              {viewMode === 'rewash' ? 'Create Rewash Order Form (POF)' : 'Create Processing Order Form (POF)'}
             </h2>
 
             {/* Partner & Date */}
@@ -4130,6 +4468,21 @@ export default function ProcessingModule() {
                 </div>
               </div>
             </div>
+
+            {viewMode === 'rewash' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  id="isBilling"
+                  checked={isBillingEnabled}
+                  onChange={e => setIsBillingEnabled(e.target.checked)}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                <label htmlFor="isBilling" style={{ fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', color: 'var(--text-current)' }}>
+                  Enable Billing (Chargeable Rewash)
+                </label>
+              </div>
+            )}
           </div>
 
           {/* QR Code Scan / Entry Panel */}
@@ -4157,7 +4510,7 @@ export default function ProcessingModule() {
                 <input
                   ref={qrScanInputRef}
                   type="text"
-                  placeholder="Type or Scan Greige Fabric Roll ID (Must be 4-Point Inspected)..."
+                  placeholder={viewMode === 'rewash' ? "Type or Scan Processed Fabric Roll ID..." : "Type or Scan Greige Fabric Roll ID (Must be 4-Point Inspected)..."}
                   className="input-field"
                   value={scanInput}
                   onChange={handleScanInputChange}
@@ -4214,16 +4567,18 @@ export default function ProcessingModule() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#fafafa', borderBottom: '1px solid var(--border-current)', fontWeight: '700' }}>
-                      <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>Greige Roll ID</th>
-                      <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Greige Qty (m)</th>
-                      <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Inspected Actual Qty (m)</th>
+                      <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>{viewMode === 'rewash' ? 'Processed Roll ID' : 'Greige Roll ID'}</th>
+                      <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{viewMode === 'rewash' ? 'Original Qty (m)' : 'Greige Qty (m)'}</th>
+                      <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{viewMode === 'rewash' ? 'Processed Qty (m)' : 'Inspected Actual Qty (m)'}</th>
                       <th style={{ padding: '0.75rem 1rem', textAlign: 'center', width: '80px' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {scannedRolls.map(r => (
                       <tr key={r.id} style={{ borderBottom: '1px solid var(--border-current)', fontWeight: '500' }}>
-                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--color-primary)' }}>{r.id}</td>
+                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--color-primary)' }}>
+                          <span>{r.id}</span>
+                        </td>
                         <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{Number(r.qty).toFixed(2)} m</td>
                         <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '700', color: '#047857' }}>{Number(r.actual_qty).toFixed(2)} m</td>
                         <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
@@ -4684,15 +5039,30 @@ export default function ProcessingModule() {
                                 </span>
                               </td>
                               <td style={{ padding: '0.75rem 1rem' }}>
-                                <div style={{ fontFamily: 'monospace', fontWeight: '700', color: 'var(--color-primary)', fontSize: '0.9rem' }}>{pof.pof_number}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                  <div style={{ fontFamily: 'monospace', fontWeight: '700', color: 'var(--color-primary)', fontSize: '0.9rem' }}>{pof.pof_number}</div>
+                                  {pof.is_rewash && (
+                                    <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px', fontWeight: 'bold' }}>Rewash</span>
+                                  )}
+                                </div>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px', fontWeight: '500' }}>
                                   Ord: <span style={{ fontWeight: '700', color: 'var(--text-current)' }}>{pof.fabric_rolls?.[0]?.order_number || '—'}</span>
                                 </div>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', fontWeight: '500' }}>
                                   Des: <span style={{ fontWeight: '750', color: 'var(--text-current)' }}>{pof.fabric_rolls?.[0]?.design_name || '—'} ({pof.fabric_rolls?.[0]?.design_no || '—'})</span>
                                 </div>
+                                {pof.processing_dc_numbers && pof.processing_dc_numbers.length > 0 && (
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px', fontWeight: '500' }}>
+                                    DC: <span style={{ fontWeight: '700', color: '#800000' }}>{pof.processing_dc_numbers.join(', ')}</span>
+                                  </div>
+                                )}
                               </td>
-                              <td style={{ padding: '0.75rem 1rem', fontWeight: '600' }}>{pof.partner_name}</td>
+                              <td style={{ padding: '0.75rem 1rem' }}>
+                                <div style={{ fontWeight: '600', color: 'var(--text-current)' }}>{pof.partner_name}</div>
+                                <div style={{ fontSize: '0.75rem', color: '#b45309', fontWeight: '750', marginTop: '3px' }}>
+                                  {pof.processes?.join(', ') || '—'}
+                                </div>
+                              </td>
                               <td style={{ padding: '0.75rem 1rem' }}>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>
                                   Sent: <span style={{ color: 'var(--text-current)', fontWeight: '700' }}>{count} Rolls / {totalQty.toFixed(1)} m</span>
@@ -4778,6 +5148,7 @@ export default function ProcessingModule() {
                                         received_by: pof.received_by || 'N/A',
                                         received_place: pof.received_place || 'N/A',
                                         receive_vehicle_details: pof.receive_vehicle_details || 'N/A',
+                                        processing_dc_no: pof.received_rolls?.[0]?.processing_dc_no || (pof.processing_dc_numbers && pof.processing_dc_numbers.length > 0 ? pof.processing_dc_numbers.join(', ') : '—'),
                                         fabric_rolls: pof.fabric_rolls,
                                         received_rolls: pof.received_rolls || [],
                                         all_received_rolls: pof.received_rolls || [],
@@ -4872,7 +5243,7 @@ export default function ProcessingModule() {
                                           <thead>
                                             <tr style={{ borderBottom: '1px solid #ddd', textAlign: 'left', fontWeight: '700', color: 'var(--text-muted-current)' }}>
                                               <th style={{ padding: '0.5rem 0.25rem' }}>Processed Roll ID</th>
-                                              <th style={{ padding: '0.5rem 0.25rem' }}>Process</th>
+                                              <th style={{ padding: '0.5rem 0.25rem' }}>DC Number</th>
                                               <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Qty Received</th>
                                               <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Shrinkage %</th>
                                             </tr>
@@ -4887,7 +5258,7 @@ export default function ProcessingModule() {
                                                 return (
                                                   <tr key={roll.id} style={{ borderBottom: '1px solid #eee' }}>
                                                     <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af', fontFamily: 'monospace' }}>Pending</td>
-                                                    <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af' }}>{pof.processes?.join(', ') || '—'}</td>
+                                                    <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af' }}>—</td>
                                                     <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}>—</td>
                                                     <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}></td>
                                                   </tr>
@@ -4898,7 +5269,7 @@ export default function ProcessingModule() {
                                                 return (
                                                   <tr key={`${roll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
                                                     <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>{rxRoll.id}</td>
-                                                    <td style={{ padding: '0.5rem 0.25rem', color: 'var(--text-current)' }}>{pof.processes?.join(', ') || '—'}</td>
+                                                    <td style={{ padding: '0.5rem 0.25rem', fontWeight: '700', color: '#800000' }}>{rxRoll.processing_dc_no || '—'}</td>
                                                     <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{parseFloat(rxRoll.qty || 0).toFixed(2)} m</td>
                                                     <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '700' }}></td>
                                                   </tr>
@@ -4949,17 +5320,176 @@ export default function ProcessingModule() {
                                         </div>
                                       </div>
                                       <div>
-                                        <h6 style={{ margin: '0 0 0.5rem 0', color: '#047857', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase' }}>📥 Return / Receipt Details</h6>
+                                        <h6 style={{ margin: '0 0 0.5rem 0', color: '#047857', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase' }}>📥 Return / Receipt Details (POFRR)</h6>
                                         {pof.status === 'received' || pof.status === 'partially_received' ? (
-                                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
-                                            <span style={{ color: 'var(--text-muted-current)' }}>Received By:</span>
-                                            <strong>{pof.received_by || 'N/A'}</strong>
-                                            <span style={{ color: 'var(--text-muted-current)' }}>Return Place:</span>
-                                            <strong>{pof.received_place || 'N/A'}</strong>
-                                            <span style={{ color: 'var(--text-muted-current)' }}>Return Vehicle:</span>
-                                            <strong>{pof.receive_vehicle_details || 'N/A'}</strong>
-                                            <span style={{ color: 'var(--text-muted-current)' }}>Received At:</span>
-                                            <strong>{pof.received_at ? new Date(pof.received_at).toLocaleString('en-IN') : '—'}</strong>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                            {(() => {
+                                              const rxRollsList = pof.received_rolls || [];
+                                              // Group rolls by pofrr_number
+                                              const receiptsMap = {};
+                                              rxRollsList.forEach(roll => {
+                                                const pofrrNo = roll.pofrr_number || pof.pofrr_number || 'N/A';
+                                                if (!receiptsMap[pofrrNo]) {
+                                                  receiptsMap[pofrrNo] = {
+                                                    pofrr_number: pofrrNo,
+                                                    received_at: roll.received_at || pof.received_at || pof.updated_at,
+                                                    received_by: roll.received_by || pof.received_by || 'N/A',
+                                                    received_place: roll.received_place || pof.received_place || 'N/A',
+                                                    receive_vehicle_details: roll.receive_vehicle_details || pof.receive_vehicle_details || 'N/A',
+                                                    rolls: []
+                                                  };
+                                                }
+                                                receiptsMap[pofrrNo].rolls.push(roll);
+                                              });
+
+                                              const receipts = Object.values(receiptsMap);
+                                              if (receipts.length === 0) {
+                                                return (
+                                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>
+                                                    No POFRR documents found.
+                                                  </div>
+                                                );
+                                              }
+
+                                              return receipts.map((receipt, idx) => {
+                                                const isPofrrExpanded = expandedPofrrNo === receipt.pofrr_number;
+                                                const totalReceiptQty = receipt.rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+                                                return (
+                                                  <div 
+                                                    key={receipt.pofrr_number} 
+                                                    style={{ 
+                                                      display: 'flex', 
+                                                      flexDirection: 'column',
+                                                      backgroundColor: '#f9f9f9', 
+                                                      borderRadius: '8px', 
+                                                      border: '1px solid #eee',
+                                                      fontSize: '0.75rem',
+                                                      overflow: 'hidden'
+                                                    }}
+                                                  >
+                                                    <div style={{
+                                                      display: 'flex',
+                                                      justifyContent: 'space-between',
+                                                      alignItems: 'center',
+                                                      padding: '0.5rem 0.65rem',
+                                                      cursor: 'pointer',
+                                                      backgroundColor: isPofrrExpanded ? '#f1f5f9' : 'transparent',
+                                                      borderBottom: isPofrrExpanded ? '1px solid #e2e8f0' : 'none',
+                                                      transition: 'background-color 0.15s ease'
+                                                    }} onClick={() => setExpandedPofrrNo(isPofrrExpanded ? null : receipt.pofrr_number)}>
+                                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flex: 1 }}>
+                                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', display: 'inline-block', transform: isPofrrExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
+                                                          <ChevronRight size={12} />
+                                                        </span>
+                                                        <div style={{ display: 'flex', gap: '0.75rem 1.25rem', flexWrap: 'wrap', flex: 1, alignItems: 'center' }}>
+                                                          <div>
+                                                            <span style={{ fontSize: '0.55rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>POFRR</span>
+                                                            <strong style={{ fontFamily: 'monospace', color: 'var(--color-primary)' }}>{receipt.pofrr_number}</strong>
+                                                          </div>
+
+                                                          <div>
+                                                            <span style={{ fontSize: '0.55rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>DC NUMBER</span>
+                                                            <strong>{receipt.rolls?.[0]?.processing_dc_no || '—'}</strong>
+                                                          </div>
+                                                          <div>
+                                                            <span style={{ fontSize: '0.55rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>PLACE</span>
+                                                            <strong>{receipt.received_place || '—'}</strong>
+                                                          </div>
+                                                          <div>
+                                                            <span style={{ fontSize: '0.55rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>DATE</span>
+                                                            <strong>{new Date(receipt.received_at).toLocaleDateString('en-IN')}</strong>
+                                                          </div>
+                                                          <div>
+                                                            <span style={{ fontSize: '0.55rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>ROLLS/QTY</span>
+                                                            <strong>{receipt.rolls.length} rolls ({totalReceiptQty.toFixed(2)} m)</strong>
+                                                          </div>
+                                                        </div>
+                                                      </div>
+                                                      <button
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          const pofrrDoc = {
+                                                            pofrr_number: receipt.pofrr_number,
+                                                            pof_number: pof.pof_number,
+                                                            partner_name: pof.partner_name,
+                                                            created_at: pof.created_at,
+                                                            received_at: receipt.received_at,
+                                                            expected_delivery_date: pof.expected_delivery_date,
+                                                            vehicle_details: pof.vehicle_details,
+                                                            delivered_by: pof.delivered_by,
+                                                            received_by: receipt.received_by,
+                                                            received_place: receipt.received_place,
+                                                            receive_vehicle_details: receipt.receive_vehicle_details,
+                                                            processing_dc_no: receipt.rolls?.[0]?.processing_dc_no || (pof.processing_dc_numbers && pof.processing_dc_numbers.length > 0 ? pof.processing_dc_numbers.join(', ') : '—'),
+                                                            fabric_rolls: pof.fabric_rolls,
+                                                            received_rolls: receipt.rolls,
+                                                            all_received_rolls: pof.received_rolls || [],
+                                                            processes: pof.processes,
+                                                            status: pof.status,
+                                                            width: pof.width
+                                                          };
+                                                          setCreatedPofrr(pofrrDoc);
+                                                          setShowPofrrPrintModal(true);
+                                                        }}
+                                                        style={{
+                                                          display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                                                          backgroundColor: '#ecfdf5', border: '1px solid #10b981',
+                                                          color: '#047857', padding: '3px 8px', borderRadius: '6px',
+                                                          fontSize: '0.68rem', fontWeight: '800', cursor: 'pointer'
+                                                        }}
+                                                        className="hover-lift"
+                                                      >
+                                                        <Printer size={10} /> Print
+                                                      </button>
+                                                    </div>
+
+                                                    {isPofrrExpanded && (
+                                                      <div style={{ padding: '0.75rem 0.85rem', backgroundColor: '#fff', borderTop: '1px solid #eee' }} onClick={e => e.stopPropagation()}>
+                                                        {/* Metadata summary */}
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem 1rem', marginBottom: '0.5rem', fontSize: '0.7rem', borderBottom: '1px dashed #eee', paddingBottom: '0.4rem' }}>
+                                                          <div>
+                                                            <span style={{ color: 'var(--text-muted-current)', fontWeight: '600', marginRight: '4px' }}>Received By:</span>
+                                                            <strong style={{ color: '#111827' }}>{receipt.received_by}</strong>
+                                                          </div>
+                                                          <div>
+                                                            <span style={{ color: 'var(--text-muted-current)', fontWeight: '600', marginRight: '4px' }}>Place:</span>
+                                                            <strong style={{ color: '#111827' }}>{receipt.received_place}</strong>
+                                                          </div>
+                                                          <div>
+                                                            <span style={{ color: 'var(--text-muted-current)', fontWeight: '600', marginRight: '4px' }}>Vehicle No:</span>
+                                                            <strong style={{ color: '#111827' }}>{receipt.receive_vehicle_details}</strong>
+                                                          </div>
+                                                          <div>
+                                                            <span style={{ color: 'var(--text-muted-current)', fontWeight: '600', marginRight: '4px' }}>Date Received:</span>
+                                                            <strong style={{ color: '#111827' }}>{new Date(receipt.received_at).toLocaleString('en-IN')}</strong>
+                                                          </div>
+                                                        </div>
+
+                                                        {/* Rolls list */}
+                                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.68rem' }}>
+                                                          <thead>
+                                                            <tr style={{ borderBottom: '1.5px solid #eee', textAlign: 'left', fontWeight: '700', color: 'var(--text-muted-current)' }}>
+                                                              <th style={{ padding: '0.2rem' }}>S.No</th>
+                                                              <th style={{ padding: '0.2rem' }}>Processed Roll ID</th>
+                                                              <th style={{ padding: '0.2rem', textAlign: 'right' }}>Qty Received (m)</th>
+                                                            </tr>
+                                                          </thead>
+                                                          <tbody>
+                                                            {receipt.rolls.map((roll, rollIdx) => (
+                                                              <tr key={roll.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                                                                <td style={{ padding: '0.2rem' }}>{rollIdx + 1}</td>
+                                                                <td style={{ padding: '0.2rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>{roll.id}</td>
+                                                                <td style={{ padding: '0.2rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{parseFloat(roll.qty || 0).toFixed(2)} m</td>
+                                                              </tr>
+                                                            ))}
+                                                          </tbody>
+                                                        </table>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              });
+                                            })()}
                                           </div>
                                         ) : (
                                           <div style={{ display: 'flex', alignItems: 'center', height: '100%', color: '#b45309', fontSize: '0.75rem', fontWeight: '600' }}>
@@ -5261,20 +5791,36 @@ export default function ProcessingModule() {
                          <option value="Office">Office</option>
                        </select>
                      </div>
-                  </div>
 
-                  <div className="input-group" style={{ margin: 0 }}>
-                    <label className="input-label" style={{ fontWeight: '700' }}>Return Vehicle No (Optional)</label>
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        type="text"
-                        placeholder="e.g. TN-37-AB-1234"
-                        className="input-field"
-                        value={receiveVehicleNo}
-                        onChange={e => setReceiveVehicleNo(e.target.value)}
-                        style={{ paddingLeft: '2.25rem' }}
-                      />
-                      <Truck size={16} color="var(--text-muted-current)" style={{ position: 'absolute', left: '0.75rem', top: '12px' }} />
+                    <div className="input-group" style={{ margin: 0 }}>
+                      <label className="input-label" style={{ fontWeight: '700' }}>Processing DC Number</label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type="text"
+                          placeholder="e.g. DC-999"
+                          className="input-field"
+                          value={receiveDcNumber}
+                          onChange={e => setReceiveDcNumber(e.target.value)}
+                          required
+                          style={{ paddingLeft: '2.25rem' }}
+                        />
+                        <FileText size={16} color="var(--text-muted-current)" style={{ position: 'absolute', left: '0.75rem', top: '12px' }} />
+                      </div>
+                    </div>
+
+                    <div className="input-group" style={{ margin: 0 }}>
+                      <label className="input-label" style={{ fontWeight: '700' }}>Return Vehicle No (Optional)</label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type="text"
+                          placeholder="e.g. TN-37-AB-1234"
+                          className="input-field"
+                          value={receiveVehicleNo}
+                          onChange={e => setReceiveVehicleNo(e.target.value)}
+                          style={{ paddingLeft: '2.25rem' }}
+                        />
+                        <Truck size={16} color="var(--text-muted-current)" style={{ position: 'absolute', left: '0.75rem', top: '12px' }} />
+                      </div>
                     </div>
                   </div>
 
@@ -5606,7 +6152,19 @@ export default function ProcessingModule() {
                               </span>
                             </td>
                             <td style={{ padding: '0.75rem 0.75rem', whiteSpace: 'nowrap', fontWeight: '500' }}>{createdDate}</td>
-                            <td style={{ padding: '0.75rem 0.75rem', fontFamily: 'monospace', fontWeight: '700', color: 'var(--color-primary)' }}>{pof.pof_number}</td>
+                            <td style={{ padding: '0.75rem 0.75rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <div style={{ fontFamily: 'monospace', fontWeight: '700', color: 'var(--color-primary)' }}>{pof.pof_number}</div>
+                                {pof.is_rewash && (
+                                  <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px', fontWeight: 'bold' }}>Rewash</span>
+                                )}
+                              </div>
+                              {pof.processing_dc_numbers && pof.processing_dc_numbers.length > 0 && (
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', marginTop: '2px', fontWeight: '500' }}>
+                                  DC: <span style={{ fontWeight: '700', color: '#800000' }}>{pof.processing_dc_numbers.join(', ')}</span>
+                                </div>
+                              )}
+                            </td>
                             <td style={{ padding: '0.75rem 0.75rem', fontWeight: '600' }}>{pof.partner_name}</td>
                             <td style={{ padding: '0.75rem 0.75rem' }}>
                               <span style={{ fontWeight: '600', display: 'block' }}>{orderNo}</span>
@@ -5651,20 +6209,24 @@ export default function ProcessingModule() {
                                   fontWeight: '700',
                                   border: '1px solid',
                                   backgroundColor: 
+                                    (pof.is_rewash && !pof.is_billing) ? '#f0fdf4' :
                                     pof.payment_status === 'settled' ? '#ecfdf5' :
                                     pof.payment_status === 'approved' ? '#eff6ff' :
                                     pof.payment_status === 'submitted_for_approval' ? '#fffbeb' : '#f3f4f6',
                                   borderColor: 
+                                    (pof.is_rewash && !pof.is_billing) ? '#bbf7d0' :
                                     pof.payment_status === 'settled' ? '#a7f3d0' :
                                     pof.payment_status === 'approved' ? '#bfdbfe' :
                                     pof.payment_status === 'submitted_for_approval' ? '#fde68a' : '#e5e7eb',
                                   color: 
+                                    (pof.is_rewash && !pof.is_billing) ? '#166534' :
                                     pof.payment_status === 'settled' ? '#065f46' :
                                     pof.payment_status === 'approved' ? '#1e40af' :
                                     pof.payment_status === 'submitted_for_approval' ? '#92400e' : '#374151'
                                 }}
                               >
-                                {pof.payment_status === 'settled' ? 'Settled' :
+                                {(pof.is_rewash && !pof.is_billing) ? 'Free of Cost' :
+                                 pof.payment_status === 'settled' ? 'Settled' :
                                  pof.payment_status === 'approved' ? 'Approve' :
                                  pof.payment_status === 'submitted_for_approval' ? 'Submitted for Approval' : 'No Bill'}
                               </span>
@@ -5799,7 +6361,7 @@ export default function ProcessingModule() {
                                         <thead>
                                           <tr style={{ borderBottom: '1.5px solid #ddd', textAlign: 'left', fontWeight: '700', color: 'var(--text-muted-current)' }}>
                                             <th style={{ padding: '0.5rem 0.25rem' }}>Processed Roll ID</th>
-                                            <th style={{ padding: '0.5rem 0.25rem' }}>Process</th>
+                                            <th style={{ padding: '0.5rem 0.25rem' }}>DC Number</th>
                                             <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Qty Received</th>
                                             <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Shrinkage %</th>
                                           </tr>
@@ -5812,7 +6374,7 @@ export default function ProcessingModule() {
                                               return (
                                                 <tr key={roll.id} style={{ borderBottom: '1px solid #eee' }}>
                                                   <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af', fontFamily: 'monospace' }}>Pending</td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af' }}>{pof.processes?.join(', ') || '—'}</td>
+                                                  <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af' }}>—</td>
                                                   <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}>—</td>
                                                   <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}></td>
                                                 </tr>
@@ -5823,7 +6385,7 @@ export default function ProcessingModule() {
                                               return (
                                                 <tr key={`${roll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
                                                   <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>{rxRoll.id}</td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', color: 'var(--text-current)' }}>{pof.processes?.join(', ') || '—'}</td>
+                                                  <td style={{ padding: '0.5rem 0.25rem', fontWeight: '700', color: '#800000' }}>{rxRoll.processing_dc_no || '—'}</td>
                                                   <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{parseFloat(rxRoll.qty || 0).toFixed(2)} m</td>
                                                   <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '700' }}></td>
                                                 </tr>
@@ -5845,100 +6407,91 @@ export default function ProcessingModule() {
                                       </table>
                                     </div>
 
-                                    {/* Receipt Details */}
-                                    <div style={{ backgroundColor: 'white', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-current)', boxShadow: 'var(--shadow-sm)' }}>
-                                      <h4 style={{ margin: '0 0 1rem 0', color: '#047857', fontSize: '0.85rem', fontWeight: '800', borderBottom: '1px solid #eee', paddingBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                        📥 Receipt Details
-                                      </h4>
-                                      {pof.status === 'received' || pof.status === 'partially_received' ? (
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: '0.5rem 0.75rem', fontSize: '0.8rem', lineHeight: '1.5' }}>
-                                          <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Received By:</span>
-                                          <strong style={{ color: '#111827' }}>{pof.received_by || 'N/A'}</strong>
-                                          <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Return Place:</span>
-                                          <strong style={{ color: '#111827' }}>{pof.received_place || 'N/A'}</strong>
-                                          <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Return Vehicle No:</span>
-                                          <strong style={{ color: '#111827' }}>{pof.receive_vehicle_details || 'Hand Delivery'}</strong>
-                                          <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Received At:</span>
-                                          <strong style={{ color: '#111827' }}>{pof.received_at ? new Date(pof.received_at).toLocaleString('en-IN') : '—'}</strong>
-                                        </div>
-                                      ) : (
-                                        <div style={{ color: '#b45309', fontSize: '0.8rem', fontWeight: '600' }}>
-                                          ⚠️ Awaiting return of processed fabric rolls.
-                                        </div>
-                                      )}
-                                    </div>
+                                     {/* Receipt Details */}
+                                     <div style={{ backgroundColor: 'white', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-current)', boxShadow: 'var(--shadow-sm)' }}>
+                                       <h4 style={{ margin: '0 0 1rem 0', color: '#047857', fontSize: '0.85rem', fontWeight: '800', borderBottom: '1px solid #eee', paddingBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                         📥 Receipt Details (POFRR)
+                                       </h4>
+                                       {pof.status === 'received' || pof.status === 'partially_received' ? (
+                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                           {(() => {
+                                             // Group rolls by pofrr_number
+                                             const receiptsMap = {};
+                                             receivedRolls.forEach(roll => {
+                                               const pofrrNo = roll.pofrr_number || pof.pofrr_number || 'N/A';
+                                               if (!receiptsMap[pofrrNo]) {
+                                                 receiptsMap[pofrrNo] = {
+                                                   pofrr_number: pofrrNo,
+                                                   received_at: roll.received_at || pof.received_at || pof.updated_at,
+                                                   received_by: roll.received_by || pof.received_by || 'N/A',
+                                                   received_place: roll.received_place || pof.received_place || 'N/A',
+                                                   receive_vehicle_details: roll.receive_vehicle_details || pof.receive_vehicle_details || 'N/A',
+                                                   rolls: []
+                                                 };
+                                               }
+                                               receiptsMap[pofrrNo].rolls.push(roll);
+                                             });
 
-                                    {/* Associated POFRR list */}
-                                    {(pof.status === 'received' || pof.status === 'partially_received') && (
-                                      <div style={{ backgroundColor: 'white', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-current)', boxShadow: 'var(--shadow-sm)' }}>
-                                        <h4 style={{ margin: '0 0 1rem 0', color: '#047857', fontSize: '0.85rem', fontWeight: '800', borderBottom: '1px solid #eee', paddingBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                          📄 Associated POFRR Documents
-                                        </h4>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                          {(() => {
-                                            // Group rolls by pofrr_number
-                                            const receiptsMap = {};
-                                            receivedRolls.forEach(roll => {
-                                              const pofrrNo = roll.pofrr_number || pof.pofrr_number || 'N/A';
-                                              if (!receiptsMap[pofrrNo]) {
-                                                receiptsMap[pofrrNo] = {
-                                                  pofrr_number: pofrrNo,
-                                                  received_at: roll.received_at || pof.received_at || pof.updated_at,
-                                                  received_by: roll.received_by || pof.received_by || 'N/A',
-                                                  received_place: roll.received_place || pof.received_place || 'N/A',
-                                                  receive_vehicle_details: roll.receive_vehicle_details || pof.receive_vehicle_details || 'N/A',
-                                                  rolls: []
-                                                };
-                                              }
-                                              receiptsMap[pofrrNo].rolls.push(roll);
-                                            });
+                                             const receipts = Object.values(receiptsMap);
+                                             if (receipts.length === 0) {
+                                               return (
+                                                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)' }}>
+                                                   No POFRR documents found.
+                                                 </div>
+                                               );
+                                             }
 
-                                            const receipts = Object.values(receiptsMap);
-                                            if (receipts.length === 0) {
-                                              return (
-                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)' }}>
-                                                  No POFRR documents found.
-                                                </div>
-                                              );
-                                            }
-
-                                            return receipts.map((receipt, idx) => {
-                                              const isPofrrExpanded = expandedPofrrNo === receipt.pofrr_number;
-                                              const totalReceiptQty = receipt.rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
-                                              return (
-                                                <div 
-                                                  key={receipt.pofrr_number} 
-                                                  style={{ 
-                                                    display: 'flex', 
-                                                    flexDirection: 'column',
-                                                    backgroundColor: '#f9f9f9', 
-                                                    borderRadius: '8px', 
-                                                    border: '1px solid #eee',
-                                                    fontSize: '0.8rem',
-                                                    overflow: 'hidden'
-                                                  }}
-                                                >
-                                                  <div style={{
-                                                    display: 'flex',
-                                                    justifyContent: 'space-between',
-                                                    alignItems: 'center',
-                                                    padding: '0.65rem 0.75rem',
-                                                    cursor: 'pointer',
-                                                    backgroundColor: isPofrrExpanded ? '#f1f5f9' : 'transparent',
-                                                    borderBottom: isPofrrExpanded ? '1px solid #e2e8f0' : 'none',
-                                                    transition: 'background-color 0.15s ease'
-                                                  }} onClick={() => setExpandedPofrrNo(isPofrrExpanded ? null : receipt.pofrr_number)}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', display: 'inline-block', transform: isPofrrExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
-                                                        <ChevronRight size={14} />
-                                                      </span>
-                                                      <div>
-                                                        <strong style={{ display: 'block', color: 'var(--color-primary)', fontFamily: 'monospace' }}>
-                                                          {receipt.pofrr_number}
-                                                        </strong>
-                                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)' }}>
-                                                          Received {receipt.rolls.length} rolls ({totalReceiptQty.toFixed(2)} m) on {new Date(receipt.received_at).toLocaleDateString('en-IN')}
-                                                        </span>
+                                             return receipts.map((receipt, idx) => {
+                                               const isPofrrExpanded = expandedPofrrNo === receipt.pofrr_number;
+                                               const totalReceiptQty = receipt.rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+                                               return (
+                                                 <div 
+                                                   key={receipt.pofrr_number} 
+                                                   style={{ 
+                                                     display: 'flex', 
+                                                     flexDirection: 'column',
+                                                     backgroundColor: '#f9f9f9', 
+                                                     borderRadius: '8px', 
+                                                     border: '1px solid #eee',
+                                                     fontSize: '0.8rem',
+                                                     overflow: 'hidden'
+                                                   }}
+                                                 >
+                                                   <div style={{
+                                                     display: 'flex',
+                                                     justifyContent: 'space-between',
+                                                     alignItems: 'center',
+                                                     padding: '0.65rem 0.75rem',
+                                                     cursor: 'pointer',
+                                                     backgroundColor: isPofrrExpanded ? '#f1f5f9' : 'transparent',
+                                                     borderBottom: isPofrrExpanded ? '1px solid #e2e8f0' : 'none',
+                                                     transition: 'background-color 0.15s ease'
+                                                   }} onClick={() => setExpandedPofrrNo(isPofrrExpanded ? null : receipt.pofrr_number)}>
+                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                                                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', display: 'inline-block', transform: isPofrrExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
+                                                         <ChevronRight size={14} />
+                                                       </span>
+                                                       <div style={{ display: 'flex', gap: '1rem 1.5rem', flexWrap: 'wrap', flex: 1, alignItems: 'center' }}>
+                                                         <div>
+                                                           <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>POFRR</span>
+                                                           <strong style={{ fontFamily: 'monospace', color: 'var(--color-primary)' }}>{receipt.pofrr_number}</strong>
+                                                        </div>
+                                                        <div>
+                                                          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>DC NUMBER</span>
+                                                          <strong>{receipt.rolls?.[0]?.processing_dc_no || '—'}</strong>
+                                                        </div>
+                                                        <div>
+                                                          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>PLACE</span>
+                                                          <strong>{receipt.received_place || '—'}</strong>
+                                                        </div>
+                                                        <div>
+                                                          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>DATE</span>
+                                                          <strong>{new Date(receipt.received_at).toLocaleDateString('en-IN')}</strong>
+                                                        </div>
+                                                        <div>
+                                                          <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>ROLLS/QTY</span>
+                                                          <strong>{receipt.rolls.length} rolls ({totalReceiptQty.toFixed(2)} m)</strong>
+                                                        </div>
                                                       </div>
                                                     </div>
                                                     <button
@@ -5956,6 +6509,7 @@ export default function ProcessingModule() {
                                                           received_by: receipt.received_by,
                                                           received_place: receipt.received_place,
                                                           receive_vehicle_details: receipt.receive_vehicle_details,
+                                                          processing_dc_no: receipt.rolls?.[0]?.processing_dc_no || (pof.processing_dc_numbers && pof.processing_dc_numbers.length > 0 ? pof.processing_dc_numbers.join(', ') : '—'),
                                                           fabric_rolls: pof.fabric_rolls,
                                                           received_rolls: receipt.rolls,
                                                           all_received_rolls: pof.received_rolls || [],
@@ -5974,7 +6528,7 @@ export default function ProcessingModule() {
                                                       }}
                                                       className="hover-lift"
                                                     >
-                                                      <Printer size={12} /> View & Print
+                                                      <Printer size={12} /> Print
                                                     </button>
                                                   </div>
 
@@ -6026,8 +6580,12 @@ export default function ProcessingModule() {
                                             });
                                           })()}
                                         </div>
-                                      </div>
-                                    )}
+                                       ) : (
+                                         <div style={{ color: '#b45309', fontSize: '0.8rem', fontWeight: '600' }}>
+                                           ⚠️ Awaiting return of processed fabric rolls.
+                                         </div>
+                                       )}
+                                     </div>
 
                                   </div>
 
@@ -6070,10 +6628,15 @@ export default function ProcessingModule() {
                     setEditingBill(null);
                     setSelectedBillPartnerId('');
                     setSelectedBillPofIds([]);
+                    setSelectedBillPofId('');
+                    setSelectedBillDcNumbers([]);
+                    setExpandedDcNumber(null);
                     setProcessRates({});
                     setTaxAmountInput('');
                     setTaxPercentageInput('');
                     setBillNumberInput('');
+                    setPartnerInvoiceNo('');
+                    setPartnerInvoiceDate('');
                   }}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
@@ -6246,18 +6809,32 @@ export default function ProcessingModule() {
                                     <Printer size={12} /> Print
                                   </button>
                                   {bill.status === 'submitted_for_approval' && (
-                                    <button
-                                      onClick={() => handleEditBillClick(bill)}
-                                      style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                                        backgroundColor: '#fef3c7', border: '1px solid #f59e0b',
-                                        color: '#b45309', padding: '4px 10px', borderRadius: '6px',
-                                        fontSize: '0.7rem', fontWeight: '800', cursor: 'pointer'
-                                      }}
-                                      className="hover-lift"
-                                    >
-                                      <Edit size={12} /> Edit
-                                    </button>
+                                    <>
+                                      <button
+                                        onClick={() => handleEditBillClick(bill)}
+                                        style={{
+                                          display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                                          backgroundColor: '#fef3c7', border: '1px solid #f59e0b',
+                                          color: '#b45309', padding: '4px 10px', borderRadius: '6px',
+                                          fontSize: '0.7rem', fontWeight: '800', cursor: 'pointer'
+                                        }}
+                                        className="hover-lift"
+                                      >
+                                        <Edit size={12} /> Edit
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteBill(bill)}
+                                        style={{
+                                          display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                                          backgroundColor: '#fee2e2', border: '1px solid #ef4444',
+                                          color: '#b91c1c', padding: '4px 10px', borderRadius: '6px',
+                                          fontSize: '0.7rem', fontWeight: '800', cursor: 'pointer'
+                                        }}
+                                        className="hover-lift"
+                                      >
+                                        <Trash2 size={12} /> Delete
+                                      </button>
+                                    </>
                                   )}
                                   {/* Approve action removed here. Approvals are now handled exclusively in the Admin Approvals section. */}
                                   {profile?.role === 'admin' && bill.status === 'approved' && (
@@ -6284,38 +6861,109 @@ export default function ProcessingModule() {
                                     <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: '2rem', alignItems: 'start' }} className="fade-in">
                                       
                                       {/* Left: Billed POFs detail */}
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                                         <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: '800', color: 'var(--color-primary)' }}>
                                           Billed Processing Orders
                                         </h4>
-                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', border: '1px solid var(--border-current)', backgroundColor: 'white' }}>
-                                          <thead>
-                                            <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid var(--border-current)', fontWeight: '700' }}>
-                                              <th style={{ padding: '0.5rem' }}>POF Number</th>
-                                              <th style={{ padding: '0.5rem', textAlign: 'right' }}>Greige Sent Rolls</th>
-                                              <th style={{ padding: '0.5rem', textAlign: 'right' }}>Greige Sent Qty</th>
-                                              <th style={{ padding: '0.5rem', textAlign: 'right' }}>Processed Recd Rolls</th>
-                                              <th style={{ padding: '0.5rem', textAlign: 'right' }}>Processed Recd Qty</th>
-                                              <th style={{ padding: '0.5rem', textAlign: 'right' }}>Shrinkage</th>
-                                              <th style={{ padding: '0.5rem', textAlign: 'center' }}>Sent Date</th>
-                                              <th style={{ padding: '0.5rem', textAlign: 'center' }}>Recd Date</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {(bill.bill_items || []).map((item, idx) => (
-                                              <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
-                                                <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--color-primary)' }}>{item.pof_number}</td>
-                                                <td style={{ padding: '0.5rem', textAlign: 'right' }}>{item.greige_sent_rolls}</td>
-                                                <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600' }}>{Number(item.greige_sent_qty).toFixed(2)} m</td>
-                                                <td style={{ padding: '0.5rem', textAlign: 'right' }}>{item.processed_rolls_recd}</td>
-                                                <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{Number(item.processed_qty_recd).toFixed(2)} m</td>
-                                                <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '700', color: item.shrinkage > 0 ? '#b45309' : '#047857' }}>{Number(item.shrinkage).toFixed(2)}%</td>
-                                                <td style={{ padding: '0.5rem', textAlign: 'center' }}>{new Date(item.sent_date).toLocaleDateString('en-IN')}</td>
-                                                <td style={{ padding: '0.5rem', textAlign: 'center' }}>{item.received_date ? new Date(item.received_date).toLocaleDateString('en-IN') : '—'}</td>
-                                              </tr>
-                                            ))}
-                                          </tbody>
-                                        </table>
+                                        
+                                        {(() => {
+                                          const items = bill.bill_items || [];
+                                          // Group items by pof_number
+                                          const groups = {};
+                                          items.forEach(item => {
+                                            const pofNo = item.pof_number || 'N/A';
+                                            if (!groups[pofNo]) {
+                                              groups[pofNo] = [];
+                                            }
+                                            groups[pofNo].push(item);
+                                          });
+
+                                          return Object.entries(groups).map(([pofNo, groupItems]) => {
+                                            const mainItem = groupItems[0] || {};
+                                            const sentDateStr = mainItem.sent_date ? new Date(mainItem.sent_date).toLocaleDateString('en-IN') : '—';
+                                            const totalSentRolls = mainItem.greige_sent_rolls || 0;
+                                            const totalSentQty = mainItem.greige_sent_qty || 0;
+                                            const overallShrinkage = mainItem.shrinkage || 0;
+
+                                            return (
+                                              <div 
+                                                key={pofNo} 
+                                                style={{ 
+                                                  border: '1px solid var(--border-current)', 
+                                                  borderRadius: '8px', 
+                                                  backgroundColor: 'white',
+                                                  overflow: 'hidden'
+                                                }}
+                                              >
+                                                {/* POF Summary Card Header */}
+                                                <div style={{ 
+                                                  display: 'flex', 
+                                                  alignItems: 'center', 
+                                                  justifyContent: 'space-between', 
+                                                  padding: '0.75rem 1rem', 
+                                                  backgroundColor: 'rgba(128,0,0,0.03)', 
+                                                  borderBottom: '1px solid var(--border-current)',
+                                                  flexWrap: 'wrap',
+                                                  gap: '1rem'
+                                                }}>
+                                                  <div>
+                                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>POF NUMBER</span>
+                                                    <strong style={{ fontSize: '0.85rem', color: 'var(--color-primary)', fontFamily: 'monospace' }}>{pofNo}</strong>
+                                                  </div>
+                                                  <div>
+                                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>SENT DATE</span>
+                                                    <strong style={{ fontSize: '0.8rem' }}>{sentDateStr}</strong>
+                                                  </div>
+                                                  <div>
+                                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>GREIGE SENT ROLLS</span>
+                                                    <strong style={{ fontSize: '0.8rem' }}>{totalSentRolls} rolls</strong>
+                                                  </div>
+                                                  <div>
+                                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>GREIGE SENT QTY</span>
+                                                    <strong style={{ fontSize: '0.8rem' }}>{Number(totalSentQty).toFixed(2)} m</strong>
+                                                  </div>
+                                                  <div>
+                                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>OVERALL SHRINKAGE</span>
+                                                    <strong style={{ fontSize: '0.85rem', color: overallShrinkage > 0 ? '#b45309' : '#047857' }}>
+                                                      {Number(overallShrinkage).toFixed(2)}%
+                                                    </strong>
+                                                  </div>
+                                                </div>
+
+                                                {/* Delivery Challans Table */}
+                                                <div style={{ padding: '0.5rem 1rem 0.75rem' }}>
+                                                  <h5 style={{ margin: '0.5rem 0 0.5rem 0', fontSize: '0.72rem', color: 'var(--text-muted-current)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                    Received Delivery Challans (DCs)
+                                                  </h5>
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                                                    <thead>
+                                                      <tr style={{ borderBottom: '1px solid #e2e8f0', fontWeight: '700', color: '#475569' }}>
+                                                        <th style={{ padding: '0.4rem 0.25rem', textAlign: 'left' }}>DC Number</th>
+                                                        <th style={{ padding: '0.4rem 0.25rem', textAlign: 'left' }}>POFRR Number</th>
+                                                        <th style={{ padding: '0.4rem 0.25rem', textAlign: 'right' }}>Processed Recd Rolls</th>
+                                                        <th style={{ padding: '0.4rem 0.25rem', textAlign: 'right' }}>Processed Recd Qty</th>
+                                                        <th style={{ padding: '0.4rem 0.25rem', textAlign: 'center' }}>Received Date</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {groupItems.map((item, idx) => (
+                                                        <tr key={idx} style={{ borderBottom: idx === groupItems.length - 1 ? 'none' : '1px solid #f1f5f9' }}>
+                                                          <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontWeight: '700' }}>{item.processing_dc_no || '—'}</td>
+                                                          <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', color: 'var(--text-muted-current)' }}>{item.pofrr_number || '—'}</td>
+                                                          <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '500' }}>{item.processed_rolls_recd}</td>
+                                                          <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '700', color: '#047857' }}>{Number(item.processed_qty_recd).toFixed(2)} m</td>
+                                                          <td style={{ padding: '0.5rem 0.25rem', textAlign: 'center', color: '#475569' }}>
+                                                            {item.received_date ? new Date(item.received_date).toLocaleDateString('en-IN') : '—'}
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                              </div>
+                                            );
+                                          });
+                                        })()}
                                       </div>
 
                                       {/* Right: Rates Breakdown & Audit info */}
@@ -6413,133 +7061,215 @@ export default function ProcessingModule() {
                     </select>
                   </div>
 
-                  <div className="input-group filter-dropdown-container" style={{ margin: 0, position: 'relative' }}>
-                    <label className="input-label" style={{ fontWeight: '700' }}>Select POFs ({selectedBillPofIds.length} selected)</label>
-                    <div 
-                      onClick={() => {
-                        if (!selectedBillPartnerId) {
-                          alert('Please select a partner first.');
-                          return;
-                        }
-                        setIsBillPofDropdownOpen(!isBillPofDropdownOpen);
-                      }}
-                      style={{
-                        padding: '0.6rem 0.75rem', border: '1px solid var(--border-current)',
-                        borderRadius: '8px', fontSize: '0.85rem', background: 'var(--surface-current)',
-                        color: selectedBillPofIds.length === 0 ? 'var(--text-muted-current)' : 'var(--text-current)', 
-                        cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        minHeight: '38px', boxSizing: 'border-box'
-                      }}
+                  <div className="input-group" style={{ margin: 0 }}>
+                    <label className="input-label" style={{ fontWeight: '700' }}>Select POF</label>
+                    <select
+                      className="input-field"
+                      value={selectedBillPofId}
+                      onChange={e => handleBillPofChange(e.target.value)}
+                      required
+                      style={{ fontWeight: '600' }}
+                      disabled={!!editingBill}
                     >
-                      <span>
-                        {selectedBillPofIds.length === 0 
-                          ? 'Select Received POFs...' 
-                          : `${selectedBillPofIds.length} POF(s) Selected`
-                        }
-                      </span>
-                      {isBillPofDropdownOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    </div>
-                    
-                    {isBillPofDropdownOpen && (
-                      <div style={{
-                        position: 'absolute', top: '100%', left: 0, right: 0,
-                        backgroundColor: 'white', border: '1px solid var(--border-current)',
-                        borderRadius: '8px', zIndex: 100, maxHeight: '200px', overflowY: 'auto',
-                        marginTop: '4px', boxShadow: 'var(--shadow-lg)', padding: '0.5rem'
-                      }}>
-                        {receivedUnbilledPofs.length === 0 ? (
-                          <div style={{ padding: '0.5rem', color: 'var(--text-muted-current)', fontSize: '0.8rem', fontStyle: 'italic', textAlign: 'center' }}>
-                            No received, unbilled POFs found for this partner.
-                          </div>
-                        ) : (
-                          receivedUnbilledPofs.map(pof => {
-                            const isChecked = selectedBillPofIds.includes(pof.id);
-                            return (
-                              <label 
-                                key={pof.id}
-                                style={{
-                                  display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                  padding: '0.4rem 0.5rem', cursor: 'pointer', borderRadius: '4px',
-                                  backgroundColor: isChecked ? 'rgba(128,0,0,0.04)' : 'transparent'
-                                }}
-                                className="hover-bg"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => toggleBillPofSelection(pof.id)}
-                                  style={{ accentColor: 'var(--color-primary)' }}
-                                />
-                                <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>
-                                  {pof.pof_number} ({new Date(pof.created_at).toLocaleDateString('en-IN')})
-                                </span>
-                              </label>
-                            );
-                          })
-                        )}
-                      </div>
-                    )}
+                      <option value="">Select Received POF...</option>
+                      {receivedUnbilledPofs.map(pof => (
+                        <option key={pof.id} value={pof.id}>{pof.pof_number} ({new Date(pof.created_at).toLocaleDateString('en-IN')})</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                {/* Detailed Selected POFs List */}
-                {selectedPofsObjects.length > 0 && (
+                {selectedPofObject && (() => {
+                  const rollsSent = selectedPofObject.fabric_rolls || [];
+                  const rollsSentCount = rollsSent.length;
+                  const qtySent = rollsSent.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
+
+                  const receivedRolls = Array.isArray(selectedPofObject.received_rolls) ? selectedPofObject.received_rolls : [];
+                  const rollsReceivedCount = receivedRolls.length;
+                  const qtyReceived = receivedRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+
+                  const shrinkagePct = qtySent > 0 ? ((qtySent - qtyReceived) / qtySent) * 100 : 0;
+
+                  return (
+                    <div style={{
+                      marginTop: '1.25rem',
+                      padding: '1rem',
+                      border: '1px solid var(--border-current)',
+                      borderRadius: '12px',
+                      backgroundColor: '#f8fafc',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(5, 1fr)',
+                      gap: '0.75rem',
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ padding: '0.5rem', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted-current)', fontWeight: '750', textTransform: 'uppercase', marginBottom: '2px' }}>Rolls Sent</div>
+                        <div style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--text-current)' }}>{rollsSentCount}</div>
+                      </div>
+                      <div style={{ padding: '0.5rem', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted-current)', fontWeight: '750', textTransform: 'uppercase', marginBottom: '2px' }}>Qty Sent</div>
+                        <div style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--text-current)' }}>{qtySent.toFixed(2)} m</div>
+                      </div>
+                      <div style={{ padding: '0.5rem', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted-current)', fontWeight: '750', textTransform: 'uppercase', marginBottom: '2px' }}>Rolls Recd</div>
+                        <div style={{ fontSize: '1rem', fontWeight: '800', color: '#047857' }}>{rollsReceivedCount}</div>
+                      </div>
+                      <div style={{ padding: '0.5rem', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted-current)', fontWeight: '750', textTransform: 'uppercase', marginBottom: '2px' }}>Qty Recd</div>
+                        <div style={{ fontSize: '1rem', fontWeight: '800', color: '#047857' }}>{qtyReceived.toFixed(2)} m</div>
+                      </div>
+                      <div style={{ padding: '0.5rem', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted-current)', fontWeight: '750', textTransform: 'uppercase', marginBottom: '2px' }}>Shrinkage</div>
+                        <div style={{ fontSize: '1rem', fontWeight: '800', color: shrinkagePct > 0 ? '#b45309' : '#047857' }}>{shrinkagePct.toFixed(2)}%</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Delivery Challans (DC) & POFRR Reconciliation */}
+                {selectedPofObject && (
                   <div style={{ marginTop: '1rem' }}>
                     <h3 style={{ fontSize: '0.9rem', fontWeight: '800', color: 'var(--color-primary)', margin: '0 0 0.75rem 0' }}>
-                      Selected POFs Details
+                      Delivery Challans (DC) & POFRR Reconciliation
                     </h3>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', border: '1px solid var(--border-current)' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid var(--border-current)', fontWeight: '700' }}>
-                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>POF Number</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Greige Sent Rolls</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Greige Sent Qty</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Processed Recd Rolls</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Processed Recd Qty</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Shrinkage</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>Sent Date</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>Received Date</th>
-                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedPofsObjects.map(pof => {
-                          const rolls = pof.fabric_rolls || [];
-                          const qtySent = rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
-                          const receivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
-                          const qtyReceived = receivedRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
-                          const shrinkage = qtySent > 0 ? ((qtySent - qtyReceived) / qtySent) * 100 : 0;
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {pofDcs.length === 0 ? (
+                        <div style={{ padding: '1rem', border: '1px dashed var(--border-current)', borderRadius: '8px', color: 'var(--text-muted-current)', textAlign: 'center', fontSize: '0.8rem' }}>
+                          No received Delivery Challans found for this POF.
+                        </div>
+                      ) : (
+                        pofDcs.map(dc => {
+                          const isChecked = selectedBillDcNumbers.includes(dc.dc_number);
+                          const isExpanded = expandedDcNumber === dc.dc_number;
                           
-                          return (
-                            <tr key={pof.id} style={{ borderBottom: '1px solid var(--border-current)' }}>
-                              <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{pof.pof_number}</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'right' }}>{rolls.length}</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600' }}>{qtySent.toFixed(2)} m</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'right' }}>{receivedRolls.length}</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{qtyReceived.toFixed(2)} m</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '700', color: shrinkage > 0 ? '#b45309' : '#047857' }}>{shrinkage.toFixed(2)}%</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'center' }}>{new Date(pof.created_at).toLocaleDateString('en-IN')}</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'center' }}>{pof.received_at ? new Date(pof.received_at).toLocaleDateString('en-IN') : '—'}</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                                <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '0.65rem', fontWeight: '700', backgroundColor: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }}>
-                                  {pof.status}
-                                </span>
-                              </td>
-                            </tr>
+                           return (
+                             <div 
+                               key={dc.dc_number} 
+                               style={{ 
+                                 display: 'flex', 
+                                 flexDirection: 'column',
+                                 backgroundColor: '#f9fafb', 
+                                 borderRadius: '8px', 
+                                 border: '1px solid var(--border-current)',
+                                 fontSize: '0.8rem',
+                                 overflow: 'hidden'
+                               }}
+                             >
+                               {/* Header Row */}
+                               <div 
+                                 style={{ 
+                                   display: 'flex', 
+                                   alignItems: 'center', 
+                                   justifyContent: 'space-between', 
+                                   padding: '0.75rem 1rem', 
+                                   cursor: 'pointer',
+                                   borderBottom: isExpanded ? '1px solid var(--border-current)' : 'none'
+                                 }}
+                                 onClick={() => setExpandedDcNumber(isExpanded ? null : dc.dc_number)}
+                               >
+                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                   <span style={{ fontSize: '1.1rem' }}>📄</span>
+                                   <div>
+                                     <strong style={{ fontSize: '0.85rem', color: 'var(--color-primary)' }}>DC: {dc.dc_number}</strong>
+                                     <span style={{ marginLeft: '1rem', fontFamily: 'monospace', color: 'var(--text-muted-current)', fontSize: '0.75rem' }}>POFRR: {dc.pofrr_number}</span>
+                                   </div>
+                                 </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>ROLLS RECEIVED</span>
+                                    <strong style={{ color: '#047857' }}>{dc.received_rolls_count}</strong>
+                                  </div>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>QTY RECEIVED</span>
+                                    <strong style={{ color: '#047857' }}>{dc.qty_received.toFixed(2)} m</strong>
+                                  </div>
+                                  <div style={{ textAlign: 'right', minWidth: '100px' }}>
+                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', display: 'block', fontWeight: '600' }}>PLACE</span>
+                                    <strong style={{ color: '#1e293b' }}>{dc.received_place || '—'}</strong>
+                                  </div>
+                                  <div style={{ color: 'var(--text-muted-current)' }}>
+                                    {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Expansion Panel (Side-by-Side View) */}
+                              {isExpanded && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', padding: '1.25rem', backgroundColor: 'white' }} onClick={e => e.stopPropagation()}>
+                                  {/* Left Side: Sent Greige Rolls (POF Level) */}
+                                  <div>
+                                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.78rem', color: '#1e293b', fontWeight: '850', borderBottom: '1px solid #eee', paddingBottom: '0.25rem' }}>
+                                      📤 Greige Rolls Sent Details (POF Level)
+                                    </h4>
+                                    <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border-current)', borderRadius: '6px' }}>
+                                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                                        <thead>
+                                          <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border-current)', fontWeight: '700' }}>
+                                            <th style={{ padding: '0.4rem', textAlign: 'left' }}>Greige Roll ID</th>
+                                            <th style={{ padding: '0.4rem', textAlign: 'right' }}>Sent Qty</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {(selectedPofObject.fabric_rolls || []).map((r, rIdx) => (
+                                            <tr key={rIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                              <td style={{ padding: '0.4rem', fontFamily: 'monospace', fontWeight: '650' }}>{r.id}</td>
+                                              <td style={{ padding: '0.4rem', textAlign: 'right', fontWeight: '700' }}>{Number(r.actual_qty || r.qty).toFixed(2)} m</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+
+                                  {/* Right Side: Received Processed Rolls */}
+                                  <div>
+                                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.78rem', color: '#047857', fontWeight: '850', borderBottom: '1px solid #eee', paddingBottom: '0.25rem' }}>
+                                      📥 Processed Rolls Received Details
+                                    </h4>
+                                    <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border-current)', borderRadius: '6px' }}>
+                                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                                        <thead>
+                                          <tr style={{ backgroundColor: '#f0fdf4', borderBottom: '1px solid var(--border-current)', fontWeight: '700' }}>
+                                            <th style={{ padding: '0.4rem', textAlign: 'left' }}>Processed Roll ID</th>
+                                            <th style={{ padding: '0.4rem', textAlign: 'left' }}>Greige Source</th>
+                                            <th style={{ padding: '0.4rem', textAlign: 'right' }}>Recd Qty</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {dc.rolls.map((r, rIdx) => {
+                                            const rQty = parseFloat(r.qty || 0);
+                                            
+                                            return (
+                                              <tr key={rIdx} style={{ borderBottom: '1px solid #f0fdf4' }}>
+                                                <td style={{ padding: '0.4rem', fontFamily: 'monospace', fontWeight: '650', color: '#047857' }}>{r.id}</td>
+                                                <td style={{ padding: '0.4rem', fontFamily: 'monospace', color: 'var(--text-muted-current)' }}>{r.greige_roll_id}</td>
+                                                <td style={{ padding: '0.4rem', textAlign: 'right', fontWeight: '700', color: '#047857' }}>
+                                                  <div>{rQty.toFixed(2)} m</div>
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           );
-                        })}
-                      </tbody>
-                    </table>
+                        })
+                      )}
+                    </div>
                   </div>
                 )}
 
                 {/* Rates per Process & Calculations */}
-                {selectedPofsObjects.length > 0 && (() => {
-                  const totalActualQty = selectedPofsObjects.reduce((sum, pof) => {
-                    const rolls = pof.fabric_rolls || [];
-                    return sum + rolls.reduce((rSum, r) => rSum + parseFloat(r.actual_qty || r.qty || 0), 0);
-                  }, 0);
-                  const uniqueProcs = Array.from(new Set(selectedPofsObjects.flatMap(p => p.processes || [])));
+                {selectedPofObject ? (() => {
+                  const pofTotalSentQty = (selectedPofObject.fabric_rolls || []).reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
+                  const totalActualQty = pofTotalSentQty;
+                  const uniqueProcs = selectedPofObject.processes || [];
                   const sumRates = uniqueProcs.reduce((sum, proc) => sum + (parseFloat(processRates[proc]) || 0), 0);
                   const calculatedTotal = totalActualQty * sumRates;
 
@@ -6633,6 +7363,28 @@ export default function ProcessingModule() {
                             </div>
                           </div>
 
+                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                              <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Partner Invoice Number</label>
+                              <input
+                                type="text"
+                                placeholder="Enter partner invoice number..."
+                                value={partnerInvoiceNo}
+                                onChange={e => setPartnerInvoiceNo(e.target.value)}
+                                style={{ padding: '0.5rem 0.75rem', border: '1px solid var(--border-current)', borderRadius: '8px', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                              <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Partner Invoice Date</label>
+                              <input
+                                type="date"
+                                value={partnerInvoiceDate}
+                                onChange={e => setPartnerInvoiceDate(e.target.value)}
+                                style={{ padding: '0.5rem 0.75rem', border: '1px solid var(--border-current)', borderRadius: '8px', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                              />
+                            </div>
+                          </div>
+
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                             <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Bill Number</label>
                             <input
@@ -6656,10 +7408,10 @@ export default function ProcessingModule() {
 
                     </div>
                   );
-                })()}
+                })() : null}
 
                 {/* Form Submission Button */}
-                {selectedBillPofIds.length > 0 && (
+                {selectedBillPofId && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
                     <button
                       type="submit"
@@ -6713,7 +7465,7 @@ export default function ProcessingModule() {
           </div>
 
           {/* Search Box & Expandable Filters */}
-          <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', overflow: 'visible', position: 'relative', zIndex: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
               <div style={{ position: 'relative', width: '100%', maxWidth: '480px' }}>
                 <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted-current)' }} />
@@ -6764,17 +7516,20 @@ export default function ProcessingModule() {
             {/* Expandable Multi-select Filter panel */}
             {processedRollsShowFilters && (
               <div className="fade-in" style={{
-                backgroundColor: 'var(--bg-card-current, #fdfdfd)',
-                border: '1px solid var(--border-current)',
+                backgroundColor: '#f8f6f5',
+                border: '1.5px solid #d4c9c4',
                 borderRadius: '12px',
                 padding: '1.25rem',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '1rem',
-                boxShadow: 'var(--shadow-sm)',
-                marginTop: '0.25rem'
+                boxShadow: '0 2px 8px rgba(128, 0, 0, 0.06)',
+                marginTop: '0.25rem',
+                overflow: 'visible',
+                position: 'relative',
+                zIndex: 20
               }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1.25rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))', gap: '1.25rem', overflow: 'visible' }}>
                   {processedRollsFilterSpecs.map(spec => (
                     <ProcessedRollsMultiSelectDropdown
                       key={spec.key}
@@ -6834,14 +7589,14 @@ export default function ProcessingModule() {
                   <table className="table" style={{ fontSize: '0.78rem', width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ borderBottom: '1.5px solid var(--border-current)', textAlign: 'left' }}>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '11%' }}>Received Date</th>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '13%' }}>Processed Roll ID</th>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '13%' }}>POF & Partner</th>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '13%' }}>Order & Design</th>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '13%' }}>Process</th>
-                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', width: '8%' }}>Qty (m)</th>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '9%' }}>Location</th>
-                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', width: '12%' }}>Milestones</th>
+                        <th style={{ padding: '0.6rem 0.75rem', width: '10%' }}>Received Date</th>
+                        <th style={{ padding: '0.6rem 0.75rem', width: '18%' }}>Processed Roll ID</th>
+                        <th style={{ padding: '0.6rem 0.75rem', width: '12%' }}>POF & Partner</th>
+                        <th style={{ padding: '0.6rem 0.75rem', width: '12%' }}>Order & Design</th>
+                        <th style={{ padding: '0.6rem 0.75rem', width: '11%' }}>Process</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', width: '7%' }}>Qty (m)</th>
+                        <th style={{ padding: '0.6rem 0.75rem', width: '8%' }}>Location</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', width: '14%' }}>Milestones</th>
                         <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', width: '8%' }}>Action</th>
                       </tr>
                     </thead>
@@ -6886,7 +7641,7 @@ export default function ProcessingModule() {
                               {/* Processed Roll ID */}
                               <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle', overflow: 'visible' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                  <span style={{ fontFamily: 'monospace', fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-current)', wordBreak: 'break-all' }}>
+                                  <span style={{ fontFamily: 'monospace', fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-current)', whiteSpace: 'nowrap' }}>
                                     {roll.id}
                                   </span>
                                 </div>
@@ -7447,6 +8202,21 @@ export default function ProcessingModule() {
                 </div>
               </div>
 
+              {editingPof?.is_rewash && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                  <input
+                    type="checkbox"
+                    id="editIsBilling"
+                    checked={editPofIsBilling}
+                    onChange={e => setEditPofIsBilling(e.target.checked)}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="editIsBilling" style={{ fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', color: 'var(--text-current)' }}>
+                    Enable Billing (Chargeable Rewash)
+                  </label>
+                </div>
+              )}
+
               {/* Sent Greige Details (to delete a roll) */}
               <div style={{ border: '1px solid var(--border-current)', borderRadius: '12px', padding: '1rem', backgroundColor: '#fcfcfc' }}>
                 <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--color-primary)', fontSize: '0.85rem', fontWeight: '800', borderBottom: '1px solid #eee', paddingBottom: '0.4rem' }}>
@@ -7594,412 +8364,766 @@ export default function ProcessingModule() {
       )}
 
       {/* 4. PRINT MODAL (POPUP & PRINT CSS CONTROLLER) */}
-      {showPrintModal && createdPof && (
-        <div className="print-modal-overlay" style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '2rem'
-        }}>
-          <div 
-            className="print-container"
-            style={{
-              backgroundColor: '#fff', borderRadius: '12px', width: '100%', maxWidth: '800px',
-              maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column',
-              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)'
-            }}
-          >
-            {/* Modal Actions (No Print) */}
-            <div className="no-print" style={{
-              padding: '1rem 1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex',
-              justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9fafb',
-              borderTopLeftRadius: '12px', borderTopRightRadius: '12px'
+      {/* 4. PRINT MODAL (POPUP & PRINT CSS CONTROLLER) */}
+      {showPrintModal && createdPof && (() => {
+        // Calculate density styles and list partitions
+        const cellPadding = printDensity === 'extra-compact' ? '3px 6px' : printDensity === 'compact' ? '6px 10px' : '10px 14px';
+        const sectionMargin = printDensity === 'extra-compact' ? '0.75rem' : printDensity === 'compact' ? '1.25rem' : '2rem';
+        const rolls = createdPof.fabric_rolls || [];
+        const isTwoColumn = printLayout === 'two-column' && rolls.length > 1;
+        const half = Math.ceil(rolls.length / 2);
+        const col1 = isTwoColumn ? rolls.slice(0, half) : rolls;
+        const col2 = isTwoColumn ? rolls.slice(half) : [];
+
+        const renderTableHeader = () => (
+          <tr style={{ borderBottom: '2px solid #1e293b', textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f8fafc', color: '#1e293b' }}>
+            <th style={{ padding: cellPadding, width: '50px' }}>S.No</th>
+            <th style={{ padding: cellPadding }}>Fabric Roll QR ID</th>
+            <th style={{ padding: cellPadding, textAlign: 'right', width: '130px' }}>Inspected Qty (m)</th>
+          </tr>
+        );
+
+        const renderTableRow = (roll, index) => (
+          <tr key={roll.id} style={{ borderBottom: '1px solid #e2e8f0', color: '#334155' }}>
+            <td style={{ padding: cellPadding }}>{index + 1}</td>
+            <td style={{ padding: cellPadding, fontFamily: 'monospace', fontWeight: '600' }}>{roll.id}</td>
+            <td style={{ padding: cellPadding, textAlign: 'right', fontWeight: '700' }}>{Number(roll.actual_qty || roll.qty).toFixed(2)} m</td>
+          </tr>
+        );
+
+        return (
+          <div className="print-modal-overlay" style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '1.5rem'
+          }}>
+            {/* Main Modal Layout Container */}
+            <div className="print-modal-layout-container" style={{
+              display: 'flex', gap: '1.5rem', width: '100%', maxWidth: '1250px', height: '92vh',
+              maxHeight: '850px', color: '#1e293b'
             }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#111827', fontWeight: '800' }}>
-                Print Processing Order Form
-              </h3>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <button 
-                  onClick={() => window.print()} 
-                  className="btn btn-primary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}
-                >
-                  <Printer size={16} /> Print Order Form
-                </button>
-                <button 
-                  onClick={() => { setShowPrintModal(false); setCreatedPof(null); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
-                >
-                  <X size={24} />
-                </button>
-              </div>
-            </div>
-
-            {/* Print Body */}
-            <div style={{ padding: '3.5rem', color: '#000', backgroundColor: '#fff', flex: 1 }}>
               
-              {/* Print Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem', borderBottom: '2.5px solid #000', paddingBottom: '1.25rem' }}>
-                {/* Logo - Top Left */}
-                <div style={{ flex: '1', display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
-                  <img src="/logo.png" alt="Ashok Textiles" style={{ maxHeight: '72px', objectFit: 'contain' }} onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
-                  <div style={{ display: 'none' }}>
-                    <h1 style={{ margin: 0, fontSize: '2rem', fontWeight: 'bold' }}>ASHOK TEXTILES</h1>
-                  </div>
+              {/* Sidebar Control Panel (No Print) */}
+              <div className="no-print" style={{
+                width: '320px', backgroundColor: '#fff', borderRadius: '12px', padding: '1.5rem',
+                display: 'flex', flexDirection: 'column', gap: '1.25rem',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                border: '1px solid #e2e8f0', overflowY: 'auto'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+                  <Printer size={20} style={{ color: '#800000' }} />
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: '#1e293b' }}>
+                    POF Print Options
+                  </h3>
                 </div>
 
-                {/* Name / Title - Top Center */}
-                <div style={{ flex: '2', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-                  <div style={{ fontSize: '2.2rem', fontWeight: '950', letterSpacing: '1px', margin: 0, color: '#000', lineHeight: '1.1' }}>ASHOK TEXTILES</div>
-                  <div style={{ fontSize: '0.85rem', color: '#800000', fontWeight: '800', marginTop: '0.3rem', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                    Greige Fabric Outsource Processing Order
-                  </div>
-                  <h2 style={{ margin: '0.5rem 0 0 0', fontSize: '1.3rem', fontWeight: '900', color: '#800000', letterSpacing: '0.5px' }}>PROCESSING ORDER</h2>
-                </div>
-
-                {/* QR Code - Top Right */}
-                <div style={{ flex: '1', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-                  {pofQrUrl && (
-                    <img 
-                      src={pofQrUrl} 
-                      alt="POF QR Code" 
-                      style={{ width: '80px', height: '80px', objectFit: 'contain', border: '1.5px solid #000', padding: '2px', borderRadius: '4px' }} 
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* POF Metadata info */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '2rem', marginBottom: '2rem', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                {/* Layout Option */}
                 <div>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>POF Number:</strong> <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold' }}>{createdPof.pof_number}</span></p>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Processing Partner:</strong> {createdPof.partner_name}</p>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Expected Delivery Date:</strong> {new Date(createdPof.expected_delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Finished Width:</strong> {createdPof.width || '—'}</p>
+                  <label style={{ display: 'block', fontWeight: '700', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem', color: '#64748b' }}>
+                    Rolls Layout
+                  </label>
+                  <select 
+                    value={printLayout} 
+                    onChange={(e) => setPrintLayout(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '600', color: '#334155', backgroundColor: '#fff', outline: 'none' }}
+                  >
+                    <option value="two-column">Two-Column (Fits 30+ rolls)</option>
+                    <option value="single-column">Single Column (Standard)</option>
+                  </select>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Order Number:</strong> {pofOrderNo || createdPof.fabric_rolls[0]?.order_number}</p>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Design Number:</strong> {pofDesignNo || createdPof.fabric_rolls[0]?.design_no}</p>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Design Name:</strong> {pofDesignName || createdPof.fabric_rolls[0]?.design_name || '—'}</p>
-                </div>
-              </div>
 
-              {/* Processes Panel */}
-              <div style={{ border: '1.5px solid #000', padding: '1rem', borderRadius: '6px', marginBottom: '2rem', fontSize: '0.9rem' }}>
-                <strong>Required Outsource Processes:</strong>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  {createdPof.processes.map((proc, index) => (
-                    <span key={proc} style={{ border: '1px solid #333', padding: '3px 10px', borderRadius: '15px', fontSize: '0.8rem', fontWeight: 'bold', backgroundColor: '#f9f9f9' }}>
-                      {index + 1}. {proc}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Rolls Table */}
-              <h3 style={{ fontSize: '1rem', borderBottom: '1.5px solid #000', paddingBottom: '0.35rem', margin: '0 0 1rem 0' }}>
-                Fabric Rolls Consignment Details ({(createdPof.fabric_rolls || []).length} rolls)
-              </h3>
-
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '2.5rem', fontSize: '0.85rem' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #000', textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2' }}>
-                    <th style={{ padding: '0.6rem 0.75rem' }}>S.No</th>
-                    <th style={{ padding: '0.6rem 0.75rem' }}>Fabric Roll QR ID</th>
-                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Inspected Actual Qty (m)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(createdPof.fabric_rolls || []).map((roll, idx) => (
-                    <tr key={roll.id} style={{ borderBottom: '1px solid #ccc' }}>
-                      <td style={{ padding: '0.6rem 0.75rem' }}>{idx + 1}</td>
-                      <td style={{ padding: '0.6rem 0.75rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{roll.id}</td>
-                      <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 'bold' }}>{Number(roll.actual_qty || roll.qty).toFixed(2)} m</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr style={{ borderTop: '2px solid #000', fontWeight: 'bold' }}>
-                    <td colSpan="2" style={{ padding: '0.75rem', textAlign: 'right' }}>Grand Total Qty:</td>
-                    <td style={{ padding: '0.75rem', textAlign: 'right', fontSize: '0.95rem', color: '#000' }}>
-                      {(createdPof.fabric_rolls || []).reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0).toFixed(2)} m
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-
-              {/* Delivery and Vehicle info */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem', borderTop: '2px solid #000', paddingTop: '1.5rem', fontSize: '0.9rem' }}>
+                {/* Spacing Option */}
                 <div>
-                  <p style={{ margin: '0 0 0.5rem 0' }}><strong>Delivered By:</strong> {createdPof.delivered_by || 'Hand Delivery'}</p>
-                  <p style={{ margin: '0 0 0.5rem 0' }}><strong>Vehicle No:</strong> {createdPof.vehicle_details || 'N/A'}</p>
-                  <p style={{ margin: '0 0 0.5rem 0' }}><strong>Created By:</strong> {profile?.name || 'Administrator'}</p>
+                  <label style={{ display: 'block', fontWeight: '700', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem', color: '#64748b' }}>
+                    Row Spacing
+                  </label>
+                  <select 
+                    value={printDensity} 
+                    onChange={(e) => setPrintDensity(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '600', color: '#334155', backgroundColor: '#fff', outline: 'none' }}
+                  >
+                    <option value="extra-compact">Extra Compact</option>
+                    <option value="compact">Compact</option>
+                    <option value="normal">Normal</option>
+                  </select>
+                </div>
+
+                {/* Font Size Option */}
+                <div>
+                  <label style={{ display: 'block', fontWeight: '700', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem', color: '#64748b' }}>
+                    Print Font Size
+                  </label>
+                  <select 
+                    value={printFontSize} 
+                    onChange={(e) => setPrintFontSize(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '600', color: '#334155', backgroundColor: '#fff', outline: 'none' }}
+                  >
+                    <option value="small">Small (11px)</option>
+                    <option value="medium">Medium (13px)</option>
+                    <option value="large">Large (15px)</option>
+                  </select>
+                </div>
+
+                {/* Display Options */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.25rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={printShowLogo} onChange={(e) => setPrintShowLogo(e.target.checked)} style={{ width: '15px', height: '15px' }} />
+                    Show Company Logo
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={printShowQr} onChange={(e) => setPrintShowQr(e.target.checked)} style={{ width: '15px', height: '15px' }} />
+                    Show Order QR Code
+                  </label>
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
+                  <button 
+                    onClick={() => window.print()} 
+                    className="btn btn-primary"
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.65rem 1.25rem', fontSize: '0.85rem', fontWeight: '700', backgroundColor: '#800000', border: 'none', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}
+                  >
+                    <Printer size={16} /> Print Order Form
+                  </button>
+                  <button 
+                    onClick={() => { setShowPrintModal(false); setCreatedPof(null); }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.65rem 1.25rem', fontSize: '0.85rem', fontWeight: '700', backgroundColor: '#fff', border: '1px solid #cbd5e1', color: '#64748b', borderRadius: '6px', cursor: 'pointer' }}
+                  >
+                    <X size={16} /> Close Modal
+                  </button>
+                </div>
+              </div>
+
+              {/* Printable Preview Pane */}
+              <div 
+                className="print-container"
+                style={{
+                  backgroundColor: '#fff', borderRadius: '12px', flex: 1,
+                  overflowY: 'auto', display: 'flex', flexDirection: 'column',
+                  boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid #e2e8f0'
+                }}
+              >
+                {/* Top Bar for close/print inside preview panel (hidden on print) */}
+                <div className="no-print" style={{
+                  padding: '0.75rem 1.5rem', borderBottom: '1px solid #e2e8f0', display: 'flex',
+                  justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc',
+                  borderTopRightRadius: '12px'
+                }}>
+                  <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '600' }}>
+                    Print Preview (A4 Page Size)
+                  </span>
+                  <span style={{ fontSize: '0.8rem', color: '#800000', fontWeight: '700', backgroundColor: '#fef2f2', padding: '2px 8px', borderRadius: '12px' }}>
+                    {(createdPof.fabric_rolls || []).length} Greige Rolls
+                  </span>
+                </div>
+
+                {/* Print Paper Content */}
+                <div 
+                  className="print-paper"
+                  style={{ 
+                    padding: '2.5rem', 
+                    color: '#000', 
+                    backgroundColor: '#fff', 
+                    flex: 1,
+                    fontFamily: 'system-ui, -apple-system, sans-serif',
+                    fontSize: printFontSize === 'small' ? '11px' : printFontSize === 'medium' ? '13px' : '15px'
+                  }}
+                >
                   
-                  {createdPof.status === 'received' && (
-                    <div style={{ marginTop: '1rem', borderTop: '1px solid #ccc', paddingTop: '1rem' }}>
-                      <p style={{ margin: '0 0 0.5rem 0' }}><strong>Received By:</strong> {createdPof.received_by}</p>
-                      <p style={{ margin: '0 0 0.5rem 0' }}><strong>Return Vehicle No:</strong> {createdPof.receive_vehicle_details || 'Same/Hand Delivery'}</p>
-                      <p style={{ margin: '0 0 0.5rem 0' }}><strong>Date Received:</strong> {createdPof.received_at ? new Date(createdPof.received_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}</p>
+                  {/* Print Header */}
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    marginBottom: sectionMargin, 
+                    borderBottom: '3.5px double #800000', 
+                    paddingBottom: '1rem' 
+                  }}>
+                    {/* Left: Company Logo */}
+                    <div style={{ flex: '1', display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+                      {printShowLogo && (
+                        <img 
+                          src="/logo.png" 
+                          alt="Company Logo" 
+                          style={{ maxHeight: '56px', objectFit: 'contain' }} 
+                          onError={(e) => { e.target.style.display='none'; }} 
+                        />
+                      )}
                     </div>
-                  )}
-                </div>
-                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between', height: createdPof.status === 'received' ? '180px' : '100px' }}>
-                  <div>
-                    <div style={{ borderBottom: '1px dashed #000', width: '180px', height: '40px' }} />
-                    <div style={{ width: '180px', textAlign: 'center', fontWeight: 'bold', fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                      Authorized Dispatch Signature
+
+                    {/* Center: Centered Company Name and Header Title */}
+                    <div style={{ flex: '2', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
+                      <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '950', color: '#1e293b', letterSpacing: '0.5px', lineHeight: '1.1' }}>
+                        ASHOK TEXTILES
+                      </h1>
+                      <span style={{ fontSize: '0.95rem', fontWeight: '800', color: '#800000', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                        PROCESSING ORDER FORM
+                      </span>
                     </div>
-                  </div>
-                  {createdPof.status === 'received' && (
-                    <div style={{ marginTop: '1rem' }}>
-                      <div style={{ borderBottom: '1px dashed #000', width: '180px', height: '40px' }} />
-                      <div style={{ width: '180px', textAlign: 'center', fontWeight: 'bold', fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                        Authorized Receipt Signature
+
+                    {/* Right: QR Code and POF Number stacked */}
+                    <div style={{ flex: '1', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
+                      {printShowQr && pofQrUrl && (
+                        <img 
+                          src={pofQrUrl} 
+                          alt="POF QR Code" 
+                          style={{ width: '60px', height: '60px', objectFit: 'contain', border: '1px solid #cbd5e1', padding: '2px', borderRadius: '4px' }} 
+                        />
+                      )}
+                      <div style={{ 
+                        fontSize: '0.75rem', 
+                        fontWeight: '800', 
+                        color: '#800000', 
+                        border: '1.5px solid #800000', 
+                        padding: '2px 8px', 
+                        borderRadius: '4px', 
+                        textTransform: 'uppercase', 
+                        fontFamily: 'monospace',
+                        backgroundColor: '#fff'
+                      }}>
+                        {createdPof.pof_number}
                       </div>
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
 
-            </div>
-          </div>
-
-          {/* Global print style controller */}
-          <style>{`
-            @media print {
-              body * {
-                visibility: hidden;
-              }
-              .print-modal-overlay, .print-modal-overlay * {
-                visibility: visible;
-              }
-              .print-modal-overlay {
-                position: absolute !important;
-                top: 0 !important;
-                left: 0 !important;
-                width: 100% !important;
-                height: auto !important;
-                min-height: 100% !important;
-                display: block !important;
-                background: none !important;
-                padding: 0 !important;
-                overflow: visible !important;
-              }
-              .print-container, .print-container * {
-                visibility: visible;
-              }
-              .print-container {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                height: auto !important;
-                max-height: none !important;
-                overflow: visible !important;
-                box-shadow: none !important;
-              }
-              .no-print {
-                display: none !important;
-              }
-            }
-          `}</style>
-        </div>
-      )}
-
-      {/* POFRR PRINT MODAL */}
-      {showPofrrPrintModal && createdPofrr && (
-        <div className="print-modal-overlay" style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '2rem'
-        }}>
-          <div 
-            className="print-container"
-            style={{
-              backgroundColor: '#fff', borderRadius: '12px', width: '100%', maxWidth: '800px',
-              maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column',
-              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)'
-            }}
-          >
-            {/* Modal Actions (No Print) */}
-            <div className="no-print" style={{
-              padding: '1rem 1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex',
-              justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9fafb',
-              borderTopLeftRadius: '12px', borderTopRightRadius: '12px'
-            }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#111827', fontWeight: '800' }}>
-                Print Processing Order Fabric Receipt Register (POFRR)
-              </h3>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <button 
-                  onClick={() => window.print()} 
-                  className="btn btn-primary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}
-                >
-                  <Printer size={16} /> Print POFRR
-                </button>
-                <button 
-                  onClick={() => { setShowPofrrPrintModal(false); setCreatedPofrr(null); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
-                >
-                  <X size={24} />
-                </button>
-              </div>
-            </div>
-
-            {/* Print Body */}
-            <div style={{ padding: '3.5rem', color: '#000', backgroundColor: '#fff', flex: 1 }}>
-              
-              {/* Print Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem', borderBottom: '2.5px solid #000', paddingBottom: '1.25rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                  <div style={{ fontSize: '2.2rem', fontWeight: '950', letterSpacing: '1px', margin: 0, color: '#000', lineHeight: '1.1' }}>ASHOK TEXTILES</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '900', color: '#800000', letterSpacing: '0.5px' }}>FABRIC RECEIPT REGISTER</h2>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#555' }}>POFRR</div>
-                </div>
-              </div>
-
-              {/* POFRR Metadata info */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '2rem', marginBottom: '2rem', fontSize: '0.9rem', lineHeight: '1.6' }}>
-                <div>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>POFRR Number:</strong> <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold' }}>{createdPofrr.pofrr_number}</span></p>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>POF Reference:</strong> <span style={{ fontFamily: 'monospace', fontSize: '0.95rem' }}>{createdPofrr.pof_number}</span></p>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Processing Partner:</strong> {createdPofrr.partner_name}</p>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Finished Width:</strong> {createdPofrr.width || '—'}</p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Date Sent:</strong> {new Date(createdPofrr.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Date Received:</strong> {new Date(createdPofrr.received_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
-                  <p style={{ margin: '0 0 0.35rem 0' }}><strong>Expected Return Date:</strong> {new Date(createdPofrr.expected_delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
-                </div>
-              </div>
-
-              {/* Summary Metrics */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', border: '1.5px solid #000', padding: '1rem', borderRadius: '6px', marginBottom: '2rem', backgroundColor: '#f9f9f9' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <span style={{ fontSize: '0.7rem', color: '#555', display: 'block', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Sent Qty</span>
-                  <strong style={{ fontSize: '1.1rem' }}>
-                    {createdPofrr.fabric_rolls?.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0).toFixed(2)} m
-                  </strong>
-                </div>
-                <div style={{ textAlign: 'center', borderLeft: '1px solid #ccc' }}>
-                  <span style={{ fontSize: '0.7rem', color: '#555', display: 'block', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Received Qty</span>
-                  <strong style={{ fontSize: '1.1rem', color: '#047857' }}>
-                    {createdPofrr.received_rolls?.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0).toFixed(2)} m
-                  </strong>
-                </div>
-                <div style={{ textAlign: 'center', borderLeft: '1px solid #ccc' }}>
-                  <span style={{ fontSize: '0.7rem', color: '#555', display: 'block', fontWeight: 'bold', textTransform: 'uppercase' }}>Difference (Loss)</span>
-                  <strong style={{ fontSize: '1.1rem', color: '#b91c1c' }}>
-                    {(() => {
-                      const sent = createdPofrr.fabric_rolls?.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0) || 0;
-                      const recd = createdPofrr.received_rolls?.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0) || 0;
-                      return (sent - recd).toFixed(2);
-                    })()} m
-                  </strong>
-                </div>
-                <div style={{ textAlign: 'center', borderLeft: '1px solid #ccc' }}>
-                  <span style={{ fontSize: '0.7rem', color: '#555', display: 'block', fontWeight: 'bold', textTransform: 'uppercase' }}>Overall Shrinkage</span>
-                  <strong style={{ fontSize: '1.1rem', color: '#b45309' }}>
-                    {(() => {
-                      const sent = createdPofrr.fabric_rolls?.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0) || 0;
-                      const recd = createdPofrr.received_rolls?.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0) || 0;
-                      const pct = sent > 0 ? ((sent - recd) / sent) * 100 : 0;
-                      return `${pct.toFixed(2)}%`;
-                    })()}
-                  </strong>
-                </div>
-              </div>
-
-              {/* Comparison Table */}
-              <h3 style={{ fontSize: '1rem', borderBottom: '1.5px solid #000', paddingBottom: '0.35rem', margin: '0 0 1rem 0' }}>
-                Rolls Reconciliation Details
-              </h3>
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '2.5rem', fontSize: '0.85rem' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #000', textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2' }}>
-                    <th style={{ padding: '0.6rem 0.5rem', width: '80px' }}>S.No</th>
-                    <th style={{ padding: '0.6rem 0.5rem' }}>Fabric Received ID</th>
-                    <th style={{ padding: '0.6rem 0.5rem', textAlign: 'right', width: '150px' }}>Received Qty (m)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(createdPofrr.received_rolls || []).map((roll, idx) => {
-                    const recdQty = parseFloat(roll.qty || 0);
-
-                    return (
-                      <tr key={idx} style={{ borderBottom: '1px solid #ccc' }}>
-                        <td style={{ padding: '0.6rem 0.5rem' }}>{idx + 1}</td>
-                        <td style={{ padding: '0.6rem 0.5rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{roll.id}</td>
-                        <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', fontWeight: 'bold', color: '#047857' }}>{recdQty.toFixed(2)} m</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-
-              {/* Delivery and Vehicle info */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem', borderTop: '2px solid #000', paddingTop: '1.5rem', fontSize: '0.9rem' }}>
-                <div>
-                  <p style={{ margin: '0 0 0.5rem 0' }}><strong>Received By:</strong> {createdPofrr.received_by || 'N/A'}</p>
-                  <p style={{ margin: '0 0 0.5rem 0' }}><strong>Received Place:</strong> {createdPofrr.received_place || 'N/A'}</p>
-                  <p style={{ margin: '0 0 0.5rem 0' }}><strong>Return Vehicle No:</strong> {createdPofrr.receive_vehicle_details || 'Hand Delivery'}</p>
-                  <p style={{ margin: '0 0 0.5rem 0' }}><strong>Status:</strong> {createdPofrr.status === 'received' ? 'Fully Received' : 'Partially Received'}</p>
-                </div>
-                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between', height: '120px' }}>
-                  <div>
-                    <div style={{ borderBottom: '1px dashed #000', width: '180px', height: '40px' }} />
-                    <div style={{ width: '180px', textAlign: 'center', fontWeight: 'bold', fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                      Receiver Signature
+                  {/* Metadata Grid (Invoice-style structure) */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    border: '1.5px solid #1e293b',
+                    borderRadius: '8px',
+                    marginBottom: sectionMargin,
+                    overflow: 'hidden',
+                    backgroundColor: '#fff'
+                  }}>
+                    <div style={{ padding: '0.6rem 0.8rem', borderRight: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1' }}>
+                      <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', display: 'block', marginBottom: '2px' }}>Processing Partner</span>
+                      <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>{createdPof.partner_name}</strong>
+                    </div>
+                    <div style={{ padding: '0.6rem 0.8rem', borderBottom: '1px solid #cbd5e1' }}>
+                      <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', display: 'block', marginBottom: '2px' }}>Expected Delivery Date</span>
+                      <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>
+                        {new Date(createdPof.expected_delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '0.6rem 0.8rem', borderRight: '1px solid #cbd5e1' }}>
+                      <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', display: 'block', marginBottom: '2px' }}>Order & Design Details</span>
+                      <div style={{ fontSize: '0.8rem', color: '#1e293b', lineHeight: '1.4' }}>
+                        Order No: <strong>{pofOrderNo || createdPof.fabric_rolls[0]?.order_number || 'N/A'}</strong><br />
+                        Design No: <strong>{pofDesignNo || createdPof.fabric_rolls[0]?.design_no || 'N/A'} ({pofDesignName || createdPof.fabric_rolls[0]?.design_name || 'N/A'})</strong>
+                      </div>
+                    </div>
+                    <div style={{ padding: '0.6rem 0.8rem' }}>
+                      <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: '#64748b', fontWeight: '800', display: 'block', marginBottom: '2px' }}>Finished Width Specification</span>
+                      <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>{createdPof.width ? `${createdPof.width} inches` : '—'}</strong>
                     </div>
                   </div>
+
+                  {/* Processes Panel */}
+                  <div style={{ marginBottom: sectionMargin }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: '800', color: '#475569', display: 'block', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Required Outsource Processes:
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                      {createdPof.processes.map((proc, index) => (
+                        <span key={proc} style={{
+                          border: '1.5px solid #cbd5e1',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          fontWeight: '700',
+                          backgroundColor: '#f8fafc',
+                          color: '#334155',
+                          textTransform: 'uppercase'
+                        }}>
+                          {index + 1}. {proc}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Table Header Section */}
+                  <h3 style={{ fontSize: '0.85rem', borderBottom: '1.5px solid #1e293b', paddingBottom: '0.25rem', margin: `0 0 ${sectionMargin} 0`, color: '#1e293b', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Fabric Rolls Consignment Details ({(createdPof.fabric_rolls || []).length} rolls)
+                  </h3>
+
+                  {/* Rolls Table */}
+                  {isTwoColumn ? (
+                    <div style={{ display: 'flex', gap: '1.5rem', marginBottom: sectionMargin }}>
+                      <div style={{ flex: 1 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'inherit' }}>
+                          <thead>
+                            {renderTableHeader()}
+                          </thead>
+                          <tbody>
+                            {col1.map((roll, idx) => renderTableRow(roll, idx))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'inherit' }}>
+                          <thead>
+                            {renderTableHeader()}
+                          </thead>
+                          <tbody>
+                            {col2.map((roll, idx) => renderTableRow(roll, idx + half))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: sectionMargin, fontSize: 'inherit' }}>
+                      <thead>
+                        {renderTableHeader()}
+                      </thead>
+                      <tbody>
+                        {rolls.map((roll, idx) => renderTableRow(roll, idx))}
+                      </tbody>
+                    </table>
+                  )}
+
+                  {/* Summary Totals Block */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    marginBottom: sectionMargin,
+                    borderTop: '2px solid #1e293b',
+                    paddingTop: '0.5rem'
+                  }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 120px', gap: '0.4rem 1rem', textAlign: 'right', fontSize: '0.85rem' }}>
+                      <div style={{ color: '#64748b', fontWeight: '700' }}>Total Rolls:</div>
+                      <div style={{ fontWeight: '700', color: '#1e293b' }}>{rolls.length} rolls</div>
+                      <div style={{ color: '#64748b', fontWeight: '700' }}>Grand Total Qty:</div>
+                      <div style={{ fontWeight: '800', color: '#800000', fontSize: '1rem' }}>
+                        {rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0).toFixed(2)} m
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Delivery and Vehicle info */}
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: '1.5fr 1fr', 
+                    gap: '2rem', 
+                    borderTop: '1.5px solid #1e293b', 
+                    paddingTop: '1rem', 
+                    fontSize: '0.85rem',
+                    color: '#334155'
+                  }}>
+                    <div>
+                      <p style={{ margin: '0 0 0.4rem 0' }}><strong>Delivered By:</strong> {createdPof.delivered_by || 'Hand Delivery'}</p>
+                      <p style={{ margin: '0 0 0.4rem 0' }}><strong>Vehicle No:</strong> {createdPof.vehicle_details || 'N/A'}</p>
+                      <p style={{ margin: '0 0 0.4rem 0' }}><strong>Created By:</strong> {profile?.name || 'Administrator'}</p>
+                      
+                      {createdPof.status === 'received' && (
+                        <div style={{ marginTop: '0.75rem', borderTop: '1px dashed #cbd5e1', paddingTop: '0.75rem' }}>
+                          <p style={{ margin: '0 0 0.4rem 0' }}><strong>Received By:</strong> {createdPof.received_by}</p>
+                          <p style={{ margin: '0 0 0.4rem 0' }}><strong>Return Vehicle No:</strong> {createdPof.receive_vehicle_details || 'Same/Hand Delivery'}</p>
+                          <p style={{ margin: '0 0 0.4rem 0' }}><strong>Date Received:</strong> {createdPof.received_at ? new Date(createdPof.received_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between', height: createdPof.status === 'received' ? '160px' : '90px' }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ borderBottom: '1px dashed #475569', width: '180px', height: '40px' }} />
+                        <div style={{ width: '180px', textAlign: 'center', fontWeight: 'bold', fontSize: '0.75rem', marginTop: '0.35rem', color: '#64748b' }}>
+                          Authorized Dispatch Signature
+                        </div>
+                      </div>
+                      {createdPof.status === 'received' && (
+                        <div style={{ textAlign: 'center', marginTop: '1rem' }}>
+                          <div style={{ borderBottom: '1px dashed #475569', width: '180px', height: '40px' }} />
+                          <div style={{ width: '180px', textAlign: 'center', fontWeight: 'bold', fontSize: '0.75rem', marginTop: '0.35rem', color: '#64748b' }}>
+                            Authorized Receipt Signature
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+            {/* Global print style controller */}
+            <style>{`
+              @media print {
+                body * {
+                  visibility: hidden;
+                }
+                .print-modal-overlay, .print-modal-overlay * {
+                  visibility: visible;
+                }
+                .print-modal-overlay {
+                  position: absolute !important;
+                  top: 0 !important;
+                  left: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  min-height: 100% !important;
+                  display: block !important;
+                  background: none !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                }
+                .print-modal-layout-container {
+                  display: block !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  height: auto !important;
+                  max-height: none !important;
+                  gap: 0 !important;
+                }
+                .print-container, .print-container * {
+                  visibility: visible;
+                }
+                .print-container {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                }
+                .no-print {
+                  display: none !important;
+                }
+              }
+            `}</style>
+          </div>
+        );
+      })()}
+
+      {/* POFRR PRINT MODAL */}
+      {showPofrrPrintModal && createdPofrr && (() => {
+        // Calculate density styles and list partitions
+        const cellPadding = printDensity === 'extra-compact' ? '3px 6px' : printDensity === 'compact' ? '6px 10px' : '10px 14px';
+        const sectionMargin = printDensity === 'extra-compact' ? '0.75rem' : printDensity === 'compact' ? '1.25rem' : '2rem';
+        const rolls = createdPofrr.received_rolls || [];
+        const isTwoColumn = printLayout === 'two-column' && rolls.length > 1;
+        const half = Math.ceil(rolls.length / 2);
+        const col1 = isTwoColumn ? rolls.slice(0, half) : rolls;
+        const col2 = isTwoColumn ? rolls.slice(half) : [];
+
+        const renderTableHeader = () => (
+          <tr style={{ borderBottom: '2px solid #000', textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2' }}>
+            <th style={{ padding: cellPadding, width: '60px' }}>S.No</th>
+            <th style={{ padding: cellPadding }}>Fabric Received ID</th>
+            <th style={{ padding: cellPadding, textAlign: 'right', width: '130px' }}>Received Qty (m)</th>
+          </tr>
+        );
+
+        const renderTableRow = (roll, index) => {
+          const recdQty = parseFloat(roll.qty || 0);
+          return (
+            <tr key={roll.id} style={{ borderBottom: '1px solid #ccc' }}>
+              <td style={{ padding: cellPadding }}>{index + 1}</td>
+              <td style={{ padding: cellPadding, fontFamily: 'monospace', fontWeight: 'bold' }}>{roll.id}</td>
+              <td style={{ padding: cellPadding, textAlign: 'right', fontWeight: 'bold', color: '#047857' }}>{recdQty.toFixed(2)} m</td>
+            </tr>
+          );
+        };
+
+        return (
+          <div className="print-modal-overlay" style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '1.5rem'
+          }}>
+            {/* Main Modal Layout Container */}
+            <div className="print-modal-layout-container" style={{
+              display: 'flex', gap: '1.5rem', width: '100%', maxWidth: '1250px', height: '92vh',
+              maxHeight: '850px', color: '#1e293b'
+            }}>
+              
+              {/* Sidebar Control Panel (No Print) */}
+              <div className="no-print" style={{
+                width: '320px', backgroundColor: '#fff', borderRadius: '12px', padding: '1.5rem',
+                display: 'flex', flexDirection: 'column', gap: '1.25rem',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                border: '1px solid #e2e8f0', overflowY: 'auto'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+                  <Printer size={20} style={{ color: '#800000' }} />
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: '#1e293b' }}>
+                    POFRR Print Options
+                  </h3>
+                </div>
+
+                {/* Layout Option */}
+                <div>
+                  <label style={{ display: 'block', fontWeight: '700', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem', color: '#64748b' }}>
+                    Rolls Layout
+                  </label>
+                  <select 
+                    value={printLayout} 
+                    onChange={(e) => setPrintLayout(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '600', color: '#334155', backgroundColor: '#fff', outline: 'none' }}
+                  >
+                    <option value="two-column">Two-Column (Fits 30+ rolls)</option>
+                    <option value="single-column">Single Column (Standard)</option>
+                  </select>
+                </div>
+
+                {/* Spacing Option */}
+                <div>
+                  <label style={{ display: 'block', fontWeight: '700', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem', color: '#64748b' }}>
+                    Row Spacing
+                  </label>
+                  <select 
+                    value={printDensity} 
+                    onChange={(e) => setPrintDensity(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '600', color: '#334155', backgroundColor: '#fff', outline: 'none' }}
+                  >
+                    <option value="extra-compact">Extra Compact</option>
+                    <option value="compact">Compact</option>
+                    <option value="normal">Normal</option>
+                  </select>
+                </div>
+
+                {/* Font Size Option */}
+                <div>
+                  <label style={{ display: 'block', fontWeight: '700', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem', color: '#64748b' }}>
+                    Font Size
+                  </label>
+                  <select 
+                    value={printFontSize} 
+                    onChange={(e) => setPrintFontSize(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '600', color: '#334155', backgroundColor: '#fff', outline: 'none' }}
+                  >
+                    <option value="small">Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="large">Large</option>
+                  </select>
                 </div>
               </div>
 
-            </div>
-          </div>
+              {/* Main Print Container */}
+              <div 
+                className="print-container"
+                style={{
+                  backgroundColor: '#fff', borderRadius: '12px', flex: 1,
+                  display: 'flex', flexDirection: 'column', overflowY: 'auto',
+                  boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid #e2e8f0',
+                  maxHeight: '100%'
+                }}
+              >
+                {/* Modal Actions (No Print) */}
+                <div className="no-print" style={{
+                  padding: '1rem 1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex',
+                  justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9fafb',
+                  borderTopLeftRadius: '12px', borderTopRightRadius: '12px'
+                }}>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#111827', fontWeight: '800' }}>
+                    Print Processing Order Fabric Receipt Register (POFRR)
+                  </h3>
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button 
+                      onClick={() => window.print()} 
+                      className="btn btn-primary"
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}
+                    >
+                      <Printer size={16} /> Print POFRR
+                    </button>
+                    <button 
+                      onClick={() => { setShowPofrrPrintModal(false); setCreatedPofrr(null); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
+                    >
+                      <X size={24} />
+                    </button>
+                  </div>
+                </div>
 
-          <style>{`
-            @media print {
-              body * {
-                visibility: hidden;
+                {/* Print Body */}
+                <div style={{
+                  padding: '3.5rem',
+                  color: '#000',
+                  backgroundColor: '#fff',
+                  flex: 1,
+                  fontSize: printFontSize === 'small' ? '0.785rem' : printFontSize === 'medium' ? '0.875rem' : '1rem'
+                }}>
+                  
+                  {/* Print Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: sectionMargin, borderBottom: '2.5px solid #000', paddingBottom: '1.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                      <div style={{ fontSize: '2.2rem', fontWeight: '950', letterSpacing: '1px', margin: 0, color: '#000', lineHeight: '1.1' }}>ASHOK TEXTILES</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '900', color: '#800000', letterSpacing: '0.5px' }}>FABRIC RECEIPT REGISTER</h2>
+                      <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#555' }}>POFRR</div>
+                    </div>
+                  </div>
+
+                  {/* POFRR Metadata info */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '2rem', marginBottom: sectionMargin, fontSize: 'inherit', lineHeight: '1.6' }}>
+                    <div>
+                      <p style={{ margin: '0 0 0.35rem 0' }}><strong>POFRR Number:</strong> <span style={{ fontFamily: 'monospace', fontSize: '1.05em', fontWeight: 'bold' }}>{createdPofrr.pofrr_number}</span></p>
+                      <p style={{ margin: '0 0 0.35rem 0' }}><strong>POF Reference:</strong> <span style={{ fontFamily: 'monospace', fontSize: '1em' }}>{createdPofrr.pof_number}</span></p>
+                      {createdPofrr.processing_dc_no && (
+                        <p style={{ margin: '0 0 0.35rem 0' }}><strong>Processing DC Number:</strong> <span style={{ fontFamily: 'monospace', fontSize: '1em', fontWeight: 'bold', color: '#800000' }}>{createdPofrr.processing_dc_no}</span></p>
+                      )}
+                      <p style={{ margin: '0 0 0.35rem 0' }}><strong>Processing Partner:</strong> {createdPofrr.partner_name}</p>
+                      <p style={{ margin: '0 0 0.35rem 0' }}><strong>Process:</strong> <span style={{ fontWeight: 'bold', color: '#b45309' }}>{createdPofrr.processes?.join(', ') || '—'}</span></p>
+                      <p style={{ margin: '0 0 0.35rem 0' }}><strong>Finished Width:</strong> {createdPofrr.width || '—'}</p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ margin: '0 0 0.35rem 0' }}><strong>Date Sent:</strong> {new Date(createdPofrr.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                      <p style={{ margin: '0 0 0.35rem 0' }}><strong>Date Received:</strong> {new Date(createdPofrr.received_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                      <p style={{ margin: '0 0 0.35rem 0' }}><strong>Expected Return Date:</strong> {new Date(createdPofrr.expected_delivery_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                    </div>
+                  </div>
+
+                  {/* Summary Metrics */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', border: '1.5px solid #000', padding: '1rem', borderRadius: '6px', marginBottom: sectionMargin, backgroundColor: '#f9f9f9', fontSize: 'inherit' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <span style={{ fontSize: '0.8em', color: '#555', display: 'block', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Sent Qty</span>
+                      <strong style={{ fontSize: '1.25em' }}>
+                        {createdPofrr.fabric_rolls?.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0).toFixed(2)} m
+                      </strong>
+                    </div>
+                    <div style={{ textAlign: 'center', borderLeft: '1px solid #ccc' }}>
+                      <span style={{ fontSize: '0.8em', color: '#555', display: 'block', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Received Qty</span>
+                      <strong style={{ fontSize: '1.25em', color: '#047857' }}>
+                        {createdPofrr.received_rolls?.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0).toFixed(2)} m
+                      </strong>
+                    </div>
+                    <div style={{ textAlign: 'center', borderLeft: '1px solid #ccc' }}>
+                      <span style={{ fontSize: '0.8em', color: '#555', display: 'block', fontWeight: 'bold', textTransform: 'uppercase' }}>Difference (Loss)</span>
+                      <strong style={{ fontSize: '1.25em', color: '#b91c1c' }}>
+                        {(() => {
+                          const sent = createdPofrr.fabric_rolls?.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0) || 0;
+                          const recd = createdPofrr.received_rolls?.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0) || 0;
+                          return (sent - recd).toFixed(2);
+                        })()} m
+                      </strong>
+                    </div>
+                    <div style={{ textAlign: 'center', borderLeft: '1px solid #ccc' }}>
+                      <span style={{ fontSize: '0.8em', color: '#555', display: 'block', fontWeight: 'bold', textTransform: 'uppercase' }}>Overall Shrinkage</span>
+                      <strong style={{ fontSize: '1.25em', color: '#b45309' }}>
+                        {(() => {
+                          const sent = createdPofrr.fabric_rolls?.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0) || 0;
+                          const recd = createdPofrr.received_rolls?.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0) || 0;
+                          const pct = sent > 0 ? ((sent - recd) / sent) * 100 : 0;
+                          return `${pct.toFixed(2)}%`;
+                        })()}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Comparison Table */}
+                  <h3 style={{ fontSize: '1.15em', borderBottom: '1.5px solid #000', paddingBottom: '0.35rem', margin: '0 0 1rem 0', fontWeight: 'bold' }}>
+                    Rolls Reconciliation Details
+                  </h3>
+
+                  {isTwoColumn ? (
+                    <div style={{ display: 'flex', gap: '2rem' }}>
+                      <div style={{ flex: 1 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: sectionMargin, fontSize: 'inherit' }}>
+                          <thead>
+                            {renderTableHeader()}
+                          </thead>
+                          <tbody>
+                            {col1.map((roll, idx) => renderTableRow(roll, idx))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: sectionMargin, fontSize: 'inherit' }}>
+                          <thead>
+                            {renderTableHeader()}
+                          </thead>
+                          <tbody>
+                            {col2.map((roll, idx) => renderTableRow(roll, half + idx))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: sectionMargin, fontSize: 'inherit' }}>
+                      <thead>
+                        {renderTableHeader()}
+                      </thead>
+                      <tbody>
+                        {col1.map((roll, idx) => renderTableRow(roll, idx))}
+                      </tbody>
+                    </table>
+                  )}
+
+                  {/* Delivery and Vehicle info */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem', borderTop: '2px solid #000', paddingTop: '1.5rem', fontSize: 'inherit', color: '#000' }}>
+                    <div>
+                      <p style={{ margin: '0 0 0.5rem 0' }}><strong>Received By:</strong> {createdPofrr.received_by || 'N/A'}</p>
+                      <p style={{ margin: '0 0 0.5rem 0' }}><strong>Received Place:</strong> {createdPofrr.received_place || 'N/A'}</p>
+                      <p style={{ margin: '0 0 0.5rem 0' }}><strong>Return Vehicle No:</strong> {createdPofrr.receive_vehicle_details || 'Hand Delivery'}</p>
+                      <p style={{ margin: '0 0 0.5rem 0' }}><strong>Status:</strong> {createdPofrr.status === 'received' ? 'Fully Received' : 'Partially Received'}</p>
+                    </div>
+                    <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between', height: '120px' }}>
+                      <div>
+                        <div style={{ borderBottom: '1px dashed #000', width: '180px', height: '40px' }} />
+                        <div style={{ width: '180px', textAlign: 'center', fontWeight: 'bold', fontSize: '0.85em', marginTop: '0.25rem' }}>
+                          Receiver Signature
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+            <style>{`
+              @media print {
+                body * {
+                  visibility: hidden;
+                }
+                .print-modal-overlay, .print-modal-overlay * {
+                  visibility: visible;
+                }
+                .print-modal-overlay {
+                  position: absolute !important;
+                  top: 0 !important;
+                  left: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  min-height: 100% !important;
+                  display: block !important;
+                  background: none !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                }
+                .print-modal-layout-container {
+                  display: block !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  height: auto !important;
+                  max-height: none !important;
+                  gap: 0 !important;
+                }
+                .print-container, .print-container * {
+                  visibility: visible;
+                }
+                .print-container {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                }
+                .no-print {
+                  display: none !important;
+                }
               }
-              .print-modal-overlay, .print-modal-overlay * {
-                visibility: visible;
-              }
-              .print-modal-overlay {
-                position: absolute !important;
-                top: 0 !important;
-                left: 0 !important;
-                width: 100% !important;
-                height: auto !important;
-                min-height: 100% !important;
-                display: block !important;
-                background: none !important;
-                padding: 0 !important;
-                overflow: visible !important;
-              }
-              .print-container, .print-container * {
-                visibility: visible;
-              }
-              .print-container {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                height: auto !important;
-                max-height: none !important;
-                overflow: visible !important;
-                box-shadow: none !important;
-              }
-              .no-print {
-                display: none !important;
-              }
-            }
-          `}</style>
-        </div>
-      )}
+            `}</style>
+          </div>
+        );
+      })()}
 
     </div>
   );

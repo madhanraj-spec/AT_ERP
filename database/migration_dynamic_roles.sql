@@ -1,20 +1,30 @@
--- 1. Drop dependent policies on other tables referencing profiles.role
+-- 1. Drop all dependent policies that reference public.profiles(role)
 DROP POLICY IF EXISTS "Admins can update orders" ON public.orders;
 DROP POLICY IF EXISTS "Admin can update DOFs" ON public.dyeing_order_forms;
 DROP POLICY IF EXISTS "Admin can delete DOFs" ON public.dyeing_order_forms;
-
--- 2. Drop policies on profiles table that reference "role"
 DROP POLICY IF EXISTS "Admins can insert profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Admins can update profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Allow admin modify role_permissions" ON public.role_permissions;
+DROP POLICY IF EXISTS "Allow authenticated read role_permissions" ON public.role_permissions;
 
--- 3. Alter profiles.role to be TEXT to support custom dynamic roles
+-- 2. Alter profiles.role to be TEXT to support custom dynamic roles
 ALTER TABLE public.profiles ALTER COLUMN role TYPE TEXT;
 
--- 4. Recreate policies on profiles table
+-- 3. Create role_permissions table
+CREATE TABLE IF NOT EXISTS public.role_permissions (
+    role_name TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    sidebar_links JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 4. Enable RLS
+ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
+
+-- 5. Create / Recreate all RLS policies (now that role column is TEXT)
 CREATE POLICY "Admins can insert profiles" ON public.profiles FOR INSERT WITH CHECK (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
 CREATE POLICY "Admins can update profiles" ON public.profiles FOR UPDATE USING (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
 
--- 5. Recreate dependent policies on other tables
 CREATE POLICY "Admins can update orders" ON public.orders FOR UPDATE USING (
   (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin' OR auth.uid() = merchandiser_id
 );
@@ -25,30 +35,15 @@ CREATE POLICY "Admin can delete DOFs" ON public.dyeing_order_forms FOR DELETE US
   (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin'
 );
 
-
-
--- 2. Create role_permissions table
-CREATE TABLE IF NOT EXISTS public.role_permissions (
-    role_name TEXT PRIMARY KEY,
-    label TEXT NOT NULL,
-    sidebar_links JSONB NOT NULL DEFAULT '[]'::jsonb,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 3. Enable RLS
-ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Allow authenticated read role_permissions" ON public.role_permissions;
 CREATE POLICY "Allow authenticated read role_permissions" ON public.role_permissions FOR SELECT USING (auth.role() = 'authenticated');
-
-DROP POLICY IF EXISTS "Allow admin modify role_permissions" ON public.role_permissions;
 CREATE POLICY "Allow admin modify role_permissions" ON public.role_permissions FOR ALL USING (
   (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin'
 );
 
+
 -- 4. Seed initial permissions with their original hardcoded values
 INSERT INTO public.role_permissions (role_name, label, sidebar_links) VALUES
-('admin', 'Admin', '["/dashboard", "/admin/orders", "/admin/dyeing-forms", "/admin/approvals", "/admin/finances", "/greige-yarn", "/dyed-yarn", "/production", "/warping-sizing", "/weaving", "/inspection/four-point", "/inspection/unwashed", "/inspection/washed", "/inspection/report", "/processing", "/masters"]'),
+('admin', 'Admin', '["/dashboard", "/admin/orders", "/admin/dyeing-forms", "/admin/approvals", "/admin/finances", "/greige-yarn", "/dyed-yarn", "/production", "/warping-sizing", "/weaving", "/inspection/four-point", "/inspection/unwashed", "/inspection/washed", "/inspection/report", "/processing", "/masters", "/admin/users"]'),
 ('merchandiser', 'Merchandiser', '["/merchandiser/orders", "/merchandiser/dyeing-forms", "/masters"]'),
 ('yarn', 'Yarn Manager', '["/greige-yarn", "/dyed-yarn", "/processing", "/masters"]'),
 ('greige_yarn', 'Greige Yarn Operator', '["/dashboard", "/greige-yarn"]'),

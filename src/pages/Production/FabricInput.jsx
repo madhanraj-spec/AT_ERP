@@ -7088,8 +7088,8 @@ export default function FabricInput({ defaultView = 'menu' }) {
           backgroundColor: 'var(--surface-current)',
           borderRadius: '16px',
           width: '95%',
-          maxWidth: '1000px',
-          maxHeight: '90vh',
+          maxWidth: '1280px',
+          maxHeight: '94vh',
           display: 'flex',
           flexDirection: 'column',
           boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15)',
@@ -7254,7 +7254,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                     border: '1px solid var(--border-current)',
                     borderRadius: '8px', 
                     flex: 1, 
-                    maxHeight: '180px', 
+                    maxHeight: '260px', 
                     overflowY: 'auto', 
                     overflowX: 'hidden',
                     backgroundColor: 'white'
@@ -7333,7 +7333,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                         </div>
 
                         {rollQuantities.length > 0 && (
-                          <div style={{ flex: 1, maxHeight: '110px', overflowY: 'auto', border: '1px solid var(--border-current)', borderRadius: '6px', padding: '0.5rem', backgroundColor: '#f8fafc' }}>
+                          <div style={{ flex: 1, maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-current)', borderRadius: '6px', padding: '0.5rem', backgroundColor: '#f8fafc' }}>
                             <span style={{ fontSize: '0.62rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', display: 'block', marginBottom: '0.4rem' }}>
                               Roll IDs & Quantities (Meters)
                             </span>
@@ -7475,7 +7475,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                         border: '1px solid var(--border-current)',
                         borderRadius: '8px', 
                         flex: 1, 
-                        maxHeight: '180px', 
+                        maxHeight: '260px', 
                         overflowY: 'auto', 
                         overflowX: 'hidden',
                         backgroundColor: '#f8fafc'

@@ -1553,7 +1553,19 @@ function ProcessingFinances({ profile }) {
                               <td style={{ fontSize: '0.8rem' }}>
                                 {new Date(bill.created_at).toLocaleDateString('en-GB')}
                               </td>
-                              <td style={{ fontWeight: '700', fontFamily: 'monospace', color: 'var(--color-primary)' }}>{bill.bill_number}</td>
+                              <td style={{ padding: '0.75rem 0.5rem' }}>
+                                <div style={{ fontWeight: '700', fontFamily: 'monospace', color: 'var(--color-primary)' }}>{bill.bill_number}</div>
+                                {bill.partner_invoice_no && (
+                                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', marginTop: '2px', fontWeight: '500' }}>
+                                    Inv: <span style={{ fontWeight: '700', color: 'var(--text-current)' }}>{bill.partner_invoice_no}</span>
+                                  </div>
+                                )}
+                                {bill.partner_invoice_date && (
+                                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '500' }}>
+                                    Date: <span style={{ fontWeight: '700', color: 'var(--text-current)' }}>{new Date(bill.partner_invoice_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                                  </div>
+                                )}
+                              </td>
                               <td style={{ fontSize: '0.8rem', fontWeight: '500' }}>{pofNumbers || '—'}</td>
                               <td style={{ fontSize: '0.8rem' }}>{designsStr}</td>
                               <td style={{ textAlign: 'right', fontSize: '0.8rem' }}>₹{Number(bill.calculated_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -1596,6 +1608,23 @@ function ProcessingFinances({ profile }) {
                             {isBillExpanded && (
                               <tr onClick={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
                                 <td colSpan={10} style={{ padding: '1.25rem 1.5rem', backgroundColor: '#f8fafc', borderLeft: '3px solid var(--color-primary)' }}>
+                                  <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', borderBottom: '1px dashed var(--border-current)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
+                                    {bill.partner_invoice_no && (
+                                      <div>
+                                        <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', marginRight: '6px' }}>Partner Invoice No:</span>
+                                        <span style={{ fontSize: '0.8rem', fontWeight: '800', fontFamily: 'monospace' }}>{bill.partner_invoice_no}</span>
+                                      </div>
+                                    )}
+                                    {bill.partner_invoice_date && (
+                                      <div>
+                                        <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', marginRight: '6px' }}>Partner Invoice Date:</span>
+                                        <span style={{ fontSize: '0.8rem', fontWeight: '800' }}>
+                                          {new Date(bill.partner_invoice_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+
                                   <h4 style={{ margin: '0 0 0.75rem 0', fontWeight: '800', fontSize: '0.85rem', color: 'var(--text-main-current)' }}>
                                     POF Details & Process Rates
                                   </h4>
