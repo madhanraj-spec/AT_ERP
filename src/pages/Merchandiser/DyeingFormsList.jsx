@@ -1593,6 +1593,7 @@ export default function DyeingFormsList() {
                       {(() => {
                         const results = forms.filter(f => {
                           const isFullyReceived = getYarnStatus(f.status) === 'fully_received';
+                          const isNotAT = f.dyeing_unit?.partner_name !== 'AT';
                           const isPending = !f.bill_status || f.bill_status === 'pending' || (editingBill && f.bill_id === editingBill.id);
                           
                           const query = selectedDofSearch.trim().toLowerCase();
@@ -1605,7 +1606,7 @@ export default function DyeingFormsList() {
                             ) ||
                             f.dyeing_unit?.partner_name?.toLowerCase().includes(query);
                           
-                          return isFullyReceived && isPending && queryMatch;
+                          return isFullyReceived && isNotAT && isPending && queryMatch;
                         });
 
                         if (results.length === 0) {

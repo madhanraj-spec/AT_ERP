@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  ArrowLeft, Loader, Package, Search, RefreshCw, ChevronDown, ChevronRight, Eye, Settings, Calendar, User, ArrowRight, SlidersHorizontal, ChevronUp, X, CheckCircle, AlertCircle, AlertTriangle, Inbox, Truck, Layers, ChevronLeft
+  ArrowLeft, Loader, Package, Search, RefreshCw, ChevronDown, ChevronRight, Eye, Settings, Calendar, User, ArrowRight, SlidersHorizontal, ChevronUp, X, CheckCircle, AlertCircle, AlertTriangle, Inbox, Truck, Layers, ChevronLeft, Trash2
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -1736,6 +1736,43 @@ export default function WeavingOrderForms() {
     }
   };
 
+  const handleDeleteProductionRound = async (wvof, logToDelete) => {
+    if (wvof.status === 'completed' || wvof.status === 'late_complete') {
+      alert('Production is already completed. Logged production rounds cannot be deleted.');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete the production round of ${Number(logToDelete.qty).toLocaleString()} m recorded on ${new Date(logToDelete.timestamp).toLocaleString('en-IN')}?`)) {
+      return;
+    }
+
+    try {
+      const currentLogs = Array.isArray(wvof.production_logs) ? wvof.production_logs : [];
+      const updatedLogs = currentLogs.filter(log => {
+        if (logToDelete.id && log.id) {
+          return log.id !== logToDelete.id;
+        }
+        return !(log.timestamp === logToDelete.timestamp && log.weaver === logToDelete.weaver && log.qty === logToDelete.qty);
+      });
+
+      const { error } = await supabase
+        .from('weaving_orders')
+        .update({ production_logs: updatedLogs })
+        .eq('id', wvof.id);
+
+      if (error) throw error;
+
+      await fetchWeavingOrders();
+      
+      if (selectedWvof && selectedWvof.id === wvof.id) {
+        setSelectedWvof(prev => ({ ...prev, production_logs: updatedLogs }));
+      }
+    } catch (err) {
+      console.error('Error deleting production round:', err);
+      alert('Failed to delete production round: ' + err.message);
+    }
+  };
+
   const handleOpenAllot = (wvof) => {
     setAllotWvof(wvof);
     setAllotRows([]);
@@ -2848,12 +2885,13 @@ export default function WeavingOrderForms() {
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Date & Time</th>
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Weaver</th>
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Produced Qty (Mtrs)</th>
+                                            <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'center', width: '50px' }}>Actions</th>
                                           </tr>
                                         </thead>
                                         <tbody>
                                           {!wvof.production_logs || wvof.production_logs.length === 0 ? (
                                             <tr>
-                                              <td colSpan="3" style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
+                                              <td colSpan="4" style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
                                                 No production rounds recorded yet.
                                               </td>
                                             </tr>
@@ -2867,6 +2905,15 @@ export default function WeavingOrderForms() {
                                                   </td>
                                                   <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>{log.weaver}</td>
                                                   <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#047857', textAlign: 'right' }}>{Number(log.qty).toLocaleString()} m</td>
+                                                  <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center' }}>
+                                                    <button
+                                                      onClick={() => handleDeleteProductionRound(wvof, log)}
+                                                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                                      title="Delete Round"
+                                                    >
+                                                      <Trash2 size={14} />
+                                                    </button>
+                                                  </td>
                                                 </tr>
                                               ))
                                           )}
@@ -4602,12 +4649,13 @@ export default function WeavingOrderForms() {
                                 <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Date & Time</th>
                                 <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)' }}>Weaver</th>
                                 <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'right' }}>Produced Qty (Mtrs)</th>
+                                <th style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textAlign: 'center', width: '50px' }}>Actions</th>
                               </tr>
                             </thead>
                             <tbody>
                               {!selectedWvof.production_logs || selectedWvof.production_logs.length === 0 ? (
                                 <tr>
-                                  <td colSpan="3" style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
+                                  <td colSpan="4" style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
                                     No production rounds recorded yet.
                                   </td>
                                 </tr>
@@ -4621,6 +4669,15 @@ export default function WeavingOrderForms() {
                                       </td>
                                       <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>{log.weaver}</td>
                                       <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#047857', textAlign: 'right' }}>{Number(log.qty).toLocaleString()} m</td>
+                                      <td style={{ padding: '0.5rem 0.75rem', textAlign: 'center' }}>
+                                        <button
+                                          onClick={() => handleDeleteProductionRound(selectedWvof, log)}
+                                          style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                          title="Delete Round"
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </td>
                                     </tr>
                                   ))
                               )}

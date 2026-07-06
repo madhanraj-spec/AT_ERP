@@ -113,8 +113,25 @@ export default function CreateDyeingForm() {
           .neq('status', 'rejected'),
       ]);
 
+      let units = partnersRes.data || [];
+      const hasAT = units.some(u => u.partner_name === 'AT');
+      if (!hasAT) {
+        try {
+          const { data: insertedAT, error: insertErr } = await supabase
+            .from('master_partners')
+            .insert([{ partner_name: 'AT', partner_type: 'Dyeing Unit' }])
+            .select()
+            .single();
+          if (!insertErr && insertedAT) {
+            units = [...units, insertedAT];
+          }
+        } catch (e) {
+          console.error('Error auto-creating AT partner:', e);
+        }
+      }
+
       setMyOrders(ordersRes.data || []);
-      setDyeingUnits(partnersRes.data || []);
+      setDyeingUnits(units);
       setYarnCounts(countsRes.data || []);
 
       // Build conflict map from existing DOFs by aggregating allocated base weights
@@ -760,6 +777,11 @@ export default function CreateDyeingForm() {
                     <option key={d.id} value={d.id}>{d.partner_name}</option>
                   ))}
                 </select>
+                {dyeingUnits.find(u => u.id === dyeingUnitId)?.partner_name === 'AT' && (
+                  <small style={{ color: '#1e40af', backgroundColor: '#eff6ff', padding: '4px 8px', borderRadius: '4px', display: 'block', marginTop: '0.5rem', fontWeight: '600' }}>
+                    ℹ️ In-House Dyeing (AT). Greige yarn will be directly delivered to the DOF from greige stock without going to external dyeing. No bill will be raised.
+                  </small>
+                )}
                 {dyeingUnits.length === 0 && (
                   <small style={{ color: '#f59e0b' }}>No Dyeing Units found. Add one under Masters → Partners.</small>
                 )}

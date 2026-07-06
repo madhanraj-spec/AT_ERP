@@ -901,19 +901,18 @@ function FourPointReportTab() {
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid var(--border-current)', color: 'var(--text-muted-current)' }}>
                 <th style={{ width: '6%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left' }}>Date</th>
-                <th style={{ width: '10%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left', fontFamily: 'monospace' }}>Greige Fabric ID</th>
-                <th style={{ width: '9%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left' }}>WVOF</th>
+                <th style={{ width: '13%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left' }}>Greige Fabric ID / WVOF</th>
                 <th style={{ width: '9%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left' }}>Order No</th>
-                <th style={{ width: '10%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left' }}>Weaving Unit</th>
+                <th style={{ width: '11%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left' }}>Weaving Unit</th>
                 <th style={{ width: '10%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left' }}>Design</th>
                 <th style={{ width: '8%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left' }}>Inspectors</th>
-                <th style={{ width: '4%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right' }}>Qty</th>
-                <th style={{ width: '4%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right' }}>Act Qty</th>
-                <th style={{ width: '4%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right' }}>Short</th>
-                <th style={{ width: '4%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right' }}>Mistake</th>
-                <th style={{ width: '4%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right' }}>OK Qty</th>
+                <th style={{ width: '5%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right' }}>Qty</th>
+                <th style={{ width: '5%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right' }}>Act Qty</th>
+                <th style={{ width: '5%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right' }}>Short</th>
+                <th style={{ width: '5%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right' }}>Mistake</th>
+                <th style={{ width: '5%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right' }}>OK Qty</th>
                 <th style={{ width: '12%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left' }}>Mistakes</th>
-                <th style={{ width: '5%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center' }}>Result</th>
+                <th style={{ width: '6%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center' }}>Result</th>
                 <th style={{ width: '5%', padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center' }}>Edit</th>
               </tr>
             </thead>
@@ -944,11 +943,13 @@ function FourPointReportTab() {
                     {/* Date */}
                     <td style={{ padding: '0.5rem 0.4rem', color: 'var(--text-muted-current)' }}>{dateStr}</td>
                     
-                    {/* Greige Fabric ID */}
-                    <td style={{ padding: '0.5rem 0.4rem', fontFamily: 'monospace', fontWeight: '700', color: 'var(--color-primary)', wordBreak: 'break-all' }}>{r.id}</td>
-                    
-                    {/* WVOF */}
-                    <td style={{ padding: '0.5rem 0.4rem', fontWeight: '600', wordBreak: 'break-all' }}>{w.weaving_number || '—'}</td>
+                    {/* Greige Fabric ID & WVOF */}
+                    <td style={{ padding: '0.5rem 0.4rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontFamily: 'monospace', fontWeight: '700', color: 'var(--color-primary)', fontSize: '0.7rem' }} title={`Roll: ${r.id}`}>{r.id}</span>
+                        <span style={{ color: 'var(--text-muted-current)', fontSize: '0.62rem', fontWeight: '600' }} title={`WVOF: ${w.weaving_number}`}>({w.weaving_number || '—'})</span>
+                      </div>
+                    </td>
                     
                     {/* Order No */}
                     <td style={{ padding: '0.5rem 0.4rem', wordBreak: 'break-all' }}>{orderNo}</td>

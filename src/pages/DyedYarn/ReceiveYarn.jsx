@@ -250,6 +250,10 @@ export default function ReceiveYarn() {
   };
 
   const handleDirectReceive = async (dof) => {
+    if (dof.dyeing_unit?.partner_name === 'AT') {
+      alert('This Dyeing Order Form is in-house (AT). Yarn is automatically received when greige yarn is delivered.');
+      return;
+    }
     if (dof.status === 'received') {
       alert('This Dyeing Order Form has already been fully received.');
       return;
@@ -397,6 +401,11 @@ export default function ReceiveYarn() {
 
       if (dofError || !dof) {
         alert('DOF not found.');
+        return;
+      }
+
+      if (dof.dyeing_unit?.partner_name === 'AT') {
+        alert('This Dyeing Order Form is in-house (AT). Yarn is automatically received when greige yarn is delivered.');
         return;
       }
 
@@ -1271,7 +1280,11 @@ export default function ReceiveYarn() {
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
-                              {dof.status !== 'received' ? (
+                              {dof.dyeing_unit?.partner_name === 'AT' ? (
+                                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#1e40af', backgroundColor: '#eff6ff', padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                                  In-House (Auto-Received)
+                                </span>
+                              ) : dof.status !== 'received' ? (
                                 <button 
                                   onClick={(e) => {
                                     e.stopPropagation();

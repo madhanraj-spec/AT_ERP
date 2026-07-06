@@ -22,7 +22,7 @@ const TODAY_STR = getLocalDateStr(new Date());
 
 function isLate(endDate, completedAt, updatedAt, status) {
   if (!endDate) return false;
-  const finishedStatuses = ['completed', 'stopped', 'received'];
+  const finishedStatuses = ['completed', 'stopped', 'received', 'late_complete', 'late_completed'];
   if (finishedStatuses.includes(status)) {
     const actualEnd = completedAt
       ? getLocalDateStr(completedAt)
@@ -207,13 +207,14 @@ export default function Dashboard({ user }) {
     greigeReceipts: [],
     greigeDeliveryItems: [],
     dyedReceipts: [],
+    machines: [],
   });
 
   useEffect(() => {
     async function fetchAll() {
       try {
         setLoading(true);
-        const [ordersRes, dyeRes, warpRes, sizeRes, weaveRes, processRes, greigeRecRes, greigeDelRes, dyedRecRes] = await Promise.all([
+        const [ordersRes, dyeRes, warpRes, sizeRes, weaveRes, processRes, greigeRecRes, greigeDelRes, dyedRecRes, machinesRes] = await Promise.all([
           supabase.from('orders').select('*'),
           supabase.from('dyeing_order_forms').select('*'),
           supabase.from('warping_order_forms').select('*'),
@@ -226,6 +227,7 @@ export default function Dashboard({ user }) {
           `),
           supabase.from('greige_yarn_delivery_items').select('yarn_count_id, quantity_kg, spinning_mill_id, location_id'),
           supabase.from('dyed_yarn_receipts').select('*'),
+          supabase.from('master_machines').select('*, master_departments(department_name)'),
         ]);
 
         setData({
@@ -238,6 +240,7 @@ export default function Dashboard({ user }) {
           greigeReceipts: greigeRecRes.data || [],
           greigeDeliveryItems: greigeDelRes.data || [],
           dyedReceipts: dyedRecRes.data || [],
+          machines: machinesRes.data || [],
         });
       } catch (err) {
         console.error('Dashboard fetch error:', err);
@@ -331,31 +334,164 @@ export default function Dashboard({ user }) {
   }, [data.dyeingForms]);
 
   const warpingStats = useMemo(() => {
-    const total = data.warpingForms.length;
-    const onProcess = data.warpingForms.filter(w => w.status === 'on_process').length;
-    const late = data.warpingForms.filter(w =>
+    const dbInHouseMachines = (data.machines || []).filter(m => m.scope === 'in_house');
+    const inHouseWarpingMachines = dbInHouseMachines.filter(m => {
+      const deptName = m.master_departments?.department_name || '';
+      return deptName.toLowerCase().includes('warping');
+    });
+    
+    const finalInHouseWarpingMachines = inHouseWarpingMachines.length > 0 
+      ? inHouseWarpingMachines 
+      : dbInHouseMachines;
+      
+    const totalMachines = finalInHouseWarpingMachines.length;
+    const finishedStatuses = ['completed', 'stopped', 'received', 'late_complete', 'late_completed'];
+
+    const onProcessCount = data.warpingForms.filter(w => w.status === 'on_process').length;
+    const lateCount = data.warpingForms.filter(w =>
+      !finishedStatuses.includes(w.status) &&
       isLate(w.end_date, w.process_completed_at, w.updated_at, w.status)
     ).length;
-    return { total, onProcess, late };
-  }, [data.warpingForms]);
+
+    const allottedCount = finalInHouseWarpingMachines.filter(m => {
+      return data.warpingForms.some(w => {
+        if (finishedStatuses.includes(w.status)) return false;
+        return w.machine_id && w.machine_id === m.id;
+      });
+    }).length;
+
+    const idleCount = Math.max(0, totalMachines - allottedCount);
+
+    return {
+      total: data.warpingForms.length,
+      totalMachines,
+      onProcess: onProcessCount,
+      late: lateCount,
+      allotted: allottedCount,
+      idle: idleCount
+    };
+  }, [data.warpingForms, data.machines]);
 
   const sizingStats = useMemo(() => {
-    const total = data.sizingForms.length;
-    const onProcess = data.sizingForms.filter(s => s.status === 'on_process').length;
-    const late = data.sizingForms.filter(s =>
+    const dbInHouseMachines = (data.machines || []).filter(m => m.scope === 'in_house');
+    const inHouseSizingMachines = dbInHouseMachines.filter(m => {
+      const deptName = m.master_departments?.department_name || '';
+      return deptName.toLowerCase().includes('sizing');
+    });
+    
+    const finalInHouseSizingMachines = inHouseSizingMachines.length > 0 
+      ? inHouseSizingMachines 
+      : dbInHouseMachines;
+      
+    const totalMachines = finalInHouseSizingMachines.length;
+    const finishedStatuses = ['completed', 'stopped', 'received', 'late_complete', 'late_completed'];
+
+    const onProcessCount = data.sizingForms.filter(s => s.status === 'on_process').length;
+    const lateCount = data.sizingForms.filter(s =>
+      !finishedStatuses.includes(s.status) &&
       isLate(s.end_date, s.process_completed_at, s.updated_at, s.status)
     ).length;
-    return { total, onProcess, late };
-  }, [data.sizingForms]);
+
+    const allottedCount = finalInHouseSizingMachines.filter(m => {
+      return data.sizingForms.some(s => {
+        if (finishedStatuses.includes(s.status)) return false;
+        return s.machine_id && s.machine_id === m.id;
+      });
+    }).length;
+
+    const idleCount = Math.max(0, totalMachines - allottedCount);
+
+    return {
+      total: data.sizingForms.length,
+      totalMachines,
+      onProcess: onProcessCount,
+      late: lateCount,
+      allotted: allottedCount,
+      idle: idleCount
+    };
+  }, [data.sizingForms, data.machines]);
 
   const weavingStats = useMemo(() => {
-    const total = data.weavingOrders.length;
-    const onProcess = data.weavingOrders.filter(w => w.status === 'on_process').length;
-    const late = data.weavingOrders.filter(w =>
+    const dbInHouseMachines = (data.machines || []).filter(m => m.scope === 'in_house');
+    
+    const MOCK_AIRJET_LOOMS = [
+      { id: 'mock-aj1', machine_name: 'AJ1', scope: 'in_house' },
+      { id: 'mock-aj2', machine_name: 'AJ2', scope: 'in_house' },
+      { id: 'mock-aj3', machine_name: 'AJ3', scope: 'in_house' },
+      { id: 'mock-aj4', machine_name: 'AJ4', scope: 'in_house' },
+      { id: 'mock-aj5', machine_name: 'AJ5', scope: 'in_house' },
+    ];
+
+    const MOCK_RAPIER_LOOMS = [
+      { id: 'mock-ar1', machine_name: 'AR1', scope: 'in_house' },
+      { id: 'mock-ar2', machine_name: 'AR2', scope: 'in_house' },
+      { id: 'mock-ar3', machine_name: 'AR3', scope: 'in_house' },
+    ];
+
+    const getLooms = (dbMachines, prefix, mockList) => {
+      const dbMatch = dbMachines.filter(m => m.machine_name && m.machine_name.trim().toUpperCase().startsWith(prefix));
+      const finalMachines = [...dbMatch];
+      mockList.forEach(mock => {
+        const exists = finalMachines.some(m => m.machine_name.trim().toUpperCase() === mock.machine_name.toUpperCase());
+        if (!exists) {
+          finalMachines.push(mock);
+        }
+      });
+      return finalMachines;
+    };
+
+    const airjetLooms = getLooms(dbInHouseMachines, 'AJ', MOCK_AIRJET_LOOMS);
+    const rapierLooms = getLooms(dbInHouseMachines, 'AR', MOCK_RAPIER_LOOMS);
+    const finalInHouseMachines = [...airjetLooms, ...rapierLooms];
+    const totalMachines = finalInHouseMachines.length;
+
+    const finishedStatuses = ['completed', 'stopped', 'received', 'late_complete', 'late_completed'];
+
+    const onProcessCount = data.weavingOrders.filter(w => w.status === 'on_process').length;
+    const lateCount = data.weavingOrders.filter(w =>
+      !finishedStatuses.includes(w.status) &&
       isLate(w.end_date, w.process_completed_at, w.updated_at, w.status)
     ).length;
-    return { total, onProcess, late };
-  }, [data.weavingOrders]);
+
+    const allottedCount = finalInHouseMachines.filter(m => {
+      return data.weavingOrders.some(w => {
+        if (w.weaving_type !== 'in_house') return false;
+        if (finishedStatuses.includes(w.status)) return false;
+        
+        if (w.machine_id && !m.id.startsWith('mock-') && w.machine_id === m.id) {
+          return true;
+        }
+        if (w.machine_name && m.machine_name && w.machine_name.trim().toUpperCase() === m.machine_name.trim().toUpperCase()) {
+          return true;
+        }
+        return false;
+      });
+    }).length;
+
+    const idleCount = Math.max(0, totalMachines - allottedCount);
+
+    const todaysProductionQty = data.weavingOrders.reduce((sum, w) => {
+      if (w.weaving_type !== 'in_house') return sum;
+      
+      const logs = Array.isArray(w.production_logs) ? w.production_logs : [];
+      const todayLogs = logs.filter(log => {
+        if (!log.timestamp) return false;
+        return getLocalDateStr(log.timestamp) === TODAY_STR;
+      });
+      
+      return sum + todayLogs.reduce((acc, log) => acc + (parseFloat(log.qty) || 0), 0);
+    }, 0);
+
+    return {
+      total: data.weavingOrders.length,
+      totalMachines,
+      onProcess: onProcessCount,
+      late: lateCount,
+      allotted: allottedCount,
+      idle: idleCount,
+      todaysProductionQty
+    };
+  }, [data.weavingOrders, data.machines]);
 
   const processingStats = useMemo(() => {
     const total = data.processingOrders.length;
@@ -431,8 +567,8 @@ export default function Dashboard({ user }) {
         />
         <MetricCard
           label="Greige Yarn Stock"
-          value={`${(totalGreigeStock / 1000).toFixed(1)}k`}
-          sub="kilograms across all counts"
+          value={`${totalGreigeStock.toLocaleString('en-IN', { maximumFractionDigits: 1 })} kg`}
+          sub="across all counts"
           color={sc.greige.accent}
           icon={Package}
           navigateTo="/greige-yarn/stock"
@@ -737,15 +873,15 @@ export default function Dashboard({ user }) {
         </div>
       </div>
 
-      {/* ── Second Row: Warping & Sizing, Weaving, Processing ── */}
+      {/* ── Second Row: Warping, Sizing, Weaving, Processing ── */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr 1fr',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
         gap: '1rem',
         marginBottom: '1.5rem',
       }}>
 
-        {/* ── Warping & Sizing ────────────────────────────── */}
+        {/* ── Warping Status ──────────────────────────────── */}
         <div
           style={{
             backgroundColor: 'var(--surface-current)',
@@ -771,43 +907,18 @@ export default function Dashboard({ user }) {
                 margin: 0, fontSize: '0.85rem', fontWeight: 700,
                 color: 'var(--text-current)',
               }}>
-                Warping & Sizing
+                Warping Status
               </h3>
             </div>
             <ArrowUpRight size={14} style={{ color: 'var(--text-muted-current)', opacity: 0.4 }} />
           </div>
           <div style={{ padding: '1.15rem' }}>
-            {/* Combined stats row */}
             <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr',
-              gap: '0.6rem', marginBottom: '0.85rem',
+              display: 'flex', alignItems: 'baseline', gap: '0.4rem',
+              marginBottom: '1rem',
             }}>
-              <div style={{
-                backgroundColor: `${sc.warping.accent}08`,
-                borderRadius: 'var(--radius-md)', padding: '0.7rem',
-                border: `1px solid ${sc.warping.accent}12`,
-              }}>
-                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>
-                  Warping
-                </div>
-                <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'baseline' }}>
-                  <span style={{ fontSize: '1.05rem', fontWeight: 800, color: sc.warping.text }}>{warpingStats.total}</span>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)' }}>forms</span>
-                </div>
-              </div>
-              <div style={{
-                backgroundColor: `${sc.warping.accent}08`,
-                borderRadius: 'var(--radius-md)', padding: '0.7rem',
-                border: `1px solid ${sc.warping.accent}12`,
-              }}>
-                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>
-                  Sizing
-                </div>
-                <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'baseline' }}>
-                  <span style={{ fontSize: '1.05rem', fontWeight: 800, color: sc.warping.text }}>{sizingStats.total}</span>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)' }}>forms</span>
-                </div>
-              </div>
+              <span style={{ fontSize: '1.5rem', fontWeight: 800, color: sc.warping.text }}>{warpingStats.totalMachines}</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>total machines</span>
             </div>
 
             <div style={{
@@ -820,7 +931,7 @@ export default function Dashboard({ user }) {
                 backgroundColor: '#3b82f610', border: '1px solid #3b82f625',
               }}>
                 <Zap size={13} style={{ color: '#3b82f6', marginBottom: '0.2rem' }} />
-                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#3b82f6' }}>{warpingStats.onProcess + sizingStats.onProcess}</span>
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#3b82f6' }}>{warpingStats.onProcess}</span>
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)' }}>On Process</span>
               </div>
               <div style={{
@@ -829,20 +940,123 @@ export default function Dashboard({ user }) {
                 backgroundColor: '#ef444410', border: '1px solid #ef444425',
               }}>
                 <AlertTriangle size={13} style={{ color: '#ef4444', marginBottom: '0.2rem' }} />
-                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#ef4444' }}>{warpingStats.late + sizingStats.late}</span>
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#ef4444' }}>{warpingStats.late}</span>
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)' }}>Late</span>
               </div>
             </div>
 
             <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '0.5rem 0.65rem', borderRadius: 'var(--radius-md)',
-              backgroundColor: 'var(--bg-current)', border: '1px solid var(--border-current)',
+              display: 'grid', gridTemplateColumns: '1fr 1fr',
+              gap: '0.5rem',
             }}>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)' }}>Combined output</span>
-              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-current)' }}>
-                {warpingStats.total + sizingStats.total} forms
-              </span>
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '0.6rem', borderRadius: 'var(--radius-md)',
+                backgroundColor: '#10b98110', border: '1px solid #10b98125',
+              }}>
+                <Settings size={13} style={{ color: '#10b981', marginBottom: '0.2rem' }} />
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#10b981' }}>{warpingStats.allotted}</span>
+                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', textAlign: 'center' }}>Allotted</span>
+              </div>
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '0.6rem', borderRadius: 'var(--radius-md)',
+                backgroundColor: '#64748b10', border: '1px solid #64748b25',
+              }}>
+                <CircleDot size={13} style={{ color: '#64748b', marginBottom: '0.2rem' }} />
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#64748b' }}>{warpingStats.idle}</span>
+                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', textAlign: 'center' }}>Idle</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Sizing Status ────────────────────────────────── */}
+        <div
+          style={{
+            backgroundColor: 'var(--surface-current)',
+            border: '1px solid var(--border-current)',
+            borderRadius: 'var(--radius-lg)',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{
+            padding: '0.85rem 1.15rem',
+            borderBottom: '1px solid var(--border-current)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            cursor: 'pointer',
+          }}
+          onClick={() => navigate('/warping-sizing')}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{
+                width: '8px', height: '8px', borderRadius: '50%',
+                backgroundColor: sc.warping.accent,
+              }} />
+              <h3 style={{
+                margin: 0, fontSize: '0.85rem', fontWeight: 700,
+                color: 'var(--text-current)',
+              }}>
+                Sizing Status
+              </h3>
+            </div>
+            <ArrowUpRight size={14} style={{ color: 'var(--text-muted-current)', opacity: 0.4 }} />
+          </div>
+          <div style={{ padding: '1.15rem' }}>
+            <div style={{
+              display: 'flex', alignItems: 'baseline', gap: '0.4rem',
+              marginBottom: '1rem',
+            }}>
+              <span style={{ fontSize: '1.5rem', fontWeight: 800, color: sc.warping.text }}>{sizingStats.totalMachines}</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>total machines</span>
+            </div>
+
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr',
+              gap: '0.5rem', marginBottom: '0.75rem',
+            }}>
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '0.6rem', borderRadius: 'var(--radius-md)',
+                backgroundColor: '#3b82f610', border: '1px solid #3b82f625',
+              }}>
+                <Zap size={13} style={{ color: '#3b82f6', marginBottom: '0.2rem' }} />
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#3b82f6' }}>{sizingStats.onProcess}</span>
+                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)' }}>On Process</span>
+              </div>
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '0.6rem', borderRadius: 'var(--radius-md)',
+                backgroundColor: '#ef444410', border: '1px solid #ef444425',
+              }}>
+                <AlertTriangle size={13} style={{ color: '#ef4444', marginBottom: '0.2rem' }} />
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#ef4444' }}>{sizingStats.late}</span>
+                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)' }}>Late</span>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr',
+              gap: '0.5rem',
+            }}>
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '0.6rem', borderRadius: 'var(--radius-md)',
+                backgroundColor: '#10b98110', border: '1px solid #10b98125',
+              }}>
+                <Settings size={13} style={{ color: '#10b981', marginBottom: '0.2rem' }} />
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#10b981' }}>{sizingStats.allotted}</span>
+                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', textAlign: 'center' }}>Allotted</span>
+              </div>
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '0.6rem', borderRadius: 'var(--radius-md)',
+                backgroundColor: '#64748b10', border: '1px solid #64748b25',
+              }}>
+                <CircleDot size={13} style={{ color: '#64748b', marginBottom: '0.2rem' }} />
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#64748b' }}>{sizingStats.idle}</span>
+                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', textAlign: 'center' }}>Idle</span>
+              </div>
             </div>
           </div>
         </div>
@@ -883,13 +1097,13 @@ export default function Dashboard({ user }) {
               display: 'flex', alignItems: 'baseline', gap: '0.4rem',
               marginBottom: '1rem',
             }}>
-              <span style={{ fontSize: '1.5rem', fontWeight: 800, color: sc.weaving.text }}>{weavingStats.total}</span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>total jobs</span>
+              <span style={{ fontSize: '1.5rem', fontWeight: 800, color: sc.weaving.text }}>{weavingStats.totalMachines}</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>total machines</span>
             </div>
 
             <div style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr',
-              gap: '0.5rem', marginBottom: '1rem',
+              gap: '0.5rem', marginBottom: '0.75rem',
             }}>
               <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -911,22 +1125,41 @@ export default function Dashboard({ user }) {
               </div>
             </div>
 
-            <div style={{ marginBottom: '0.65rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Completion Rate
-                </span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: sc.weaving.accent }}>
-                  {weavingStats.total > 0 ? Math.round((weavingStats.onProcess / weavingStats.total) * 100) : 0}%
-                </span>
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr',
+              gap: '0.5rem', marginBottom: '1.25rem',
+            }}>
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '0.6rem', borderRadius: 'var(--radius-md)',
+                backgroundColor: '#10b98110', border: '1px solid #10b98125',
+              }}>
+                <Settings size={13} style={{ color: '#10b981', marginBottom: '0.2rem' }} />
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#10b981' }}>{weavingStats.allotted}</span>
+                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', textAlign: 'center' }}>Allotted</span>
               </div>
-              <div style={{ height: '8px', borderRadius: '4px', backgroundColor: `${sc.weaving.accent}15`, overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%', borderRadius: '4px', backgroundColor: sc.weaving.accent,
-                  width: `${weavingStats.total > 0 ? (weavingStats.onProcess / weavingStats.total) * 100 : 0}%`,
-                  transition: 'width 0.8s ease',
-                }} />
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '0.6rem', borderRadius: 'var(--radius-md)',
+                backgroundColor: '#64748b10', border: '1px solid #64748b25',
+              }}>
+                <CircleDot size={13} style={{ color: '#64748b', marginBottom: '0.2rem' }} />
+                <span style={{ fontSize: '1rem', fontWeight: 800, color: '#64748b' }}>{weavingStats.idle}</span>
+                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', textAlign: 'center' }}>Idle</span>
               </div>
+            </div>
+
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '0.5rem 0.65rem', borderRadius: 'var(--radius-md)',
+              backgroundColor: 'var(--bg-current)', border: '1px solid var(--border-current)',
+            }}>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Today's Production
+              </span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 800, color: sc.weaving.text }}>
+                {weavingStats.todaysProductionQty.toLocaleString()} m
+              </span>
             </div>
           </div>
         </div>

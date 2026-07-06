@@ -29,6 +29,7 @@ export default function DeliverYarn() {
   const [orders, setOrders] = useState([]);
   const [yarnCounts, setYarnCounts] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [dyedLocations, setDyedLocations] = useState([]);
   const [existingDeliveries, setExistingDeliveries] = useState([]); // delivery items already made
   const [existingReceipts, setExistingReceipts] = useState([]); // GYDR receipts for this DOF
   const [existingReturns, setExistingReturns] = useState([]); // GYPRR receipts/returns for this DOF
@@ -84,6 +85,13 @@ export default function DeliverYarn() {
         .select('*')
         .eq('warehouse_type', 'Greige Warehouse');
       setLocations(locData || []);
+
+      // 4b) Fetch locations (Dyed Yarn Warehouse)
+      const { data: dyedLocData } = await supabase
+        .from('master_locations')
+        .select('*')
+        .eq('warehouse_type', 'Dyed Yarn Warehouse');
+      setDyedLocations(dyedLocData || []);
 
       // 5) Fetch existing delivery items for this DOF
       const { data: receiptsData } = await supabase
@@ -771,11 +779,65 @@ export default function DeliverYarn() {
           });
         }
       });
-
       const { error: itemsErr } = await supabase
         .from('greige_yarn_delivery_items')
         .insert(lineItems);
       if (itemsErr) throw itemsErr;
+
+      // --- AUTOMATED IN-HOUSE DYEING RECEIPT FLOW ---
+      const isInHouse = dof?.dyeing_unit?.partner_name === 'AT';
+      if (isInHouse) {
+        // 1) Get next DYRR number
+        const { data: dyrrNum, error: dyrrNumErr } = await supabase.rpc('get_next_dyrr_number', { p_year: year });
+        if (dyrrNumErr) throw dyrrNumErr;
+
+        // 2) Insert Dyed Yarn Receipt Header
+        const { data: dyedReceiptData, error: dyedReceiptErr } = await supabase
+          .from('dyed_yarn_receipts')
+          .insert({
+            dyrr_number: dyrrNum,
+            dof_id: dofId,
+            dof_number: dof.dof_number,
+            dyeing_unit_id: dof.dyeing_unit_id,
+            received_date: new Date().toISOString().split('T')[0],
+            vehicle_no: vehicleNo.trim() || null,
+            remarks: 'Auto-received from in-house greige delivery',
+            source_type: 'partner',
+            created_by: profile?.id
+          })
+          .select()
+          .single();
+        if (dyedReceiptErr) throw dyedReceiptErr;
+
+        // 3) Helper to map locations
+        const getMatchingDyedLocation = (greigeLocId) => {
+          const greigeLoc = locations.find(l => l.id === greigeLocId);
+          if (greigeLoc && dyedLocations && dyedLocations.length > 0) {
+            const match = dyedLocations.find(l => l.location_name.toLowerCase() === greigeLoc.location_name.toLowerCase());
+            if (match) return match.id;
+            return dyedLocations[0].id;
+          }
+          return dyedLocations[0]?.id || null;
+        };
+
+        // 4) Prepare & Insert Dyed Yarn Receipt Items
+        const dyedLineItems = lineItems.map(item => ({
+          receipt_id: dyedReceiptData.id,
+          order_id: item.order_id,
+          yarn_count_id: item.yarn_count_id,
+          colour: item.colour,
+          quantity_kg: item.quantity_kg,
+          location_id: getMatchingDyedLocation(item.location_id),
+          yarn_type: item.yarn_type,
+          lot_number: 'INHOUSE'
+        }));
+
+        const { error: dyedItemsErr } = await supabase
+          .from('dyed_yarn_receipt_items')
+          .insert(dyedLineItems);
+        if (dyedItemsErr) throw dyedItemsErr;
+      }
+      // --- END OF AUTOMATED IN-HOUSE DYEING RECEIPT FLOW ---
 
       // 4) Recalculate DOF status
       // Re-fetch all delivery items for this DOF after insert
@@ -814,7 +876,10 @@ export default function DeliverYarn() {
         if (netSentForThis < required - 0.001) allFullySent = false;
       }
 
-      const newStatus = allFullySent ? 'fully_sent' : anySent ? 'partially_sent' : 'approved';
+      const newStatus = isInHouse
+        ? (allFullySent ? 'received' : anySent ? 'partially_received' : 'approved')
+        : (allFullySent ? 'fully_sent' : anySent ? 'partially_sent' : 'approved');
+
       await supabase
         .from('dyeing_order_forms')
         .update({ status: newStatus, updated_at: new Date().toISOString() })

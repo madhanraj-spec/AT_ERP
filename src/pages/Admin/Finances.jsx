@@ -1510,7 +1510,7 @@ function ProcessingFinances({ profile }) {
                         const isBillExpanded = expandedBillId === bill.id;
 
                         // Get the details of POFs for this bill to show in row
-                        const pofNumbers = (bill.bill_items || []).map(item => item.pof_number).join(', ');
+                        const pofNumbers = Array.from(new Set((bill.bill_items || []).map(item => item.pof_number).filter(Boolean))).join(', ');
                         
                         // Extract designs from bill's POFs via pofMap lookup
                         const designsList = Array.from(new Set(
@@ -1605,158 +1605,207 @@ function ProcessingFinances({ profile }) {
                               </td>
                             </tr>
                             
-                            {isBillExpanded && (
-                              <tr onClick={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
-                                <td colSpan={10} style={{ padding: '1.25rem 1.5rem', backgroundColor: '#f8fafc', borderLeft: '3px solid var(--color-primary)' }}>
-                                  <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', borderBottom: '1px dashed var(--border-current)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
-                                    {bill.partner_invoice_no && (
-                                      <div>
-                                        <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', marginRight: '6px' }}>Partner Invoice No:</span>
-                                        <span style={{ fontSize: '0.8rem', fontWeight: '800', fontFamily: 'monospace' }}>{bill.partner_invoice_no}</span>
-                                      </div>
-                                    )}
-                                    {bill.partner_invoice_date && (
-                                      <div>
-                                        <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', marginRight: '6px' }}>Partner Invoice Date:</span>
-                                        <span style={{ fontSize: '0.8rem', fontWeight: '800' }}>
-                                          {new Date(bill.partner_invoice_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
+                            {(() => {
+                              if (!isBillExpanded) return null;
 
-                                  <h4 style={{ margin: '0 0 0.75rem 0', fontWeight: '800', fontSize: '0.85rem', color: 'var(--text-main-current)' }}>
-                                    POF Details & Process Rates
-                                  </h4>
-                                  
-                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', backgroundColor: '#fff', border: '1px solid var(--border-current)', marginBottom: '1.25rem', borderRadius: '6px', overflow: 'hidden' }}>
-                                    <thead>
-                                      <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)', fontWeight: '700', borderBottom: '1px solid var(--border-current)' }}>
-                                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>POF Number</th>
-                                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Greige Sent</th>
-                                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Processed Recd</th>
-                                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Shrinkage (%)</th>
-                                        <th style={{ padding: '0.5rem', textAlign: 'center' }}>Sent Date</th>
-                                        <th style={{ padding: '0.5rem', textAlign: 'center' }}>Received Date</th>
-                                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>Status</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {(bill.bill_items || []).map((item, idx) => (
-                                        <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
-                                          <td style={{ padding: '0.5rem', fontWeight: '700', fontFamily: 'monospace', color: 'var(--color-primary)' }}>{item.pof_number}</td>
-                                          <td style={{ padding: '0.5rem', textAlign: 'right' }}>
-                                            {item.greige_sent_rolls} rolls ({Number(item.greige_sent_qty).toFixed(2)} m)
-                                          </td>
-                                          <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600' }}>
-                                            {item.processed_rolls_recd} rolls ({Number(item.processed_qty_recd).toFixed(2)} m)
-                                          </td>
-                                          <td style={{ padding: '0.5rem', textAlign: 'right' }}>{Number(item.shrinkage).toFixed(2)}%</td>
-                                          <td style={{ padding: '0.5rem', textAlign: 'center' }}>{new Date(item.sent_date).toLocaleDateString('en-GB')}</td>
-                                          <td style={{ padding: '0.5rem', textAlign: 'center' }}>{item.received_date ? new Date(item.received_date).toLocaleDateString('en-GB') : '—'}</td>
-                                          <td style={{ padding: '0.5rem', textTransform: 'capitalize' }}>{(item.status || '').replace(/_/g, ' ')}</td>
+                              // Calculate unique POF summaries for greige sent
+                              const uniquePofs = {};
+                              (bill.bill_items || []).forEach(item => {
+                                const key = item.pof_id || item.pof_number;
+                                if (key && !uniquePofs[key]) {
+                                  uniquePofs[key] = {
+                                    greige_sent_rolls: Number(item.greige_sent_rolls || 0),
+                                    greige_sent_qty: Number(item.greige_sent_qty || 0)
+                                  };
+                                }
+                              });
+                              const totalGreigeSentRolls = Object.values(uniquePofs).reduce((sum, p) => sum + p.greige_sent_rolls, 0);
+                              const totalGreigeSentQty = Object.values(uniquePofs).reduce((sum, p) => sum + p.greige_sent_qty, 0);
+
+                              const totalProcessedRollsRecd = (bill.bill_items || []).reduce((sum, item) => sum + Number(item.processed_rolls_recd || 0), 0);
+                              const totalProcessedQtyRecd = (bill.bill_items || []).reduce((sum, item) => sum + Number(item.processed_qty_recd || 0), 0);
+
+                              return (
+                                <tr onClick={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
+                                  <td colSpan={10} style={{ padding: '1.25rem 1.5rem', backgroundColor: '#f8fafc', borderLeft: '3px solid var(--color-primary)' }}>
+                                    <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', borderBottom: '1px dashed var(--border-current)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
+                                      {bill.partner_invoice_no && (
+                                        <div>
+                                          <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', marginRight: '6px' }}>Partner Invoice No:</span>
+                                          <span style={{ fontSize: '0.8rem', fontWeight: '800', fontFamily: 'monospace' }}>{bill.partner_invoice_no}</span>
+                                        </div>
+                                      )}
+                                      {bill.partner_invoice_date && (
+                                        <div>
+                                          <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', marginRight: '6px' }}>Partner Invoice Date:</span>
+                                          <span style={{ fontSize: '0.8rem', fontWeight: '800' }}>
+                                            {new Date(bill.partner_invoice_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Summary Cards */}
+                                    <div style={{ display: 'flex', gap: '1.25rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                                      <div style={{ background: '#fff', padding: '0.6rem 1.25rem', borderRadius: '6px', border: '1px solid var(--border-current)', borderLeft: '3px solid #64748b', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                                        <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: '#64748b', fontWeight: '700', letterSpacing: '0.05em' }}>Total Greige Sent Rolls</div>
+                                        <div style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-main-current)', marginTop: '2px' }}>
+                                          {totalGreigeSentRolls} Rolls
+                                        </div>
+                                      </div>
+                                      <div style={{ background: '#fff', padding: '0.6rem 1.25rem', borderRadius: '6px', border: '1px solid var(--border-current)', borderLeft: '3px solid #0284c7', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                                        <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: '#0284c7', fontWeight: '700', letterSpacing: '0.05em' }}>Total Greige Sent Qty</div>
+                                        <div style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-main-current)', marginTop: '2px' }}>
+                                          {totalGreigeSentQty.toFixed(2)} m
+                                        </div>
+                                      </div>
+                                      <div style={{ background: '#fff', padding: '0.6rem 1.25rem', borderRadius: '6px', border: '1px solid var(--border-current)', borderLeft: '3px solid #0d9488', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                                        <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: '#0d9488', fontWeight: '700', letterSpacing: '0.05em' }}>Total Rolls Received</div>
+                                        <div style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-main-current)', marginTop: '2px' }}>
+                                          {totalProcessedRollsRecd} Rolls
+                                        </div>
+                                      </div>
+                                      <div style={{ background: '#fff', padding: '0.6rem 1.25rem', borderRadius: '6px', border: '1px solid var(--border-current)', borderLeft: '3px solid #8b5cf6', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                                        <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: '#8b5cf6', fontWeight: '700', letterSpacing: '0.05em' }}>Total Received Qty</div>
+                                        <div style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--text-main-current)', marginTop: '2px' }}>
+                                          {totalProcessedQtyRecd.toFixed(2)} m
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <h4 style={{ margin: '0 0 0.75rem 0', fontWeight: '800', fontSize: '0.85rem', color: 'var(--text-main-current)' }}>
+                                      POF Details & Process Rates
+                                    </h4>
+                                    
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', backgroundColor: '#fff', border: '1px solid var(--border-current)', marginBottom: '1.25rem', borderRadius: '6px', overflow: 'hidden' }}>
+                                      <thead>
+                                        <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)', fontWeight: '700', borderBottom: '1px solid var(--border-current)' }}>
+                                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>POF Number</th>
+                                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>DC Number</th>
+                                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>POFRR Number</th>
+                                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Processed Recd</th>
+                                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Shrinkage (%)</th>
+                                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>Sent Date</th>
+                                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>Received Date</th>
+                                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>Status</th>
                                         </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
+                                      </thead>
+                                      <tbody>
+                                        {(bill.bill_items || []).map((item, idx) => (
+                                          <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                                            <td style={{ padding: '0.5rem', fontWeight: '700', fontFamily: 'monospace', color: 'var(--color-primary)' }}>{item.pof_number}</td>
+                                            <td style={{ padding: '0.5rem', fontFamily: 'monospace' }}>{item.processing_dc_no || '—'}</td>
+                                            <td style={{ padding: '0.5rem', fontFamily: 'monospace', color: 'var(--text-muted-current)' }}>{item.pofrr_number || '—'}</td>
+                                            <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600' }}>
+                                              {item.processed_rolls_recd} rolls ({Number(item.processed_qty_recd).toFixed(2)} m)
+                                            </td>
+                                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>{Number(item.shrinkage).toFixed(2)}%</td>
+                                            <td style={{ padding: '0.5rem', textAlign: 'center' }}>{new Date(item.sent_date).toLocaleDateString('en-GB')}</td>
+                                            <td style={{ padding: '0.5rem', textAlign: 'center' }}>{item.received_date ? new Date(item.received_date).toLocaleDateString('en-GB') : '—'}</td>
+                                            <td style={{ padding: '0.5rem', textTransform: 'capitalize' }}>{(item.status || '').replace(/_/g, ' ')}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
 
-                                  {/* Process Rates Table */}
-                                  <h5 style={{ margin: '0 0 0.5rem 0', fontWeight: '800', fontSize: '0.8rem', color: 'var(--text-main-current)' }}>
-                                    Process Rates & Calculated Prices
-                                  </h5>
-                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', backgroundColor: '#fff', border: '1px solid var(--border-current)', marginBottom: '1.25rem', borderRadius: '6px', overflow: 'hidden' }}>
-                                    <thead>
-                                      <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)', fontWeight: '700', borderBottom: '1px solid var(--border-current)' }}>
-                                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>Process Name</th>
-                                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Price / Meter</th>
-                                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Total Price (Based on Greige Sent Qty)</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {(bill.process_rates || []).map((r, idx) => (
-                                        <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
-                                          <td style={{ padding: '0.5rem' }}>{r.process}</td>
-                                          <td style={{ padding: '0.5rem', textAlign: 'right' }}>₹{Number(r.rate_per_meter).toFixed(2)}</td>
-                                          <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600' }}>₹{Number(r.calculated_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    {/* Process Rates Table */}
+                                    <h5 style={{ margin: '0 0 0.5rem 0', fontWeight: '800', fontSize: '0.8rem', color: 'var(--text-main-current)' }}>
+                                      Process Rates & Calculated Prices
+                                    </h5>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', backgroundColor: '#fff', border: '1px solid var(--border-current)', marginBottom: '1.25rem', borderRadius: '6px', overflow: 'hidden' }}>
+                                      <thead>
+                                        <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)', fontWeight: '700', borderBottom: '1px solid var(--border-current)' }}>
+                                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>Process Name</th>
+                                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Price / Meter</th>
+                                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Total Price (Based on Greige Sent Qty)</th>
                                         </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
+                                      </thead>
+                                      <tbody>
+                                        {(bill.process_rates || []).map((r, idx) => (
+                                          <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                                            <td style={{ padding: '0.5rem' }}>{r.process} {r.pof_number ? `(${r.pof_number})` : ''}</td>
+                                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>₹{Number(r.rate_per_meter).toFixed(2)}</td>
+                                            <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600' }}>₹{Number(r.calculated_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
 
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1.5rem', alignItems: 'start' }}>
-                                    <div></div>
-                                    <div style={{ 
-                                      textAlign: 'left', 
-                                      fontSize: '0.8rem', 
-                                      color: 'var(--text-main-current)', 
-                                      display: 'flex', 
-                                      flexDirection: 'column', 
-                                      gap: '0.5rem', 
-                                      border: '1px solid var(--border-current)', 
-                                      padding: '1rem', 
-                                      borderRadius: '8px', 
-                                      backgroundColor: '#fff', 
-                                      minWidth: '320px',
-                                      boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-                                    }}>
-                                      <h5 style={{ margin: '0 0 0.5rem 0', color: 'var(--color-primary)', fontWeight: '800', fontSize: '0.8rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
-                                        Bill Summary Breakdown
-                                      </h5>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span style={{ color: 'var(--text-muted-current)' }}>Calculated Total:</span>
-                                        <strong>₹{Number(bill.calculated_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                                      </div>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span style={{ color: 'var(--text-muted-current)' }}>Tax Amount:</span>
-                                        <span>₹{Number(bill.tax_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                      </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '1.5rem', alignItems: 'start' }}>
+                                      <div></div>
                                       <div style={{ 
+                                        textAlign: 'left', 
+                                        fontSize: '0.8rem', 
+                                        color: 'var(--text-main-current)', 
                                         display: 'flex', 
-                                        justifyContent: 'space-between', 
-                                        fontSize: '0.9rem', 
-                                        color: 'var(--color-primary)', 
-                                        fontWeight: '800', 
-                                        borderTop: '2px solid var(--border-current)', 
-                                        paddingTop: '0.5rem', 
-                                        marginTop: '0.25rem' 
+                                        flexDirection: 'column', 
+                                        gap: '0.5rem', 
+                                        border: '1px solid var(--border-current)', 
+                                        padding: '1rem', 
+                                        borderRadius: '8px', 
+                                        backgroundColor: '#fff', 
+                                        minWidth: '320px',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
                                       }}>
-                                        <span>Grand Value (Total Value):</span>
-                                        <span>₹{Number(bill.invoice_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                        <h5 style={{ margin: '0 0 0.5rem 0', color: 'var(--color-primary)', fontWeight: '800', fontSize: '0.8rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
+                                          Bill Summary Breakdown
+                                        </h5>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                          <span style={{ color: 'var(--text-muted-current)' }}>Calculated Total:</span>
+                                          <strong>₹{Number(bill.calculated_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                          <span style={{ color: 'var(--text-muted-current)' }}>Tax Amount:</span>
+                                          <span>₹{Number(bill.tax_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                        </div>
+                                        <div style={{ 
+                                          display: 'flex', 
+                                          justifyContent: 'space-between', 
+                                          fontSize: '0.9rem', 
+                                          color: 'var(--color-primary)', 
+                                          fontWeight: '800', 
+                                          borderTop: '2px solid var(--border-current)', 
+                                          paddingTop: '0.5rem', 
+                                          marginTop: '0.25rem' 
+                                        }}>
+                                          <span>Grand Value (Total Value):</span>
+                                          <span>₹{Number(bill.invoice_total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
 
-                                  {bill.status === 'approved' && (
-                                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
-                                      <button
-                                        onClick={() => handleSettle(bill)}
-                                        disabled={settlingBillId === bill.id}
-                                        style={{
-                                          backgroundColor: '#dcfce7', color: '#166534',
-                                          border: '1px solid #86efac',
-                                          padding: '6px 16px', borderRadius: '6px',
-                                          fontSize: '0.8rem', fontWeight: '800',
-                                          cursor: settlingBillId === bill.id ? 'wait' : 'pointer',
-                                          display: 'inline-flex', alignItems: 'center', gap: '6px',
-                                          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                                        }}
-                                      >
-                                        {settlingBillId === bill.id ? (
-                                          <>
-                                            <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} />
-                                            Settling Bill...
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Check size={14} /> Settle Bill & Make Payment
-                                          </>
-                                        )}
-                                      </button>
-                                    </div>
-                                  )}
-                                </td>
-                              </tr>
-                            )}
+                                    {bill.status === 'approved' && (
+                                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                                        <button
+                                          onClick={() => handleSettle(bill)}
+                                          disabled={settlingBillId === bill.id}
+                                          style={{
+                                            backgroundColor: '#dcfce7', color: '#166534',
+                                            border: '1px solid #86efac',
+                                            padding: '6px 16px', borderRadius: '6px',
+                                            fontSize: '0.8rem', fontWeight: '800',
+                                            cursor: settlingBillId === bill.id ? 'wait' : 'pointer',
+                                            display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                                          }}
+                                        >
+                                          {settlingBillId === bill.id ? (
+                                            <>
+                                              <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                                              Settling Bill...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Check size={14} /> Settle Bill & Make Payment
+                                            </>
+                                          )}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })()}
                           </React.Fragment>
                         );
                       })}
@@ -2333,6 +2382,8 @@ function AllSettledBills({ profile }) {
             <thead>
               <tr style={{ backgroundColor: 'rgba(0,0,0,0.02)', fontWeight: '700', textAlign: 'left' }}>
                 <th style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-current)' }}>POF Number</th>
+                <th style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-current)' }}>DC Number</th>
+                <th style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-current)' }}>POFRR Number</th>
                 <th style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Greige Sent</th>
                 <th style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Processed Recd</th>
                 <th style={{ padding: '0.5rem', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Shrinkage</th>
@@ -2344,6 +2395,8 @@ function AllSettledBills({ profile }) {
               {(bill.rawRecord.bill_items || []).map((item, idx) => (
                 <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
                   <td style={{ padding: '0.5rem', fontWeight: '700', fontFamily: 'monospace' }}>{item.pof_number}</td>
+                  <td style={{ padding: '0.5rem', fontFamily: 'monospace' }}>{item.processing_dc_no || '—'}</td>
+                  <td style={{ padding: '0.5rem', fontFamily: 'monospace', color: 'var(--text-muted-current)' }}>{item.pofrr_number || '—'}</td>
                   <td style={{ padding: '0.5rem', textAlign: 'right' }}>{item.greige_sent_rolls} rolls ({Number(item.greige_sent_qty).toFixed(2)} m)</td>
                   <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600' }}>{item.processed_rolls_recd} rolls ({Number(item.processed_qty_recd).toFixed(2)} m)</td>
                   <td style={{ padding: '0.5rem', textAlign: 'right' }}>{Number(item.shrinkage).toFixed(2)}%</td>
@@ -2366,7 +2419,7 @@ function AllSettledBills({ profile }) {
             <tbody>
               {(bill.rawRecord.process_rates || []).map((item, idx) => (
                 <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
-                  <td style={{ padding: '0.5rem' }}>{item.process}</td>
+                  <td style={{ padding: '0.5rem' }}>{item.process} {item.pof_number ? `(${item.pof_number})` : ''}</td>
                   <td style={{ padding: '0.5rem', textAlign: 'right' }}>₹{Number(item.rate_per_meter).toFixed(2)}</td>
                   <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '700' }}>₹{Number(item.calculated_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                 </tr>
