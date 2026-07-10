@@ -619,7 +619,7 @@ function GreigeApprovals() {
         .select(`
           *,
           master_partners (partner_name),
-          master_yarn_counts (count_value, material, product_type),
+          master_yarn_counts (count_value, material, product_type, spec, spec1),
           master_locations!location_id (location_name)
         `)
         .eq('receipt_type', 'spinning_mill')
@@ -683,8 +683,8 @@ function GreigeApprovals() {
 
   const getCountLabel = (item) => {
     if (!item.master_yarn_counts) return '-';
-    const { count_value, material, product_type } = item.master_yarn_counts;
-    return `${count_value} ${material} ${product_type || ''}`.trim();
+    const { count_value, spec, spec1, product_type } = item.master_yarn_counts;
+    return [count_value, spec, spec1, product_type].filter(Boolean).join(' ');
   };
 
   // Filter logic

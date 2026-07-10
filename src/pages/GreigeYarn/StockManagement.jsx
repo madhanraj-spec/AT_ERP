@@ -173,7 +173,7 @@ export default function StockManagement() {
       if (!groups[cid]) {
         groups[cid] = {
           yarn_count: r.master_yarn_counts
-            ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}`
+            ? [r.master_yarn_counts.count_value, r.master_yarn_counts.spec, r.master_yarn_counts.spec1, r.master_yarn_counts.product_type, r.master_yarn_counts.content].filter(Boolean).join(' ')
             : 'Unknown Count',
           total_weight: 0,
           receipt_count: 0,
@@ -304,7 +304,7 @@ export default function StockManagement() {
               <div>
                 <label className="input-label" style={{ fontSize: '0.8rem' }}>Yarn Count</label>
                 <MultiSelectDropdown 
-                  options={counts.map(c => ({ value: c.id, label: `${c.count_value} (${c.material} - ${c.product_type})` }))}
+                  options={counts.map(c => ({ value: c.id, label: [c.count_value, c.spec, c.spec1, c.product_type, c.content].filter(Boolean).join(' ') }))}
                   selected={filterCount}
                   onChange={setFilterCount}
                   placeholder="All Counts"

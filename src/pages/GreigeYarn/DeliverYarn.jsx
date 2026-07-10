@@ -12,7 +12,7 @@ import { useAuth } from '../../contexts/AuthContext';
 // ──────────────────────────────────────────────
 const formatCount = (count) => {
   if (!count) return '-';
-  return `${count.count_value} - ${count.material} - ${count.product_type}`;
+  return [count.count_value, count.spec, count.spec1, count.product_type].filter(Boolean).join(' ');
 };
 
 // ──────────────────────────────────────────────
@@ -237,7 +237,7 @@ export default function DeliverYarn() {
       return {
         countId: s.countId,
         colour: s.colour,
-        countLabel: s.yarnLabel || formatCount(count),
+        countLabel: count ? formatCount(count) : (s.yarnLabel || '-'),
         required_kg: required,
         sent_kg: sent,
         balance_kg: balance,
@@ -386,7 +386,7 @@ export default function DeliverYarn() {
           orderNumber: 'Miscellaneous / General',
           countId: s.countId,
           colour: s.colour,
-          countLabel: s.yarnLabel || formatCount(count),
+          countLabel: count ? formatCount(count) : (s.yarnLabel || '-'),
           type: 'general',
           required_kg: diff,
           already_allocated_kg: alreadyAllocated,
@@ -1066,7 +1066,7 @@ export default function DeliverYarn() {
                   <tbody>
                     {existingReturns.map(r => {
                       const count = yarnCounts.find(c => c.id === r.yarn_count_id);
-                      const countLabel = count ? `${count.count_value} ${count.material}` : 'Unknown';
+                      const countLabel = count ? formatCount(count) : 'Unknown';
                       const location = locations.find(l => l.id === r.location_id);
                       
                       return (

@@ -255,8 +255,8 @@ export default function DeliveriesList() {
 
   const formatCount = (count) => {
     if (!count) return '';
-    const parts = [count.count_value, count.material, count.product_type].filter(Boolean);
-    return parts.join(' - ');
+    const parts = [count.count_value, count.spec, count.spec1, count.product_type].filter(Boolean);
+    return parts.join(' ');
   };
 
   const getApprovalStatus = (status) => {

@@ -194,6 +194,55 @@ function EmptyState({ message }) {
   );
 }
 
+function DyeingStatBadge({ icon, count, label, badgeBg, badgeBorder, badgeColor, tooltipBg, tooltipAccent, items }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  return (
+    <div
+      style={{ position: 'relative' }}
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        padding: '0.6rem', borderRadius: 'var(--radius-md)',
+        backgroundColor: badgeBg, border: `1px solid ${badgeBorder}`,
+        cursor: count > 0 ? 'pointer' : 'default',
+      }}>
+        {icon}
+        <span style={{ fontSize: '1rem', fontWeight: 800, color: badgeColor }}>{count}</span>
+        <span style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)' }}>{label}</span>
+      </div>
+      {showTooltip && items.length > 0 && (
+        <div style={{
+          position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%',
+          transform: 'translateX(-50%)', zIndex: 999,
+          backgroundColor: tooltipBg, color: '#fff',
+          borderRadius: '8px', padding: '0.6rem 0.8rem',
+          minWidth: '180px', maxWidth: '260px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+          fontSize: '0.72rem', pointerEvents: 'none',
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: '0.4rem', fontSize: '0.68rem', textTransform: 'uppercase', opacity: 0.7, letterSpacing: '0.06em' }}>{label} DOFs</div>
+          {items.map((d, i) => (
+            <div key={i} style={{
+              display: 'flex', justifyContent: 'space-between', gap: '0.6rem',
+              marginBottom: '0.25rem', paddingBottom: '0.25rem',
+              borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+            }}>
+              <span style={{ fontWeight: 700, color: tooltipAccent }}>{d.dof_number || '—'}</span>
+              <span style={{ opacity: 0.75, textAlign: 'right', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {d.dyeing_unit?.partner_name || 'No partner'}
+              </span>
+            </div>
+          ))}
+          <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: `6px solid ${tooltipBg}` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function Dashboard({ user }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -216,7 +265,7 @@ export default function Dashboard({ user }) {
         setLoading(true);
         const [ordersRes, dyeRes, warpRes, sizeRes, weaveRes, processRes, greigeRecRes, greigeDelRes, dyedRecRes, machinesRes] = await Promise.all([
           supabase.from('orders').select('*'),
-          supabase.from('dyeing_order_forms').select('*'),
+          supabase.from('dyeing_order_forms').select('*, dyeing_unit:master_partners(partner_name)'),
           supabase.from('warping_order_forms').select('*'),
           supabase.from('sizing_order_forms').select('*'),
           supabase.from('weaving_orders').select('*'),
@@ -324,13 +373,19 @@ export default function Dashboard({ user }) {
 
   const dyeingStats = useMemo(() => {
     const total = data.dyeingForms.length;
-    const onProcess = data.dyeingForms.filter(d =>
+    const onProcessItems = data.dyeingForms.filter(d =>
       d.status === 'approved' && (!d.expected_delivery_date || getLocalDateStr(d.expected_delivery_date) >= TODAY_STR)
-    ).length;
-    const late = data.dyeingForms.filter(d =>
-      d.status !== 'rejected' && d.expected_delivery_date && getLocalDateStr(d.expected_delivery_date) < TODAY_STR
-    ).length;
-    return { total, onProcess, late };
+    );
+    const lateItems = data.dyeingForms.filter(d =>
+      d.status === 'approved' && d.expected_delivery_date && getLocalDateStr(d.expected_delivery_date) < TODAY_STR
+    );
+    return {
+      total,
+      onProcess: onProcessItems.length,
+      late: lateItems.length,
+      onProcessItems,
+      lateItems,
+    };
   }, [data.dyeingForms]);
 
   const warpingStats = useMemo(() => {
@@ -808,66 +863,35 @@ export default function Dashboard({ user }) {
             <ArrowUpRight size={14} style={{ color: 'var(--text-muted-current)', opacity: 0.4 }} />
           </div>
           <div style={{ padding: '1.15rem' }}>
-            <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr',
-              gap: '0.75rem', marginBottom: '1rem',
-            }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '0.5rem',
-                padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-md)',
-                backgroundColor: '#3b82f610', border: '1px solid #3b82f625',
-              }}>
-                <Zap size={14} style={{ color: '#3b82f6' }} />
-                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#3b82f6' }}>{dyeingStats.onProcess}</span>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)' }}>On Process</span>
-              </div>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '0.5rem',
-                padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-md)',
-                backgroundColor: '#ef444410', border: '1px solid #ef444425',
-              }}>
-                <AlertTriangle size={14} style={{ color: '#ef4444' }} />
-                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#ef4444' }}>{dyeingStats.late}</span>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)' }}>Late</span>
-              </div>
+            {/* Total DOFs */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginBottom: '1rem' }}>
+              <span style={{ fontSize: '1.5rem', fontWeight: 800, color: sc.dyeing.text }}>{dyeingStats.total}</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>total DOFs</span>
             </div>
 
-            <div style={{
-              backgroundColor: `${sc.dyeing.accent}08`,
-              borderRadius: 'var(--radius-md)',
-              padding: '0.85rem', marginBottom: '0.85rem',
-              border: `1px solid ${sc.dyeing.accent}12`,
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Dyeing Completion
-                </span>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: sc.dyeing.accent }}>
-                  {dyeingStats.total > 0 ? Math.round((dyeingStats.onProcess / dyeingStats.total) * 100) : 0}%
-                </span>
-              </div>
-              <div style={{ height: '8px', borderRadius: '4px', backgroundColor: `${sc.dyeing.accent}15`, overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%', borderRadius: '4px', backgroundColor: sc.dyeing.accent,
-                  width: `${dyeingStats.total > 0 ? (dyeingStats.onProcess / dyeingStats.total) * 100 : 0}%`,
-                  transition: 'width 0.8s ease',
-                }} />
-              </div>
-            </div>
-
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem',
-            }}>
-              {[
-                { label: 'Total', value: dyeingStats.total, color: 'var(--text-current)' },
-                { label: 'On Process', value: dyeingStats.onProcess, color: '#3b82f6' },
-                { label: 'Late', value: dyeingStats.late, color: '#ef4444' },
-              ].map((s, i) => (
-                <div key={i} style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: s.color }}>{s.value}</div>
-                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', fontWeight: 500 }}>{s.label}</div>
-                </div>
-              ))}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <DyeingStatBadge
+                icon={<Zap size={13} style={{ color: '#3b82f6', marginBottom: '0.2rem' }} />}
+                count={dyeingStats.onProcess}
+                label="On Process"
+                badgeBg="#3b82f610"
+                badgeBorder="#3b82f625"
+                badgeColor="#3b82f6"
+                tooltipBg="#1e1b4b"
+                tooltipAccent="#a5b4fc"
+                items={dyeingStats.onProcessItems}
+              />
+              <DyeingStatBadge
+                icon={<AlertTriangle size={13} style={{ color: '#ef4444', marginBottom: '0.2rem' }} />}
+                count={dyeingStats.late}
+                label="Late"
+                badgeBg="#ef444410"
+                badgeBorder="#ef444425"
+                badgeColor="#ef4444"
+                tooltipBg="#450a0a"
+                tooltipAccent="#fca5a5"
+                items={dyeingStats.lateItems}
+              />
             </div>
           </div>
         </div>

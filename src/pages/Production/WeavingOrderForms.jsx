@@ -326,6 +326,38 @@ function calcBarPosition(wof, days) {
   return calcBarPositionForDates(wof.start_date, wof.end_date, days);
 }
 
+function isWofInDateRange(wof, days) {
+  if (!days || days.length === 0) return false;
+
+  const windowStartKey = formatDateKey(days[0]);
+  const windowEndKey = formatDateKey(days[days.length - 1]);
+
+  // 1. Planned range:
+  const plannedStart = wof.start_date || wof.end_date;
+  const plannedEnd = wof.end_date || wof.start_date;
+
+  const plannedOverlaps = plannedStart && plannedEnd && !(plannedEnd < windowStartKey || plannedStart > windowEndKey);
+  if (plannedOverlaps) return true;
+
+  // 2. Actual range:
+  const showActual = !!wof.process_started_at || wof.status === 'on_process' || wof.status === 'completed' || wof.status === 'late_complete' || wof.status === 'stopped';
+  if (showActual) {
+    const todayStr = getLocalDateString(new Date());
+    const actualStartStr = getLocalDateString(wof.process_started_at) || wof.start_date || todayStr;
+    const actualEndStr = ['completed', 'late_complete', 'stopped'].includes(wof.status)
+      ? (getLocalDateString(wof.process_completed_at) || getLocalDateString(wof.updated_at) || todayStr)
+      : todayStr;
+
+    const actualStart = actualStartStr || actualEndStr;
+    const actualEnd = actualEndStr || actualStartStr;
+
+    const actualOverlaps = actualStart && actualEnd && !(actualEnd < windowStartKey || actualStart > windowEndKey);
+    if (actualOverlaps) return true;
+  }
+
+  return false;
+}
+
 function GanttBar({ wof, bar, compact, onWofClick, customBg, customBorder, customTextColor, customLabel, topOffset, customHeight, tooltipType, deliveries }) {
   const [hovered, setHovered] = useState(false);
   const [tooltipDirection, setTooltipDirection] = useState('up');
@@ -1190,7 +1222,7 @@ export default function WeavingOrderForms() {
             uniqueOrderIds.length > 0
               ? supabase
                   .from('dyed_yarn_receipt_items')
-                  .select('*, yarn_count:master_yarn_counts(count_value, material, product_type), location:master_locations(location_name), receipt:dyed_yarn_receipts(id, dyrr_number, dof_id, dof_number, received_date, vehicle_no, dc_number, received_by, remarks, source_type)')
+                  .select('*, yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1), location:master_locations(location_name), receipt:dyed_yarn_receipts(id, dyrr_number, dof_id, dof_number, received_date, vehicle_no, dc_number, received_by, remarks, source_type)')
                   .in('order_id', uniqueOrderIds)
               : Promise.resolve({ data: [] })
           ]);
@@ -1567,7 +1599,7 @@ export default function WeavingOrderForms() {
           colour,
           lot_number,
           quantity_kg,
-          yarn_count:master_yarn_counts(count_value, material, product_type)
+          yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1)
         `)
         .eq('production_form_id', wvof.id);
 
@@ -1579,7 +1611,7 @@ export default function WeavingOrderForms() {
         const key = `${item.colour || ''}_${item.yarn_count_id || ''}_${item.lot_number || ''}`;
         if (!groupedDelivered[key]) {
           const countDisplay = item.yarn_count
-            ? `${item.yarn_count.count_value} ${item.yarn_count.material} ${item.yarn_count.product_type}`
+            ? [item.yarn_count.count_value, item.yarn_count.spec, item.yarn_count.spec1].filter(Boolean).join(' ')
             : '—';
           groupedDelivered[key] = {
             colour: item.colour || '—',
@@ -1918,7 +1950,7 @@ export default function WeavingOrderForms() {
 
         // Fetch display text for this count
         const yc = yarnCounts.find(y => y.id === countId);
-        const countValueDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (req.countValue || req.count_value || '—');
+        const countValueDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : (req.countValue || req.count_value || '—');
 
         const key = `${countId}|${colour}`;
         const warehouseStock = totalStockMap[key] || 0;
@@ -2120,7 +2152,7 @@ export default function WeavingOrderForms() {
   const wofsByMachine = useMemo(() => {
     const map = {};
     displayedLooms.forEach(m => {
-      const wofs = getOrdersForMachine(m, weavingOrders);
+      const wofs = getOrdersForMachine(m, weavingOrders).filter(w => isWofInDateRange(w, days));
       // Sort so that earlier start dates appear first (ascending)
       wofs.sort((a, b) => {
         const dateA = a.start_date || '9999-12-31';
@@ -2130,7 +2162,7 @@ export default function WeavingOrderForms() {
       map[m.id] = wofs;
     });
     return map;
-  }, [displayedLooms, weavingOrders]);
+  }, [displayedLooms, weavingOrders, days]);
 
   const togglePartner = (partnerId) => {
     setExpandedPartners(prev => ({
@@ -2186,15 +2218,17 @@ export default function WeavingOrderForms() {
         wofs = jobWofs.filter(w => w.partner_name === p.partner_name);
       }
       
-      wofs.sort((a, b) => {
+      const filteredWofs = wofs.filter(w => isWofInDateRange(w, days));
+      
+      filteredWofs.sort((a, b) => {
         const dateA = a.start_date || '9999-12-31';
         const dateB = b.start_date || '9999-12-31';
         return dateA.localeCompare(dateB);
       });
-      map[p.id] = wofs;
+      map[p.id] = filteredWofs;
     });
     return map;
-  }, [displayedPartners, filtered, currentTab]);
+  }, [displayedPartners, filtered, currentTab, days]);
 
   useEffect(() => {
     if (currentTab === 'job_work') {
@@ -2953,7 +2987,7 @@ export default function WeavingOrderForms() {
                                           ) : (
                                             wvof.weft_allotments.map((allot, aIdx) => {
                                               const yc = yarnCounts.find(y => y.id === (allot.countId || allot.yarn_count_id));
-                                              const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (allot.countValue || '—');
+                                              const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : (allot.countValue || '—');
                                               
                                               // Deliveries matching this allotment count/colour on this WVOF
                                               const matchingDel = deliveries.filter(d => 
@@ -4717,7 +4751,7 @@ export default function WeavingOrderForms() {
                               ) : (
                                 selectedWvof.weft_allotments.map((allot, aIdx) => {
                                   const yc = yarnCounts.find(y => y.id === (allot.countId || allot.yarn_count_id));
-                                  const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (allot.countValue || '—');
+                                  const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : (allot.countValue || '—');
                                   
                                   const matchingDel = deliveries.filter(d => 
                                     d.production_form_id === selectedWvof.id && 
@@ -5967,7 +6001,7 @@ export default function WeavingOrderForms() {
                         {((allotWvof.order?.yarn_requirements || []).filter(y => y.type === 'weft')).map((req, idx) => {
                           const countId = req.countId || req.count_id;
                           const yc = yarnCounts.find(y => y.id === countId);
-                          const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (req.countValue || req.count_value || '—');
+                          const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : (req.countValue || req.count_value || '—');
                           return (
                             <tr key={idx} style={{ borderBottom: idx !== ((allotWvof.order?.yarn_requirements || []).filter(y => y.type === 'weft')).length - 1 ? '1px solid var(--border-current)' : 'none' }}>
                               <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>{req.color || req.colour}</td>
@@ -6230,7 +6264,7 @@ export default function WeavingOrderForms() {
           onClose={() => setSelectedDydr(null)}
           getFormatCount={(countId) => {
             const yc = yarnCounts.find(y => y.id === countId);
-            return yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : '—';
+            return yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : '—';
           }}
         />
       )}
@@ -6407,7 +6441,7 @@ function WvofStopWizardModal({ wvof, onClose, onSuccess }) {
           colour,
           lot_number,
           quantity_kg,
-          yarn_count:master_yarn_counts(count_value, material, product_type)
+          yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1)
         `)
         .eq('production_form_id', wvof.id);
 
@@ -6418,7 +6452,7 @@ function WvofStopWizardModal({ wvof, onClose, onSuccess }) {
         const key = `${item.colour || ''}_${item.yarn_count_id || ''}_${item.lot_number || ''}`;
         if (!groupedDelivered[key]) {
           const countDisplay = item.yarn_count
-            ? `${item.yarn_count.count_value} ${item.yarn_count.material} ${item.yarn_count.product_type}`
+            ? [item.yarn_count.count_value, item.yarn_count.spec, item.yarn_count.spec1].filter(Boolean).join(' ')
             : '—';
           groupedDelivered[key] = {
             colour: item.colour || '—',

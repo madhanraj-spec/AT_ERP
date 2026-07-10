@@ -214,7 +214,7 @@ function PrintableWOF({ wof, order, machineName, partnerName, yarnCounts }) {
             <tbody>
               {(wof.colour_allotments || []).map((row, i) => {
                 const yc = yarnCounts?.find(y => y.id === (row.countId || row.yarn_count_id || row.count_id));
-                const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (row.countValue || '—');
+                const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : (row.countValue || '—');
                 return (
                   <tr key={i} style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: i % 2 === 0 ? '#fdf8f8' : 'white' }}>
                     <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#800000' }}>{i + 1}</td>

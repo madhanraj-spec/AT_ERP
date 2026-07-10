@@ -108,13 +108,14 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '3rem' }}>
             <thead>
               <tr style={{ backgroundColor: '#f9fafb', borderTop: '2px solid #1a1a1a', borderBottom: '2px solid #1a1a1a' }}>
-                <th style={thStyle}>#</th>
-                <th style={thStyle}>Order / Design</th>
-                <th style={thStyle}>Yarn Description</th>
-                <th style={{ ...thStyle, textAlign: 'center' }}>Type</th>
-                <th style={thStyle}>Lot Number</th>
-                <th style={thStyle}>Location</th>
-                <th style={{ ...thStyle, textAlign: 'right' }}>Quantity (kg)</th>
+                <th style={{ ...thStyle, width: '4%' }}>#</th>
+                <th style={{ ...thStyle, width: '22%' }}>Order / Design</th>
+                <th style={{ ...thStyle, width: '28%' }}>Yarn Description</th>
+                <th style={{ ...thStyle, width: '12%' }}>Colour</th>
+                <th style={{ ...thStyle, textAlign: 'center', width: '10%' }}>Type</th>
+                <th style={{ ...thStyle, textAlign: 'center', width: '10%' }}>Lot Number</th>
+                <th style={{ ...thStyle, width: '10%' }}>Location</th>
+                <th style={{ ...thStyle, textAlign: 'right', width: '14%' }}>Quantity (kg)</th>
               </tr>
             </thead>
             <tbody>
@@ -126,8 +127,14 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
                     <div style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: '500' }}>{it.design || (it.orders ? `${it.orders.design_no} / ${it.orders.design_name}` : '-')}</div>
                   </td>
                   <td style={tdStyle}>
-                    <div style={{ fontWeight: '700', color: '#111827' }}>{it.count || it.master_yarn_counts?.count_value}</div>
-                    <div style={{ fontSize: '0.8rem', fontWeight: '900', color: '#7f1d1d' }}>{it.colour}</div>
+                    <div style={{ fontWeight: '700', color: '#111827' }}>
+                      {it.master_yarn_counts
+                        ? [it.master_yarn_counts.count_value, it.master_yarn_counts.spec, it.master_yarn_counts.spec1, it.master_yarn_counts.product_type].filter(Boolean).join(' ')
+                        : (it.count || '-')}
+                    </div>
+                  </td>
+                  <td style={{ ...tdStyle, fontWeight: '700', color: '#7f1d1d', textTransform: 'uppercase' }}>
+                    {it.colour || '-'}
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'center' }}>
                     <span style={{ 
@@ -143,7 +150,7 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
                       {it.type || it.yarn_type || '-'}
                     </span>
                   </td>
-                  <td style={{ ...tdStyle, fontWeight: '700', color: '#1f2937' }}>{it.lot_number || '-'}</td>
+                  <td style={{ ...tdStyle, textAlign: 'center', fontWeight: '700', color: '#1f2937' }}>{it.lot_number || '-'}</td>
                   <td style={{ ...tdStyle, fontWeight: '600' }}>
                     {typeof it.location === 'object' 
                       ? it.location?.location_name 
@@ -157,7 +164,7 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan="6" style={{ padding: '2.5rem 1rem', textAlign: 'right', fontWeight: '900', color: '#4b5563', fontSize: '1rem' }}>GRAND TOTAL RECEIVED WEIGHT:</td>
+                <td colSpan="7" style={{ padding: '2.5rem 1rem', textAlign: 'right', fontWeight: '900', color: '#4b5563', fontSize: '1rem' }}>GRAND TOTAL RECEIVED WEIGHT:</td>
                 <td style={{ padding: '2.5rem 1rem', textAlign: 'right', fontWeight: '900', fontSize: '2.25rem', borderBottom: '6px double #1a1a1a', color: '#111827' }}>
                   {receipt.items.reduce((sum, it) => sum + Number(it.weight ?? it.quantity_kg ?? 0), 0).toFixed(2)} <span style={{ fontSize: '1.1rem' }}>kg</span>
                 </td>
@@ -265,16 +272,18 @@ const dataLineStyle = {
 };
 
 const thStyle = {
-  padding: '1.5rem 1rem',
+  padding: '1rem 0.75rem',
   textAlign: 'left',
-  fontSize: '0.85rem',
+  fontSize: '0.8rem',
   textTransform: 'uppercase',
   fontWeight: '900',
-  color: '#111827'
+  color: '#475569',
+  borderBottom: '2px solid #e2e8f0'
 };
 
 const tdStyle = {
-  padding: '1.5rem 1rem',
-  fontSize: '0.95rem',
-  color: '#1f2937'
+  padding: '1rem 0.75rem',
+  fontSize: '0.9rem',
+  color: '#1e293b',
+  verticalAlign: 'middle'
 };

@@ -919,7 +919,7 @@ export default function CreateWarpingOrderForm() {
                   <tbody>
                     {allotments.map((row, idx) => {
                       const yc = yarnCounts.find(y => y.id === row.countId);
-                      const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (row.countValue || row.countId || '—');
+                      const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : (row.countValue || row.countId || '—');
                       const remaining = Math.max(0, (row.received_qty || 0) - (row.used_qty || 0));
                       const val = parseFloat(row.allotted_qty || 0);
                       const isOver = val > remaining + 0.001;
@@ -1026,7 +1026,7 @@ export default function CreateWarpingOrderForm() {
                     return (
                       <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
                         <td style={{ padding: '0.65rem 0.85rem', fontWeight: '600' }}>{a.colour}</td>
-                        <td style={{ padding: '0.65rem 0.85rem' }}>{yc ? `${yc.count_value} ${yc.material}` : a.countValue || '—'}</td>
+                        <td style={{ padding: '0.65rem 0.85rem' }}>{yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : a.countValue || '—'}</td>
                         <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontWeight: '700' }}>{Number(a.required_qty).toFixed(2)}</td>
                         <td style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontWeight: '800', color: '#800000' }}>{Number(a.allotted_qty || 0).toFixed(2)}</td>
                       </tr>

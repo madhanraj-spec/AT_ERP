@@ -822,7 +822,10 @@ export default function ReceiveYarn() {
           .map(item => ({
             orderNo: item.order_number || '-',
             design: item.design_info || '-',
-            count: yarnCounts.find(y => y.id === item.yarn_count_id)?.count_value,
+            count: (() => {
+              const y = yarnCounts.find(yc => yc.id === item.yarn_count_id);
+              return y ? [y.count_value, y.spec, y.spec1].filter(Boolean).join(' ') : (item.yarn_count_id || '-');
+            })(),
             colour: item.colour,
             type: item.type,
             weight: parseFloat(item.received_weight),
@@ -1178,7 +1181,7 @@ export default function ReceiveYarn() {
 
                       const formatCountVal = (id) => {
                         const y = yarnCounts.find(c => c.id === id);
-                        return y ? `${y.count_value} ${y.material}` : '-';
+                        return y ? [y.count_value, y.spec, y.spec1].filter(Boolean).join(' ') : '-';
                       };
 
                       const alertInfo = getDofAlertInfo(dof, allDyrrs);
@@ -1910,7 +1913,7 @@ function DataRow({ item, yarnCounts, locations, updateItem, onAddLot, onRemoveLo
           </div>
         ) : (
           <span style={{ fontWeight: '800', color: '#1e293b' }}>
-            {countObj?.count_value || '-'}
+            {countObj ? [countObj.count_value, countObj.spec, countObj.spec1].filter(Boolean).join(' ') : '-'}
           </span>
         )}
       </td>
@@ -2023,7 +2026,7 @@ function ProductionDataRow({ item, yarnCounts, locations, updateItem, onAddLot, 
           </div>
         ) : (
           <span style={{ fontWeight: '800', color: '#1e293b' }}>
-            {countObj?.count_value || '-'}
+            {countObj ? [countObj.count_value, countObj.spec, countObj.spec1].filter(Boolean).join(' ') : '-'}
           </span>
         )}
       </td>

@@ -194,7 +194,7 @@ export default function CreateDyeingForm() {
 
   const formatYarn = (yarn) => {
     if (!yarn) return '';
-    return `${yarn.count_value} - ${yarn.material} - ${yarn.product_type}`;
+    return [yarn.count_value, yarn.spec, yarn.spec1, yarn.product_type].filter(Boolean).join(' ');
   };
 
   const getShortCounts = (specs) => {

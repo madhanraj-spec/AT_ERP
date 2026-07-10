@@ -336,7 +336,7 @@ function PrintableWVOF({ wvof, order, machineName, partnerName, yarnCounts, weft
 
                   const rows = wvof.weft_allotments.map((row, i) => {
                     const yc = yarnCounts?.find(y => y.id === (row.countId || row.yarn_count_id || row.count_id));
-                    const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (row.countValue || '—');
+                    const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : (row.countValue || '—');
                     
                     const rowId = row.countId || row.yarn_count_id || row.count_id;
                     const matchingDel = formDeliveries.filter(d => 

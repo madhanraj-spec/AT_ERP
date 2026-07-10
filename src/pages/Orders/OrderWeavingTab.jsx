@@ -366,7 +366,7 @@ function OrderWeavingTab({ order }) {
       // 1. Fetch Receipts (dyed_yarn_receipt_items)
       const { data: receiptData } = await supabase
         .from('dyed_yarn_receipt_items')
-        .select('*, yarn_count:master_yarn_counts(count_value, material, product_type), location:master_locations(location_name), receipt:dyed_yarn_receipts(id, dyrr_number, dof_id, dof_number, received_date, vehicle_no, dc_number, received_by, remarks, source_type)')
+        .select('*, yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1), location:master_locations(location_name), receipt:dyed_yarn_receipts(id, dyrr_number, dof_id, dof_number, received_date, vehicle_no, dc_number, received_by, remarks, source_type)')
         .eq('order_id', order.id);
       setDyri(receiptData || []);
 
@@ -381,7 +381,7 @@ function OrderWeavingTab({ order }) {
           colour,
           lot_number,
           process_type,
-          yarn_count:master_yarn_counts(count_value, material, product_type),
+          yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
           delivery:dyed_yarn_deliveries(
             id,
             dydr_number,

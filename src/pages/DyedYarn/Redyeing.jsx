@@ -343,7 +343,7 @@ export default function AllotToRedyeing() {
 
   const getFormatCount = (id) => {
     const yc = yarnCounts.find(y => y.id === id);
-    return yc ? `${yc.count_value} ${yc.material}` : '—';
+    return yc ? [yc.count_value, yc.spec, yc.spec1, yc.product_type].filter(Boolean).join(' ') : '—';
   };
 
   return (

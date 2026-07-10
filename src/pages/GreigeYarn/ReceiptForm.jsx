@@ -1,4 +1,216 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Searchable Yarn Count Select
+// Format: Count | Spec | Spec1 | Type | Material | Content
+// ──────────────────────────────────────────────────────────────────────────────
+function buildLabel(yc) {
+  const parts = [
+    yc.count_value,
+    yc.spec,
+    yc.spec1,
+    yc.product_type,
+    yc.material,
+    yc.content
+  ].filter(Boolean);
+  return parts.join(' | ');
+}
+
+function SearchableYarnCountSelect({ yarnCounts, value, onChange, required }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  // Sync display text when value changes externally
+  useEffect(() => {
+    if (!value) {
+      setQuery('');
+    } else {
+      const found = yarnCounts.find(yc => yc.id === value);
+      if (found) setQuery(buildLabel(found));
+    }
+  }, [value, yarnCounts]);
+
+  // Close dropdown on outside click & restore label
+  useEffect(() => {
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+        if (!value) setQuery('');
+        else {
+          const found = yarnCounts.find(yc => yc.id === value);
+          setQuery(found ? buildLabel(found) : '');
+        }
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [value, yarnCounts]);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return yarnCounts;
+    const q = query.toLowerCase();
+    return yarnCounts.filter(yc =>
+      [yc.count_value, yc.spec, yc.spec1, yc.product_type, yc.material, yc.content]
+        .some(f => f && String(f).toLowerCase().includes(q))
+    );
+  }, [query, yarnCounts]);
+
+  const handleSelect = (yc) => {
+    onChange(yc.id);
+    setQuery(buildLabel(yc));
+    setOpen(false);
+  };
+
+  const handleInputChange = (e) => {
+    setQuery(e.target.value);
+    setOpen(true);
+    if (!e.target.value) onChange('');
+  };
+
+  const Field = ({ label, val }) =>
+    val ? (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: '2px',
+        fontSize: '0.7rem', lineHeight: 1,
+        padding: '2px 6px', borderRadius: '4px',
+        backgroundColor: '#f1f5f9', color: '#475569',
+        border: '1px solid #e2e8f0'
+      }}>
+        <span style={{ color: '#94a3b8', fontWeight: 500 }}>{label}:</span>
+        <span style={{ fontWeight: 600, color: '#1e293b' }}>{val}</span>
+      </span>
+    ) : null;
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <input
+        type="text"
+        className="input-field"
+        placeholder="Type to search by count, spec, type, material..."
+        value={query}
+        onChange={handleInputChange}
+        onFocus={() => setOpen(true)}
+        required={required && !value}
+        autoComplete="off"
+        style={{
+          paddingRight: '2rem',
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E")`,
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'right 0.6rem center',
+          backgroundSize: '14px 14px'
+        }}
+      />
+
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 4px)',
+          left: 0,
+          right: 0,
+          zIndex: 1000,
+          backgroundColor: 'var(--bg-card, #ffffff)',
+          border: '1px solid var(--border-current, #e2e8f0)',
+          borderRadius: '10px',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+          maxHeight: '360px',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          width: '100%'
+        }}>
+          {/* Sticky column header */}
+          <div style={{
+            display: 'flex',
+            flexWrap: 'nowrap',
+            gap: 0,
+            padding: '0.5rem 1rem',
+            borderBottom: '2px solid var(--border-current, #e2e8f0)',
+            backgroundColor: '#f8fafc',
+            borderRadius: '10px 10px 0 0',
+            position: 'sticky',
+            top: 0,
+            zIndex: 1
+          }}>
+            {[
+              { label: 'Count',    w: '12%' },
+              { label: 'Spec',     w: '18%' },
+              { label: 'Spec 1',   w: '18%' },
+              { label: 'Type',     w: '18%' },
+              { label: 'Material', w: '18%' },
+              { label: 'Content',  w: '16%' }
+            ].map(col => (
+              <span key={col.label} style={{
+                width: col.w, flexShrink: 0,
+                fontSize: '0.7rem', fontWeight: '700', color: '#94a3b8',
+                textTransform: 'uppercase', letterSpacing: '0.06em'
+              }}>
+                {col.label}
+              </span>
+            ))}
+          </div>
+
+          {filtered.length === 0 ? (
+            <div style={{ padding: '1rem 1.25rem', color: '#9ca3af', fontSize: '0.9rem' }}>
+              No matches found
+            </div>
+          ) : (
+            filtered.map(yc => {
+              const isSelected = value === yc.id;
+              return (
+                <div
+                  key={yc.id}
+                  onMouseDown={() => handleSelect(yc)}
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'nowrap',
+                    alignItems: 'center',
+                    gap: 0,
+                    padding: '0.7rem 1rem',
+                    cursor: 'pointer',
+                    borderBottom: '1px solid var(--border-current, #f1f5f9)',
+                    backgroundColor: isSelected ? '#eff6ff' : 'transparent',
+                    transition: 'background-color 0.1s'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#eff6ff'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = isSelected ? '#eff6ff' : 'transparent'}
+                >
+                  {/* Count */}
+                  <span style={{ width: '12%', flexShrink: 0, fontWeight: '700', fontSize: '0.95rem', color: 'var(--color-primary, #2563eb)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {yc.count_value || '—'}
+                  </span>
+                  {/* Spec */}
+                  <span style={{ width: '18%', flexShrink: 0, fontSize: '0.875rem', color: '#374151', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {yc.spec || <span style={{ color: '#d1d5db' }}>—</span>}
+                  </span>
+                  {/* Spec1 */}
+                  <span style={{ width: '18%', flexShrink: 0, fontSize: '0.875rem', color: '#374151', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {yc.spec1 || <span style={{ color: '#d1d5db' }}>—</span>}
+                  </span>
+                  {/* Type */}
+                  <span style={{ width: '18%', flexShrink: 0, fontSize: '0.875rem', color: '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {yc.product_type || <span style={{ color: '#d1d5db' }}>—</span>}
+                  </span>
+                  {/* Material */}
+                  <span style={{ width: '18%', flexShrink: 0, fontSize: '0.875rem', color: '#374151', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {yc.material || <span style={{ color: '#d1d5db' }}>—</span>}
+                  </span>
+                  {/* Content */}
+                  <span style={{ width: '16%', flexShrink: 0, fontSize: '0.875rem', color: '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {yc.content || <span style={{ color: '#d1d5db' }}>—</span>}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* Hidden input for HTML5 required validation */}
+      <input type="hidden" value={value || ''} required={required} />
+    </div>
+  );
+}
+
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { ArrowLeft, Save, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -135,7 +347,7 @@ export default function ReceiptForm() {
           .select(`
             *,
             orders (order_number),
-            master_yarn_counts (count_value, material, product_type)
+            master_yarn_counts (count_value, material, product_type, spec, spec1)
           `)
           .eq('production_form_id', matchedDoc.id);
         sentItems = delItems || [];
@@ -159,7 +371,12 @@ export default function ReceiptForm() {
               order_id: item.order_id,
               order_number: item.orders?.order_number || '-',
               count_label: item.master_yarn_counts
-                ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} (${item.master_yarn_counts.product_type || ''})`
+                ? [
+                    item.master_yarn_counts.count_value,
+                    item.master_yarn_counts.spec,
+                    item.master_yarn_counts.spec1,
+                    item.master_yarn_counts.product_type
+                  ].filter(Boolean).join(' • ')
                 : 'Unknown',
               quantity_sent: 0,
               already_returned: 0
@@ -217,7 +434,7 @@ export default function ReceiptForm() {
         .select(`
           *,
           orders (order_number),
-          master_yarn_counts (count_value, material, product_type),
+          master_yarn_counts (count_value, material, product_type, spec, spec1),
           spinning_mill:master_partners!spinning_mill_id (partner_name)
         `)
         .eq('receipt_id', gydrId);
@@ -261,7 +478,12 @@ export default function ReceiptForm() {
           mill_name: item.spinning_mill?.partner_name || 'Unknown Mill',
           order_number: item.orders?.order_number || '-',
           count_label: item.master_yarn_counts
-            ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} (${item.master_yarn_counts.product_type || ''})`
+            ? [
+                item.master_yarn_counts.count_value,
+                item.master_yarn_counts.spec,
+                item.master_yarn_counts.spec1,
+                item.master_yarn_counts.product_type
+              ].filter(Boolean).join(' • ')
             : 'Unknown',
           quantity_sent: parseFloat(item.quantity_kg || 0),
           already_returned: alreadyReturned,
@@ -575,7 +797,7 @@ export default function ReceiptForm() {
   };
 
   return (
-    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '1rem' }} className="fade-in">
+    <div style={{ width: '100%', padding: '1rem 2rem', boxSizing: 'border-box' }} className="fade-in">
       <div style={{ marginBottom: '2rem' }}>
         <button 
           onClick={() => navigate('/greige-yarn/receipts')} 
@@ -746,23 +968,20 @@ export default function ReceiptForm() {
                       )}
                     </div>
 
-                    {/* Item Fields Grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                    {/* Item Fields Layout (Full width vertical stack) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                       <div className="input-group">
                         <label className="input-label">Select Yarn Count</label>
-                        <select
-                          className="input-field"
+                        <SearchableYarnCountSelect
+                          yarnCounts={yarnCounts}
                           value={item.yarn_count_id}
-                          onChange={e => {
+                          onChange={newId => {
                             const updated = [...items];
-                            updated[idx].yarn_count_id = e.target.value;
+                            updated[idx].yarn_count_id = newId;
                             setItems(updated);
                           }}
                           required
-                        >
-                          <option value="">Select Count...</option>
-                          {yarnCounts.map(yc => <option key={yc.id} value={yc.id}>{yc.count_value} ({yc.material} - {yc.product_type})</option>)}
-                        </select>
+                        />
                       </div>
 
                       <div className="input-group">

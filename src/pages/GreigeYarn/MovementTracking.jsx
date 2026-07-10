@@ -152,6 +152,12 @@ function MultiSelectDropdown({ label, options, selectedValues, onChange, placeho
   );
 }
 
+// Helper to format yarn count display
+const formatYarnCount = (yc) => {
+  if (!yc) return '-';
+  return [yc.count_value, yc.spec, yc.spec1, yc.product_type].filter(Boolean).join(' • ');
+};
+
 export default function MovementTracking() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('input_mill'); // 'input_mill' | 'input_prod' | 'output'
@@ -219,7 +225,7 @@ export default function MovementTracking() {
       .from('greige_yarn_receipts')
       .select(`
         *,
-        master_yarn_counts (count_value, material, product_type),
+        master_yarn_counts (count_value, material, product_type, spec, spec1),
         master_partners (partner_name),
         master_locations (location_name),
         orders (order_number)
@@ -237,7 +243,7 @@ export default function MovementTracking() {
         greige_yarn_delivery_items(
           *,
           orders(order_number, design_no, design_name),
-          master_yarn_counts(count_value, material, product_type),
+          master_yarn_counts(count_value, material, product_type, spec, spec1),
           master_locations(location_name),
           spinning_mill:master_partners(partner_name)
         )
@@ -281,7 +287,7 @@ export default function MovementTracking() {
         if (!millPartners.includes(partner)) return false;
       }
       if (excludeField !== 'count' && millCounts.length > 0) {
-        const countLabel = r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}`.trim() : '-';
+        const countLabel = formatYarnCount(r.master_yarn_counts);
         if (!millCounts.includes(countLabel)) return false;
       }
       return true;
@@ -312,11 +318,7 @@ export default function MovementTracking() {
 
   const uniqueMillCounts = useMemo(() => {
     const data = getFilteredSpinning('count');
-    const counts = data.map(r => {
-      if (!r.master_yarn_counts) return '';
-      const { count_value, material, product_type } = r.master_yarn_counts;
-      return `${count_value} - ${material} - ${product_type || ''}`.trim();
-    }).filter(Boolean);
+    const counts = data.map(r => formatYarnCount(r.master_yarn_counts)).filter(Boolean);
     return [...new Set(counts)].sort();
   }, [spinningReceipts, millReceiptNos, millDates, millInvoiceNos, millPartners]);
 
@@ -330,7 +332,7 @@ export default function MovementTracking() {
       }
       if (excludeField !== 'orderForm' && prodOrderForms.length > 0 && !prodOrderForms.includes(r.order_form_no || '')) return false;
       if (excludeField !== 'count' && prodCounts.length > 0) {
-        const countLabel = r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}`.trim() : '-';
+        const countLabel = formatYarnCount(r.master_yarn_counts);
         if (!prodCounts.includes(countLabel)) return false;
       }
       return true;
@@ -356,11 +358,7 @@ export default function MovementTracking() {
 
   const uniqueProdCounts = useMemo(() => {
     const data = getFilteredProd('count');
-    const counts = data.map(r => {
-      if (!r.master_yarn_counts) return '';
-      const { count_value, material, product_type } = r.master_yarn_counts;
-      return `${count_value} - ${material} - ${product_type || ''}`.trim();
-    }).filter(Boolean);
+    const counts = data.map(r => formatYarnCount(r.master_yarn_counts)).filter(Boolean);
     return [...new Set(counts)].sort();
   }, [productionReceipts, prodReceiptNos, prodDates, prodOrderForms]);
 
@@ -374,9 +372,7 @@ export default function MovementTracking() {
         if (!countGroups[countId]) {
           countGroups[countId] = {
             countId,
-            yarn_label: item.master_yarn_counts
-              ? `${item.master_yarn_counts.count_value} - ${item.master_yarn_counts.material} - ${item.master_yarn_counts.product_type}`
-              : '-',
+            yarn_label: formatYarnCount(item.master_yarn_counts),
             total_qty: 0,
             locations: [],
             items: []
@@ -481,7 +477,7 @@ export default function MovementTracking() {
         if (!millPartners.includes(partner)) return false;
       }
       if (millCounts.length > 0) {
-        const countLabel = r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}`.trim() : '-';
+        const countLabel = formatYarnCount(r.master_yarn_counts);
         if (!millCounts.includes(countLabel)) return false;
       }
       return true;
@@ -497,7 +493,7 @@ export default function MovementTracking() {
       }
       if (prodOrderForms.length > 0 && !prodOrderForms.includes(r.order_form_no || '')) return false;
       if (prodCounts.length > 0) {
-        const countLabel = r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}`.trim() : '-';
+        const countLabel = formatYarnCount(r.master_yarn_counts);
         if (!prodCounts.includes(countLabel)) return false;
       }
       return true;
@@ -521,7 +517,7 @@ export default function MovementTracking() {
         };
       }
       groups[key].items.push({
-        yarn_label: r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}` : '-',
+        yarn_label: formatYarnCount(r.master_yarn_counts),
         bag_count: r.bag_count || 0,
         cone_count: r.cone_count || 0,
         bag_weight: Number(r.bag_weight || 0).toFixed(2),
@@ -550,7 +546,7 @@ export default function MovementTracking() {
         };
       }
       groups[key].items.push({
-        yarn_label: r.master_yarn_counts ? `${r.master_yarn_counts.count_value} - ${r.master_yarn_counts.material} - ${r.master_yarn_counts.product_type}` : '-',
+        yarn_label: formatYarnCount(r.master_yarn_counts),
         yarn_type: r.yarn_type || '',
         colour: r.colour || '',
         order_no: r.orders?.order_number || '',
@@ -1161,9 +1157,7 @@ function GYDRQuickView({ receipt, onClose }) {
               {items.map((item, i) => (
                 <tr key={item.id} style={{ backgroundColor: i % 2 === 0 ? '#f9fafb' : '#fff', borderBottom: '1px solid #e5e7eb' }}>
                   <td style={{ padding: '6px 10px', fontSize: '12px' }}>
-                    {item.master_yarn_counts
-                      ? `${item.master_yarn_counts.count_value} - ${item.master_yarn_counts.material} - ${item.master_yarn_counts.product_type}`
-                      : '-'}
+                    {formatYarnCount(item.master_yarn_counts)}
                   </td>
                   <td style={{ padding: '6px 10px', fontSize: '12px' }}>{item.colour}</td>
                   <td style={{ padding: '6px 10px', fontSize: '12px' }}>

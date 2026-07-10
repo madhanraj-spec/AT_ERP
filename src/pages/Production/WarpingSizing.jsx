@@ -589,16 +589,30 @@ function InHouseGantt() {
     }
   };
 
-  // Group WOFs by machine_id
+  // Group WOFs by machine_id, filtered to only those overlapping the visible date window
   const wofsByMachine = useMemo(() => {
+    const windowStartKey = formatDateKey(days[0]);
+    const windowEndKey = formatDateKey(days[days.length - 1]);
     const map = {};
     wofs.forEach(w => {
       if (!w.machine_id) return;
+      // Determine the effective date range for this WOF
+      const wStart = w.start_date || '';
+      const wEnd = w.end_date || '';
+      // If the WOF has no dates at all but is on_process, still show it
+      if (!wStart && !wEnd) {
+        if (w.status !== 'on_process') return;
+      } else {
+        // Skip if completely outside the visible window
+        const effectiveStart = wStart || wEnd;
+        const effectiveEnd = wEnd || wStart;
+        if (effectiveEnd < windowStartKey || effectiveStart > windowEndKey) return;
+      }
       if (!map[w.machine_id]) map[w.machine_id] = [];
       map[w.machine_id].push(w);
     });
     return map;
-  }, [wofs]);
+  }, [wofs, days]);
 
   const toggleMachine = (machineId) => {
     setExpandedMachines(prev => ({ ...prev, [machineId]: !prev[machineId] }));
@@ -1161,7 +1175,7 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
           const key = `${item.yarn_count_id}_${item.colour}_${item.lot_number || '—'}`;
           if (!seen.has(key)) {
             seen.add(key);
-            const countVal = item.yarn_count ? `${item.yarn_count.count_value} ${item.yarn_count.material || ''} ${item.yarn_count.product_type || ''}`.trim() : item.yarn_count_id || '—';
+            const countVal = item.yarn_count ? [item.yarn_count.count_value, item.yarn_count.spec, item.yarn_count.spec1].filter(Boolean).join(' ') : item.yarn_count_id || '—';
             
             const totalReceived = deliveryItems
               .filter(d => d.yarn_count_id === item.yarn_count_id && d.colour === item.colour && (d.lot_number || '—') === (item.lot_number || '—'))
@@ -1214,7 +1228,7 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
         .from('dyed_yarn_delivery_items')
         .select(`
           *,
-          yarn_count:master_yarn_counts(count_value, material, product_type),
+          yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
           delivery:dyed_yarn_deliveries(
             id, dydr_number, delivered_date, delivered_by, vehicle_no, remarks
           )
@@ -1258,7 +1272,7 @@ function WofDetailModal({ wof, onClose, onStatusChanged }) {
 
   const getCountDisplay = (countId) => {
     const yc = yarnCounts.find(y => y.id === countId);
-    return yc ? `${yc.count_value} ${yc.material || ''} ${yc.product_type || ''}`.trim() : countId || '—';
+    return yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : countId || '—';
   };
 
   // Calculate received qty per colour+count from delivery items
@@ -5567,15 +5581,27 @@ function InHouseSizingGantt() {
     }
   };
 
+  // Group SOFs by machine_id, filtered to only those overlapping the visible date window
   const sofsByMachine = useMemo(() => {
+    const windowStartKey = formatDateKey(days[0]);
+    const windowEndKey = formatDateKey(days[days.length - 1]);
     const map = {};
     sofs.forEach(s => {
       if (!s.machine_id) return;
+      const sStart = s.start_date || '';
+      const sEnd = s.end_date || '';
+      if (!sStart && !sEnd) {
+        if (s.status !== 'on_process') return;
+      } else {
+        const effectiveStart = sStart || sEnd;
+        const effectiveEnd = sEnd || sStart;
+        if (effectiveEnd < windowStartKey || effectiveStart > windowEndKey) return;
+      }
       if (!map[s.machine_id]) map[s.machine_id] = [];
       map[s.machine_id].push(s);
     });
     return map;
-  }, [sofs]);
+  }, [sofs, days]);
 
   const slideWindow = (direction) => {
     setWindowStart(prev => {

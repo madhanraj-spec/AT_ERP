@@ -459,8 +459,22 @@ function OrderCard({
     if (!specs) return '-';
     const allWarpIds = specs.warp_selections?.flat() || [];
     const allWeftIds = specs.weft_selections?.flat() || [];
-    const warpStr = allWarpIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
-    const weftStr = allWeftIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
+    
+    const formatYarnPreview = (y) => {
+      if (!y) return '';
+      return [y.count_value, y.spec, y.spec1].filter(Boolean).join(' ');
+    };
+
+    const warpStr = allWarpIds.map(id => {
+      const y = yarnCounts.find(yc => yc.id === id);
+      return y ? formatYarnPreview(y) : '';
+    }).filter(Boolean).join(' + ');
+
+    const weftStr = allWeftIds.map(id => {
+      const y = yarnCounts.find(yc => yc.id === id);
+      return y ? formatYarnPreview(y) : '';
+    }).filter(Boolean).join(' + ');
+
     return `${warpStr || '-'} X ${weftStr || '-'}`;
   };
 
@@ -1654,7 +1668,7 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR, onViewDYRR }) {
   const formatYarnDisplay = (id) => {
     const y = yarnCounts.find(c => c.id === id);
     if (!y) return 'Unknown';
-    return `${y.count_value}-${y.material}-${y.product_type}`;
+    return [y.count_value, y.spec, y.spec1, y.product_type].filter(Boolean).join(' ');
   };
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted-current)' }}><Loader size={16} className="spin" /> Loading records...</div>;
@@ -3522,10 +3536,10 @@ function DOFModal({ data, yarnCounts, onClose }) {
     }
   }, [form?.dof_number]);
 
-  const formatYarn = (id) => {
+  const formatYarn = (id, fallbackLabel) => {
     const y = yarnCounts.find(c => c.id === id);
-    if (!y) return 'Unknown';
-    return `${y.count_value} - ${y.material} - ${y.product_type}`;
+    if (!y) return fallbackLabel || 'Unknown';
+    return [y.count_value, y.spec, y.spec1, y.product_type].filter(Boolean).join(' ');
   };
 
   const getApprovalStatus = (status) => {
@@ -3751,7 +3765,7 @@ function DOFModal({ data, yarnCounts, onClose }) {
                     <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#f9fafb' : '#fff', borderBottom: '1px solid #e5e7eb' }}>
                       <td style={{ padding: '6px 10px', fontWeight: '600' }}>{ord?.order_number || '-'}</td>
                       <td style={{ padding: '6px 10px', textTransform: 'capitalize' }}>{a.type}</td>
-                      <td style={{ padding: '6px 10px' }}>{formatYarn(a.countId)}</td>
+                      <td style={{ padding: '6px 10px' }}>{formatYarn(a.countId, a.yarnLabel)}</td>
                       <td style={{ padding: '6px 10px' }}>{a.colour}</td>
                       <td style={{ padding: '6px 10px', textAlign: 'right' }}>{parseFloat(a.base_kg || 0).toFixed(2)}</td>
                       <td style={{ padding: '6px 10px', textAlign: 'center' }}>{a.excess_pct}%</td>
@@ -3771,7 +3785,7 @@ function DOFModal({ data, yarnCounts, onClose }) {
           {(form.summary || []).length > 0 && (() => {
             const countMap = {};
             form.summary.forEach(s => {
-              const label = s.yarnLabel || formatYarn(s.countId);
+              const label = formatYarn(s.countId, s.yarnLabel);
               if (!countMap[label]) countMap[label] = 0;
               countMap[label] += parseFloat(s.total_kg || 0);
             });
@@ -3794,7 +3808,7 @@ function DOFModal({ data, yarnCounts, onClose }) {
                     <tbody>
                       {form.summary.map((s, i) => (
                         <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#f9fafb' : '#fff', borderBottom: '1px solid #e5e7eb' }}>
-                          <td style={{ padding: '6px 10px', fontWeight: '500', fontSize: '11px' }}>{s.yarnLabel || formatYarn(s.countId)}</td>
+                          <td style={{ padding: '6px 10px', fontWeight: '500', fontSize: '11px' }}>{formatYarn(s.countId, s.yarnLabel)}</td>
                           <td style={{ padding: '6px 10px', fontSize: '11px' }}>{s.colour}</td>
                           <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: '700', fontSize: '11px' }}>{parseFloat(s.total_kg || 0).toFixed(2)}</td>
                         </tr>
@@ -4089,7 +4103,7 @@ function DYDRModal({ data, yarnCounts, onClose }) {
   const formatYarn = (id) => {
     const y = yarnCounts.find(c => c.id === id);
     if (!y) return 'Unknown';
-    return `${y.count_value}-${y.material}-${y.product_type}`;
+    return [y.count_value, y.spec, y.spec1, y.product_type].filter(Boolean).join(' ');
   };
 
   return (

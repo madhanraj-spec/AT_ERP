@@ -204,8 +204,8 @@ export default function ReceiptsList() {
   const uniqueCounts = useMemo(() => {
     const counts = receipts.map(r => {
       if (!r.master_yarn_counts) return '';
-      const { count_value, material, product_type } = r.master_yarn_counts;
-      return `${count_value} ${material} ${product_type || ''}`.trim();
+      const { count_value, spec, spec1, product_type } = r.master_yarn_counts;
+      return [count_value, spec, spec1, product_type].filter(Boolean).join(' • ');
     }).filter(Boolean);
     return [...new Set(counts)].sort();
   }, [receipts]);
@@ -240,8 +240,8 @@ export default function ReceiptsList() {
 
       // 4. Count Filter
       if (selectedCounts.length > 0) {
-        const { count_value, material, product_type } = row.master_yarn_counts || {};
-        const countStr = count_value ? `${count_value} ${material} ${product_type || ''}`.trim() : '';
+        const { count_value, spec, spec1, product_type } = row.master_yarn_counts || {};
+        const countStr = count_value ? [count_value, spec, spec1, product_type].filter(Boolean).join(' • ') : '';
         if (!selectedCounts.includes(countStr)) return false;
       }
 
@@ -288,7 +288,7 @@ export default function ReceiptsList() {
       .select(`
         *,
         master_partners (partner_name),
-        master_yarn_counts (count_value, material, product_type),
+        master_yarn_counts (count_value, material, product_type, spec, spec1),
         master_locations!location_id (location_name),
         orders (order_number)
       `)
@@ -296,6 +296,7 @@ export default function ReceiptsList() {
       .order('created_at', { ascending: false });
 
     if (!error && data) {
+      console.log('Fetched Receipts Data:', data);
       setReceipts(data);
     }
     setLoading(false);
@@ -305,6 +306,11 @@ export default function ReceiptsList() {
     fetchReceipts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  const formatYarnCount = (yc) => {
+    if (!yc) return '-';
+    return [yc.count_value, yc.spec, yc.spec1, yc.product_type].filter(Boolean).join(' • ');
+  };
 
   return (
     <div style={{ width: '100%', maxWidth: '100%', margin: '0', padding: '0 0.25rem' }} className="fade-in">
@@ -333,7 +339,7 @@ export default function ReceiptsList() {
           New Receipt
         </button>
       </div>
-
+ 
       <div className="glass-panel" style={{ padding: 0 }}>
         {/* Tabs & Advanced Filters Button */}
         <div style={{ 
@@ -586,14 +592,14 @@ export default function ReceiptsList() {
                             {activeTab === 'spinning' ? (
                               <>
                                 <td style={{ ...tdPad, minWidth: '100px', whiteSpace: 'normal', borderBottom: itemBorder }}>
-                                  {item.master_yarn_counts ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} ${item.master_yarn_counts.product_type || ''}` : '-'}
+                                  {formatYarnCount(item.master_yarn_counts)}
                                 </td>
                                 <td style={{ ...tdPad, minWidth: '85px', whiteSpace: 'normal', borderBottom: itemBorder }}>{item.master_locations?.location_name || '-'}</td>
                               </>
                             ) : (
                               <>
                                 <td style={{ ...tdPad, minWidth: '100px', whiteSpace: 'normal', borderBottom: itemBorder }}>
-                                  {item.master_yarn_counts ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} ${item.master_yarn_counts.product_type || ''}` : '-'}
+                                  {formatYarnCount(item.master_yarn_counts)}
                                   {(item.yarn_type || item.colour || item.orders?.order_number) && (
                                     <div style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
                                       {[item.yarn_type, item.colour, item.orders?.order_number].filter(Boolean).join(' • ')}

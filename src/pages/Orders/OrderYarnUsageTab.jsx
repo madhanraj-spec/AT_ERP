@@ -266,7 +266,7 @@ export default function OrderYarnUsageTab({ order, onViewGYDR, onViewDYRR, onVie
   const formatCount = (id) => {
     const y = yarnCounts.find(c => c.id === id);
     if (!y) return 'Unknown';
-    return `${y.count_value} ${y.material}`;
+    return [y.count_value, y.spec, y.spec1, y.product_type].filter(Boolean).join(' ');
   };
 
   const getRowInventory = (row) => {

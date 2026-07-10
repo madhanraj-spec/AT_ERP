@@ -369,7 +369,8 @@ export default function DyedYarnMovement() {
 
   const formatYarn = (id) => {
     const y = yarnCounts.find(c => c.id === id);
-    return y ? `${y.count_value} ${y.material} ${y.product_type || ''}`.trim() : '-';
+    if (!y) return '-';
+    return [y.count_value, y.spec, y.spec1, y.product_type].filter(Boolean).join(' ');
   };
 
   return (

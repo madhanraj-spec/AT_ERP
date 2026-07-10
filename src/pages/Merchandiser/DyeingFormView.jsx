@@ -67,10 +67,10 @@ export default function DyeingFormView() {
     }
   };
 
-  const formatYarn = (countId) => {
+  const formatYarn = (countId, fallbackLabel) => {
     const yarn = yarnCounts.find(y => y.id === countId);
-    if (!yarn) return countId || '-';
-    return `${yarn.count_value} - ${yarn.material} - ${yarn.product_type}`;
+    if (!yarn) return fallbackLabel || countId || '-';
+    return [yarn.count_value, yarn.spec, yarn.spec1, yarn.product_type].filter(Boolean).join(' ');
   };
 
   const getApprovalStatus = (status) => {
@@ -363,7 +363,7 @@ export default function DyeingFormView() {
                   <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#f9fafb' : '#fff', borderBottom: '1px solid #e5e7eb' }}>
                     <td style={{ padding: '6px 10px', fontWeight: '600' }}>{ord?.order_number || '-'}</td>
                     <td style={{ padding: '6px 10px', textTransform: 'capitalize' }}>{a.type}</td>
-                    <td style={{ padding: '6px 10px' }}>{formatYarn(a.countId)}</td>
+                    <td style={{ padding: '6px 10px' }}>{formatYarn(a.countId, a.yarnLabel)}</td>
                     <td style={{ padding: '6px 10px' }}>{a.colour}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'right' }}>{parseFloat(a.base_kg || 0).toFixed(2)}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>{a.excess_pct}%</td>
@@ -384,7 +384,7 @@ export default function DyeingFormView() {
           // Build count-only summary (aggregate across colours)
           const countMap = {};
           form.summary.forEach(s => {
-            const label = s.yarnLabel || formatYarn(s.countId);
+            const label = formatYarn(s.countId, s.yarnLabel);
             if (!countMap[label]) countMap[label] = 0;
             countMap[label] += parseFloat(s.total_kg || 0);
           });
@@ -408,7 +408,7 @@ export default function DyeingFormView() {
                   <tbody>
                     {form.summary.map((s, i) => (
                       <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#f9fafb' : '#fff', borderBottom: '1px solid #e5e7eb' }}>
-                        <td style={{ padding: '6px 10px', fontWeight: '500', fontSize: '11px' }}>{s.yarnLabel || formatYarn(s.countId)}</td>
+                        <td style={{ padding: '6px 10px', fontWeight: '500', fontSize: '11px' }}>{formatYarn(s.countId, s.yarnLabel)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '11px' }}>{s.colour}</td>
                         <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: '700', fontSize: '11px' }}>{parseFloat(s.total_kg || 0).toFixed(2)}</td>
                       </tr>

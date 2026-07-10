@@ -7,7 +7,7 @@ import { ChevronDown, ChevronRight, Printer } from 'lucide-react';
  * Clicking the row expands to reveal a table of colour, yarn count, lot, and quantity.
  * A Print button triggers the onPrint callback.
  */
-export default function DYDRDetail({ dydr, onPrint }) {
+export default function DYDRDetail({ dydr, onPrint, yarnCounts }) {
   const [expanded, setExpanded] = useState(false);
 
   const toggle = () => setExpanded(!expanded);
@@ -77,8 +77,9 @@ export default function DYDRDetail({ dydr, onPrint }) {
             </thead>
             <tbody>
               {dydr.items.map((item, idx) => {
-                const yc = item.yarn_count;
-                const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : '—';
+                const countId = item.yarn_count_id || item.yarn_count?.id;
+                const yc = yarnCounts ? yarnCounts.find(y => y.id === countId) : item.yarn_count;
+                const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : '—';
                 return (
                   <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
                     <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600' }}>{item.colour || '—'}</td>

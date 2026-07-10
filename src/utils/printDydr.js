@@ -9,13 +9,13 @@ export function printDydr(dydr, yarnCounts = []) {
   // Grouped by colour and count
   const getFormatCount = (id) => {
     const yc = yarnCounts.find(y => y.id === id);
-    return yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : '—';
+    return yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : '—';
   };
 
   const groupedByColourAndCount = items.reduce((acc, i) => {
     const countId = i.yarn_count_id;
     const yc = i.yarn_count;
-    const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : getFormatCount(countId);
+    const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : getFormatCount(countId);
     const key = `${i.colour}_${countDisplay}`;
     if (!acc[key]) {
       acc[key] = {
@@ -154,7 +154,7 @@ export function printDydr(dydr, yarnCounts = []) {
           <tbody>
             ${items.map((item, idx) => {
               const yc = item.yarn_count;
-              const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : getFormatCount(item.yarn_count_id);
+              const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : getFormatCount(item.yarn_count_id);
               return `
                 <tr>
                   <td>${idx + 1}</td>

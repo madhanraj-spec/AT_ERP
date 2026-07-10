@@ -390,15 +390,27 @@ export default function CreateOrder() {
 
   const formatYarn = (yarn) => {
     if (!yarn) return '';
-    return `${yarn.count_value} - ${yarn.material} - ${yarn.product_type}`;
+    return [yarn.count_value, yarn.spec, yarn.spec1, yarn.product_type].filter(Boolean).join(' - ');
+  };
+
+  const formatYarnPreview = (yarn) => {
+    if (!yarn) return '';
+    return [yarn.count_value, yarn.spec, yarn.spec1].filter(Boolean).join(' ');
   };
 
   const getShortCountsString = () => {
     const allWarpIds = formData.technical_specs.warp_selections.flat();
     const allWeftIds = formData.technical_specs.weft_selections.flat();
     
-    const warpStr = allWarpIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
-    const weftStr = allWeftIds.map(id => yarnCounts.find(y => y.id === id)?.count_value).filter(Boolean).join(' + ');
+    const warpStr = allWarpIds.map(id => {
+      const y = yarnCounts.find(yc => yc.id === id);
+      return y ? formatYarnPreview(y) : '';
+    }).filter(Boolean).join(' + ');
+    
+    const weftStr = allWeftIds.map(id => {
+      const y = yarnCounts.find(yc => yc.id === id);
+      return y ? formatYarnPreview(y) : '';
+    }).filter(Boolean).join(' + ');
     
     return `${warpStr || '-'} X ${weftStr || '-'}`;
   };
@@ -406,7 +418,7 @@ export default function CreateOrder() {
   // Helper to format count string
   const getFormattedCounts = (countIds) => {
     return countIds
-      .map(id => formatYarn(yarnCounts.find(y => y.id === id)))
+      .map(id => formatYarnPreview(yarnCounts.find(y => y.id === id)))
       .filter(Boolean)
       .join(' + ');
   };
@@ -694,7 +706,7 @@ export default function CreateOrder() {
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
                           {formData.technical_specs.warp_selections[idx]?.map(id => (
                             <span key={id} style={{ backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '4px', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                              {formatYarn(yarnCounts.find(y => y.id === id))}
+                              {formatYarnPreview(yarnCounts.find(y => y.id === id))}
                               <Trash2 
                                 size={12} 
                                 style={{ cursor: 'pointer' }} 
@@ -707,24 +719,30 @@ export default function CreateOrder() {
                             </span>
                           ))}
                         </div>
-                        <select 
+                        <input 
+                          type="text"
                           className="input-field"
+                          placeholder="Search & select count to add..."
+                          list={`warp-counts-list-${idx}`}
                           onChange={(e) => {
-                            if (!e.target.value) return;
-                            const newWarp = [...formData.technical_specs.warp_selections];
-                            if (!newWarp[idx]) newWarp[idx] = [];
-                            if (!newWarp[idx].includes(e.target.value)) {
-                              newWarp[idx] = [...newWarp[idx], e.target.value];
+                            const val = e.target.value;
+                            const selectedYarn = yarnCounts.find(y => formatYarn(y) === val);
+                            if (selectedYarn) {
+                              const newWarp = [...formData.technical_specs.warp_selections];
+                              if (!newWarp[idx]) newWarp[idx] = [];
+                              if (!newWarp[idx].includes(selectedYarn.id)) {
+                                newWarp[idx] = [...newWarp[idx], selectedYarn.id];
+                              }
+                              updateTechnicalSpecs('warp_selections', newWarp);
+                              e.target.value = '';
                             }
-                            updateTechnicalSpecs('warp_selections', newWarp);
-                            e.target.value = '';
                           }}
-                        >
-                          <option value="">+ Add Count</option>
+                        />
+                        <datalist id={`warp-counts-list-${idx}`}>
                           {yarnCounts.map(y => (
-                            <option key={y.id} value={y.id}>{formatYarn(y)}</option>
+                            <option key={y.id} value={formatYarn(y)} />
                           ))}
-                        </select>
+                        </datalist>
                         <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', fontWeight: 'bold', color: 'var(--color-primary)' }}>
                            Preview: {getFormattedCounts(formData.technical_specs.warp_selections[idx] || [])}
                         </div>
@@ -738,7 +756,7 @@ export default function CreateOrder() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
                     {formData.technical_specs.weft_selections[0]?.map(id => (
                       <span key={id} style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: '4px', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        {formatYarn(yarnCounts.find(y => y.id === id))}
+                        {formatYarnPreview(yarnCounts.find(y => y.id === id))}
                         <Trash2 
                           size={12} 
                           style={{ cursor: 'pointer' }} 
@@ -751,24 +769,30 @@ export default function CreateOrder() {
                       </span>
                     ))}
                   </div>
-                  <select 
+                  <input 
+                    type="text"
                     className="input-field"
+                    placeholder="Search & select count to add..."
+                    list="weft-counts-list"
                     onChange={(e) => {
-                      if (!e.target.value) return;
-                      const newWeft = [...formData.technical_specs.weft_selections];
-                      if (!newWeft[0]) newWeft[0] = [];
-                      if (!newWeft[0].includes(e.target.value)) {
-                        newWeft[0] = [...newWeft[0], e.target.value];
+                      const val = e.target.value;
+                      const selectedYarn = yarnCounts.find(y => formatYarn(y) === val);
+                      if (selectedYarn) {
+                        const newWeft = [...formData.technical_specs.weft_selections];
+                        if (!newWeft[0]) newWeft[0] = [];
+                        if (!newWeft[0].includes(selectedYarn.id)) {
+                          newWeft[0] = [...newWeft[0], selectedYarn.id];
+                        }
+                        updateTechnicalSpecs('weft_selections', newWeft);
+                        e.target.value = '';
                       }
-                      updateTechnicalSpecs('weft_selections', newWeft);
-                      e.target.value = '';
                     }}
-                  >
-                    <option value="">+ Add Count</option>
+                  />
+                  <datalist id="weft-counts-list">
                     {yarnCounts.map(y => (
-                      <option key={y.id} value={y.id}>{formatYarn(y)}</option>
+                      <option key={y.id} value={formatYarn(y)} />
                     ))}
-                  </select>
+                  </datalist>
                   <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', fontWeight: 'bold', color: 'var(--color-primary)' }}>
                      Preview: {getFormattedCounts(formData.technical_specs.weft_selections[0] || [])}
                   </div>
@@ -860,7 +884,7 @@ export default function CreateOrder() {
                     {warp.map(countId => (
                       <div key={countId} style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', padding: '1rem', marginBottom: '0.5rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                          <span style={{ fontWeight: 'bold' }}>Warp {wIdx + 1}: {formatYarn(yarnCounts.find(y => y.id === countId))}</span>
+                          <span style={{ fontWeight: 'bold' }}>Warp {wIdx + 1}: {formatYarnPreview(yarnCounts.find(y => y.id === countId))}</span>
                           <button 
                             className="btn btn-secondary" 
                             style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
@@ -908,7 +932,7 @@ export default function CreateOrder() {
                 {formData.technical_specs.weft_selections[0].map(countId => (
                   <div key={countId} style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <span style={{ fontWeight: 'bold' }}>Weft: {formatYarn(yarnCounts.find(y => y.id === countId))}</span>
+                      <span style={{ fontWeight: 'bold' }}>Weft: {formatYarnPreview(yarnCounts.find(y => y.id === countId))}</span>
                       <button 
                         className="btn btn-secondary" 
                         style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
@@ -995,7 +1019,7 @@ export default function CreateOrder() {
                         return (
                           <tr key={idx}>
                             <td style={{ textTransform: 'capitalize' }}>Warp {m.warpIdx + 1}</td>
-                            <td>{formatYarn(yarnCounts.find(y => y.id === m.countId))}</td>
+                            <td>{formatYarnPreview(yarnCounts.find(y => y.id === m.countId))}</td>
                             <td>{m.color || <span style={{ color: 'red' }}>Enter Color in prev step</span>}</td>
                             <td style={{ textAlign: 'right' }}>
                               <input 
@@ -1043,7 +1067,7 @@ export default function CreateOrder() {
                         return (
                           <tr key={idx}>
                             <td style={{ textTransform: 'capitalize' }}>Weft</td>
-                            <td>{formatYarn(yarnCounts.find(y => y.id === m.countId))}</td>
+                            <td>{formatYarnPreview(yarnCounts.find(y => y.id === m.countId))}</td>
                             <td>{m.color || <span style={{ color: 'red' }}>Enter Color in prev step</span>}</td>
                             <td style={{ textAlign: 'right' }}>
                               <input 
@@ -1204,7 +1228,7 @@ export default function CreateOrder() {
                     {formData.yarn_mappings.map((m, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border-current)' }}>
                         <td style={{ padding: '0.6rem 0.75rem', textTransform: 'capitalize' }}>{m.type} {m.type === 'warp' ? (m.warpIdx + 1) : ''}</td>
-                        <td style={{ padding: '0.6rem 0.75rem' }}>{formatYarn(yarnCounts.find(y => y.id === m.countId))}</td>
+                        <td style={{ padding: '0.6rem 0.75rem' }}>{formatYarnPreview(yarnCounts.find(y => y.id === m.countId))}</td>
                         <td style={{ padding: '0.6rem 0.75rem' }}>{m.color}</td>
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 'bold' }}>{parseFloat(m.kg || 0).toFixed(2)} kg</td>
                       </tr>
@@ -1228,7 +1252,7 @@ export default function CreateOrder() {
                   <tbody>
                     {Object.entries(
                       formData.yarn_mappings.reduce((acc, curr) => {
-                        const count = formatYarn(yarnCounts.find(y => y.id === curr.countId));
+                        const count = formatYarnPreview(yarnCounts.find(y => y.id === curr.countId));
                         acc[count] = (acc[count] || 0) + parseFloat(curr.kg || 0);
                         return acc;
                       }, {})

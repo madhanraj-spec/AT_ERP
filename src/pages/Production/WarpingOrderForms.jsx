@@ -1118,7 +1118,7 @@ export default function WarpingOrderForms() {
             cone_weight,
             colour,
             lot_number,
-            yarn_count:master_yarn_counts(count_value, material, product_type),
+            yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
             delivery:dyed_yarn_deliveries(
               id,
               dydr_number,
@@ -1178,7 +1178,7 @@ export default function WarpingOrderForms() {
                 cone_weight,
                 colour,
                 lot_number,
-                yarn_count:master_yarn_counts(count_value, material, product_type),
+                yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
                 delivery:dyed_yarn_deliveries(
                   id,
                   dydr_number,
@@ -1209,7 +1209,7 @@ export default function WarpingOrderForms() {
                 quantity_kg,
                 colour,
                 lot_number,
-                yarn_count:master_yarn_counts(count_value, material, product_type),
+                yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
                 receipt:dyed_yarn_receipts(
                   id,
                   dyrr_number,
@@ -1278,7 +1278,7 @@ export default function WarpingOrderForms() {
           quantity_kg,
           colour,
           lot_number,
-          yarn_count:master_yarn_counts(count_value, material, product_type)
+          yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1)
         `)
         .eq('production_form_id', wof.id);
 
@@ -1288,7 +1288,7 @@ export default function WarpingOrderForms() {
         const key = `${item.yarn_count_id}_${item.colour}_${item.lot_number || '—'}`;
         if (!seen.has(key)) {
           seen.add(key);
-          const countVal = item.yarn_count ? `${item.yarn_count.count_value} ${item.yarn_count.material || ''} ${item.yarn_count.product_type || ''}`.trim() : item.yarn_count_id || '—';
+          const countVal = item.yarn_count ? [item.yarn_count.count_value, item.yarn_count.spec, item.yarn_count.spec1].filter(Boolean).join(' ') : item.yarn_count_id || '—';
           
           const totalReceived = (dydrItems || [])
             .filter(d => d.yarn_count_id === item.yarn_count_id && d.colour === item.colour && (d.lot_number || '—') === (item.lot_number || '—'))
@@ -1526,7 +1526,7 @@ export default function WarpingOrderForms() {
           quantity_kg,
           colour,
           lot_number,
-          yarn_count:master_yarn_counts(count_value, material, product_type)
+          yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1)
         `)
         .eq('production_form_id', wof.id);
 
@@ -1542,7 +1542,7 @@ export default function WarpingOrderForms() {
       const returns = (dydrItems || []).map(item => ({
         yarn_count_id: item.yarn_count_id,
         colour: item.colour || '—',
-        count_display: item.yarn_count ? `${item.yarn_count.count_value} ${item.yarn_count.material} ${item.yarn_count.product_type}` : '—',
+        count_display: item.yarn_count ? [item.yarn_count.count_value, item.yarn_count.spec, item.yarn_count.spec1].filter(Boolean).join(' ') : '—',
         lot_number: item.lot_number || '—',
         quantity_received: parseFloat(item.quantity_kg || 0),
         quantity_returned: '0'
@@ -2416,7 +2416,7 @@ export default function WarpingOrderForms() {
                                       <tbody>
                                         {(wof.colour_allotments || []).map((a, rIdx) => {
                                           const yc = yarnCounts.find(y => y.id === a.countId);
-                                          const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (a.countValue || '—');
+                                          const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : (a.countValue || '—');
                                           
                                           const allottedThisWof = parseFloat(a.allotted_qty || 0);
 
@@ -2505,6 +2505,7 @@ export default function WarpingOrderForms() {
                                         <DYDRDetail 
                                           key={gDydr.id} 
                                           dydr={gDydr} 
+                                          yarnCounts={yarnCounts}
                                           onPrint={(d) => printDydr(d, yarnCounts)} 
                                         />
                                       ));
@@ -2553,6 +2554,7 @@ export default function WarpingOrderForms() {
                                         <DYRRDetail 
                                           key={gDyrr.id} 
                                           dyrr={gDyrr} 
+                                          yarnCounts={yarnCounts}
                                           onPrint={(d) => setPrintDyrr(d)} 
                                         />
                                       ));

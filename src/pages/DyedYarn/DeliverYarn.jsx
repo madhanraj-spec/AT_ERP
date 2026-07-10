@@ -129,7 +129,7 @@ export default function DeliverDyedYarn() {
               cone_weight,
               colour,
               lot_number,
-              yarn_count:master_yarn_counts(count_value, material, product_type),
+              yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
               delivery:dyed_yarn_deliveries(
                 id,
                 dydr_number,
@@ -176,7 +176,7 @@ export default function DeliverDyedYarn() {
               cone_weight,
               colour,
               lot_number,
-              yarn_count:master_yarn_counts(count_value, material, product_type),
+              yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
               delivery:dyed_yarn_deliveries(
                 id,
                 dydr_number,
@@ -249,7 +249,7 @@ export default function DeliverDyedYarn() {
               cone_weight,
               colour,
               lot_number,
-              yarn_count:master_yarn_counts(count_value, material, product_type),
+              yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
               delivery:dyed_yarn_deliveries(
                 id,
                 dydr_number,
@@ -293,7 +293,7 @@ export default function DeliverDyedYarn() {
               cone_weight,
               colour,
               lot_number,
-              yarn_count:master_yarn_counts(count_value, material, product_type),
+              yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
               delivery:dyed_yarn_deliveries(
                 id,
                 dydr_number,
@@ -937,7 +937,7 @@ export default function DeliverDyedYarn() {
 
   const getFormatCount = (id) => {
     const yc = yarnCounts.find(y => y.id === id);
-    return yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : '—';
+    return yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : '—';
   };
 
   const selectedAllotments = selectedTarget
@@ -1188,7 +1188,7 @@ export default function DeliverDyedYarn() {
                                           const countValue = a.countValue || a.count_value;
                                           const colourVal = a.colour || a.color || a.colour;
                                           const yc = yarnCounts.find(y => y.id === countId);
-                                          const countDisplay = yc ? `${yc.count_value} ${yc.material} ${yc.product_type}` : (countValue || '—');
+                                          const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : (countValue || '—');
                                           
                                           const allottedQty = parseFloat(a.allotted_qty || a.kg || 0);
                                           const deliveredItems = associatedDydrs.filter(d => {
@@ -1259,6 +1259,7 @@ export default function DeliverDyedYarn() {
                                             key={gDydr.id} 
                                             dydr={gDydr} 
                                             onPrint={(d) => printDydr(d, yarnCounts)} 
+                                            yarnCounts={yarnCounts}
                                           />
                                         ));
                                       })()}

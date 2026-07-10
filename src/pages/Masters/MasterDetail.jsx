@@ -15,6 +15,71 @@ const MASTER_CONFIG = {
   'workers': { title: 'Workers', table: 'master_workers', icon: '👥' }
 };
 
+const DEFAULT_MATERIALS = [
+  'COTTON', 'CP', 'CV', 'PC', 'SF', 'MODAL', 'LYCRA', 'SPUN POLY',
+  'COTTON FLEX', 'LINEN', 'PV', 'POLYESTER', 'LINEN COTTON',
+  'LINEN VISCOSE', 'COTTON LINEN'
+];
+
+const DEFAULT_COUNTS = [
+  // 2-ply
+  '2/30s', '2/32s', '2/40s', '2/41s', '2/42s', '2/60s', '2/62s', '2/80s',
+  // 3-ply
+  '3/6s', '3/10s', '3/12s',
+  // Singles
+  '4s', '8s', '10s', '11s', '12s', '15s', '16s',
+  '20s', '21s', '24s', '30s', '32s',
+  '40s', '42s', '50s', '60s', '61s', '80s', '100s',
+];
+
+const DEFAULT_SPEC1S = [
+  'CL', 'COTTON FLEX', 'CP', 'CV',
+  'HT',
+  'LC', 'LEE', 'LYCRA', 'LV',
+  'MEL', 'MODAL',
+  'NEPS',
+  'PC', 'POLY', 'POLY LINEN',
+  'SF', 'SF FLEX', 'SF FLEX SLUB', 'SF SLUB', 'SLUB', 'SPUN POLY',
+];
+
+const DEFAULT_SPECS = [
+  'CARDED',
+  'CARDED COMPACT',
+  'COMPACT',
+  'COMBED',
+  'COMBED COMPACT',
+  'SEMI COMBED',
+  'OE',
+  'LENZING',
+  'VORTEX ECOVERA',
+  'ROTO DYED',
+  'LYOCELL',
+];
+
+const DEFAULT_CONTENTS = [
+  '100% Cotton',
+  'CP(60/40)',
+  'PV(67/33)',
+  'CF(70/30)',
+  'PC(65/35)',
+  'LC(55/45)',
+  'LYOCELL LINEN (50/50)',
+  'CF(45/55)',
+  'LV(55/45)',
+  '100%SF',
+  '100%POLY',
+  '100%LYCRA',
+  '100%MODAL',
+];
+
+const DEFAULT_TYPES = [
+  'BCI',
+  'GOTS',
+  'GRS',
+  'ORGANIC',
+  'CONVENTIONAL',
+];
+
 export default function MasterDetail() {
   const { type } = useParams();
   const navigate = useNavigate();
@@ -96,6 +161,24 @@ export default function MasterDetail() {
       payload.scope = 'in_house';
     }
 
+    // Duplicate check for yarn-counts
+    if (type === 'yarn-counts') {
+      const norm = (v) => (v || '').trim().toLowerCase();
+      const isDuplicate = items.some(item =>
+        norm(item.count_value)   === norm(payload.count_value) &&
+        norm(item.spec1)         === norm(payload.spec1) &&
+        norm(item.spec)          === norm(payload.spec) &&
+        norm(item.material)      === norm(payload.material) &&
+        norm(item.content)       === norm(payload.content) &&
+        norm(item.product_type)  === norm(payload.product_type)
+      );
+      if (isDuplicate) {
+        alert('This yarn count already exists! Duplicates are not allowed.');
+        setSaving(false);
+        return;
+      }
+    }
+
     const { data, error } = await supabase.from(config.table).insert([payload]);
     
     setSaving(false);
@@ -116,23 +199,109 @@ export default function MasterDetail() {
   // Render specific form fields based on type
   const renderFormFields = () => {
     switch (type) {
-      case 'yarn-counts':
+      case 'yarn-counts': {
+        // Merge default materials with any custom ones already saved in DB
+        const savedMaterials = [...new Set(items.map(i => i.material).filter(Boolean))];
+        const allMaterials = [...new Set([...DEFAULT_MATERIALS, ...savedMaterials])];
         return (
           <>
             <div className="input-group">
-              <label className="input-label">Count (e.g. 30s)</label>
-              <input type="text" name="count_value" className="input-field" value={formData.count_value || ''} onChange={handleInputChange} required />
+              <label className="input-label">Material <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>(select or type new)</span></label>
+              <input
+                type="text"
+                name="material"
+                list="material-options"
+                className="input-field"
+                value={formData.material || ''}
+                onChange={handleInputChange}
+                placeholder="Select or type a material..."
+                required
+              />
+              <datalist id="material-options">
+                {allMaterials.map(m => <option key={m} value={m} />)}
+              </datalist>
             </div>
             <div className="input-group">
-              <label className="input-label">Material (e.g. Cotton)</label>
-              <input type="text" name="material" className="input-field" value={formData.material || ''} onChange={handleInputChange} required />
+              <label className="input-label">Count <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>(select or type new)</span></label>
+              <input
+                type="text"
+                name="count_value"
+                list="count-options"
+                className="input-field"
+                value={formData.count_value || ''}
+                onChange={handleInputChange}
+                placeholder="Select or type a count..."
+                required
+              />
+              <datalist id="count-options">
+                {[...new Set([...DEFAULT_COUNTS, ...items.map(i => i.count_value).filter(Boolean)])].map(c => <option key={c} value={c} />)}
+              </datalist>
             </div>
             <div className="input-group">
-              <label className="input-label">Type (e.g. BCI, Organic)</label>
-              <input type="text" name="product_type" className="input-field" value={formData.product_type || ''} onChange={handleInputChange} required />
+              <label className="input-label">Spec 1 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>(Optional — select or type new)</span></label>
+              <input
+                type="text"
+                name="spec1"
+                list="spec1-options"
+                className="input-field"
+                value={formData.spec1 || ''}
+                onChange={handleInputChange}
+                placeholder="Select or type spec 1..."
+              />
+              <datalist id="spec1-options">
+                {[...new Set([...DEFAULT_SPEC1S, ...items.map(i => i.spec1).filter(Boolean)])].map(s => <option key={s} value={s} />)}
+              </datalist>
+            </div>
+            <div className="input-group">
+              <label className="input-label">Spec <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>(Optional — select or type new)</span></label>
+              <input
+                type="text"
+                name="spec"
+                list="spec-options"
+                className="input-field"
+                value={formData.spec || ''}
+                onChange={handleInputChange}
+                placeholder="Select or type a spec..."
+              />
+              <datalist id="spec-options">
+                {[...new Set([...DEFAULT_SPECS, ...items.map(i => i.spec).filter(Boolean)])].map(s => <option key={s} value={s} />)}
+              </datalist>
+            </div>
+            <div className="input-group">
+              <label className="input-label">Content <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>(select or type new)</span></label>
+              <input
+                type="text"
+                name="content"
+                list="content-options"
+                className="input-field"
+                value={formData.content || ''}
+                onChange={handleInputChange}
+                placeholder="Select or type content..."
+                required
+              />
+              <datalist id="content-options">
+                {[...new Set([...DEFAULT_CONTENTS, ...items.map(i => i.content).filter(Boolean)])].map(c => <option key={c} value={c} />)}
+              </datalist>
+            </div>
+            <div className="input-group">
+              <label className="input-label">Type <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>(select or type new)</span></label>
+              <input
+                type="text"
+                name="product_type"
+                list="type-options"
+                className="input-field"
+                value={formData.product_type || ''}
+                onChange={handleInputChange}
+                placeholder="Select or type a type..."
+                required
+              />
+              <datalist id="type-options">
+                {[...new Set([...DEFAULT_TYPES, ...items.map(i => i.product_type).filter(Boolean)])].map(t => <option key={t} value={t} />)}
+              </datalist>
             </div>
           </>
         );
+      }
       case 'brands':
         return (
           <div className="input-group">
@@ -282,7 +451,15 @@ export default function MasterDetail() {
   // Render Display Rows for existing items
   const renderRow = (item) => {
     switch (type) {
-      case 'yarn-counts': return `${item.count_value} — ${item.material} (${item.product_type})`;
+      case 'yarn-counts': {
+        const parts = [item.count_value];
+        if (item.spec1) parts.push(item.spec1);
+        if (item.spec) parts.push(item.spec);
+        if (item.material) parts.push(item.material);
+        if (item.content) parts.push(item.content);
+        if (item.product_type) parts.push(item.product_type);
+        return parts.join(' | ');
+      }
       case 'brands': return item.brand_name;
       case 'partners': {
         const parts = [`${item.partner_name} [${item.partner_type}]`        ];

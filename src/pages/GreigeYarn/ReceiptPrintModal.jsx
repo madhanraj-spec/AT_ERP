@@ -18,7 +18,7 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
       .from('greige_yarn_receipts')
       .select(`
         *,
-        master_yarn_counts (count_value, material, product_type),
+        master_yarn_counts (count_value, material, product_type, spec, spec1),
         master_partners (partner_name),
         master_locations (location_name),
         orders (order_number)
@@ -154,8 +154,9 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
                 <tbody>
                   {items.map((item, index) => {
                     const detailsStr = [item.yarn_type, item.colour, item.orders?.order_number].filter(Boolean).join(' • ');
-                    const countLabel = item.master_yarn_counts
-                      ? `${item.master_yarn_counts.count_value} ${item.master_yarn_counts.material} (${item.master_yarn_counts.product_type || ''})${detailsStr ? ` [ ${detailsStr} ]` : ''}`
+                    const yc = item.master_yarn_counts;
+                    const countLabel = yc
+                      ? `${[yc.count_value, yc.spec, yc.spec1, yc.product_type].filter(Boolean).join(' • ')}${detailsStr ? ` [ ${detailsStr} ]` : ''}`
                       : 'Unknown Count';
                     const locationLabel = item.master_locations?.location_name || 'Greige Warehouse';
                     
