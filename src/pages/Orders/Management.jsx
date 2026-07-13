@@ -1153,6 +1153,8 @@ function TabInspection({ order }) {
   const [weavingOrders, setWeavingOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedWvofs, setExpandedWvofs] = useState({});
+  const [subTab, setSubTab] = useState('four_point');
+  const [selectedWashedRolls, setSelectedWashedRolls] = useState({});
 
   useEffect(() => {
     async function fetchInspectionData() {
@@ -1191,7 +1193,6 @@ function TabInspection({ order }) {
     }
   }, [order?.id]);
 
-  // Calculations
   const productionQty = order.technical_specs?.production_quantity || order.total_quantity || '—';
 
   const totalDailyLogs = useMemo(() => {
@@ -1225,6 +1226,240 @@ function TabInspection({ order }) {
     return sum;
   }, [weavingOrders]);
 
+  const totalWashedGreigeActualQty = useMemo(() => {
+    let sum = 0;
+    weavingOrders.forEach(wv => {
+      const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
+      const receivedRolls = rolls.filter(r => r.washed_inspected === true || r.status === 'received_from_processing');
+      sum += receivedRolls.reduce((acc, r) => acc + parseFloat(r.actual_qty || r.actual_length || r.qty || 0), 0);
+    });
+    return sum;
+  }, [weavingOrders]);
+
+  const totalWashedInspectionQty = useMemo(() => {
+    let sum = 0;
+    weavingOrders.forEach(wv => {
+      const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
+      const inspectedRolls = rolls.filter(r => r.washed_inspected === true);
+      sum += inspectedRolls.reduce((acc, r) => acc + parseFloat(r.washed_actual_qty || r.actual_qty || 0), 0);
+    });
+    return sum;
+  }, [weavingOrders]);
+
+  const washedRollsList = useMemo(() => {
+    const list = [];
+    weavingOrders.forEach(wv => {
+      const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
+      rolls.forEach(r => {
+        if (r.washed_inspected === true) {
+          list.push({ roll: r, weavingOrder: wv });
+        }
+      });
+    });
+    return list;
+  }, [weavingOrders]);
+
+  const isAllWashedSelected = washedRollsList.length > 0 && washedRollsList.every(r => selectedWashedRolls[r.roll.processed_roll_id || r.roll.id]);
+
+  const handleToggleSelectAllWashed = () => {
+    if (isAllWashedSelected) {
+      setSelectedWashedRolls({});
+    } else {
+      const next = {};
+      washedRollsList.forEach(r => {
+        next[r.roll.processed_roll_id || r.roll.id] = true;
+      });
+      setSelectedWashedRolls(next);
+    }
+  };
+
+  const handleToggleWashedRoll = (id) => {
+    setSelectedWashedRolls(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const handlePrintSelectedWashed = () => {
+    const list = washedRollsList.filter(r => selectedWashedRolls[r.roll.processed_roll_id || r.roll.id]);
+    if (list.length === 0) {
+      alert('Please select at least one roll to print.');
+      return;
+    }
+
+    const totalRolls = list.length;
+    const totalRecQty = list.reduce((acc, { roll: r }) => acc + parseFloat(r.received_qty ?? r.qty ?? 0), 0);
+    const totalActQty = list.reduce((acc, { roll: r }) => acc + parseFloat(r.washed_actual_qty ?? r.actual_qty ?? 0), 0);
+    const totalShortage = totalRecQty - totalActQty;
+
+    const grouped = {};
+    list.forEach(({ roll: r, weavingOrder: w }) => {
+      const orderNumber = w.order?.order_number || order.order_number || '—';
+      const designNo = w.order?.design_no || w.design_no || order.design_no || '—';
+      const designName = w.order?.design_name || w.design_name || order.design_name || '—';
+      const key = `${orderNumber}_${designNo}_${designName}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          orderNumber,
+          designNo,
+          designName,
+          rolls: []
+        };
+      }
+      grouped[key].rolls.push(r);
+    });
+
+    let groupedHtml = '';
+    Object.values(grouped).forEach(group => {
+      let rollsHtml = '';
+      group.rolls.forEach(r => {
+        const recVal = parseFloat(r.received_qty ?? r.qty ?? 0);
+        const actVal = parseFloat(r.washed_actual_qty ?? r.actual_qty ?? 0);
+        const shortVal = parseFloat(r.washed_shortage ?? (recVal - actVal)).toFixed(2);
+        
+        rollsHtml += `
+          <tr>
+            <td style="font-family: monospace; font-weight: bold;">${r.processed_roll_id || r.id}</td>
+            <td class="right">${recVal.toFixed(2)}</td>
+            <td class="right">${actVal.toFixed(2)}</td>
+            <td class="right" style="${parseFloat(shortVal) > 0 ? 'background: #fffbeb; color: #b45309; font-weight: bold;' : ''}">${shortVal}</td>
+            <td class="center" style="border-left: 1px solid #cbd5e1; ${r.washed_weaving_defect_1pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_1pt_count ?? 0}</td>
+            <td class="center" style="${r.washed_weaving_defect_2pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_2pt_count ?? 0}</td>
+            <td class="center" style="${r.washed_weaving_defect_3pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_3pt_count ?? 0}</td>
+            <td class="center" style="${r.washed_weaving_defect_4pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_4pt_count ?? 0}</td>
+            <td class="center" style="border-left: 1px solid #cbd5e1; ${r.washed_yarn_defect_1pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_yarn_defect_1pt_count ?? 0}</td>
+            <td class="center" style="${r.washed_yarn_defect_4pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_yarn_defect_4pt_count ?? 0}</td>
+            <td class="center" style="border-left: 1px solid #cbd5e1; ${r.washed_holes_stains_2pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_holes_stains_2pt_count ?? 0}</td>
+            <td class="center" style="${r.washed_holes_stains_4pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_holes_stains_4pt_count ?? 0}</td>
+            <td style="border-left: 1px solid #cbd5e1">${r.washed_place || 'Factory'}</td>
+            <td><b>${r.washed_inspector_1 || r.inspector_1 || '—'}</b>${r.washed_inspector_2 || r.inspector_2 ? ' / ' + (r.washed_inspector_2 || r.inspector_2) : ''}</td>
+          </tr>
+        `;
+      });
+
+      groupedHtml += `
+        <div style="page-break-inside: avoid; margin-bottom: 20px;">
+          <div class="order-title">
+            ORDER NO: ${group.orderNumber} &nbsp;&nbsp;|&nbsp;&nbsp; DESIGN: ${group.designNo} - ${group.designName}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th rowspan="2" style="width: 14%">Roll Number</th>
+                <th rowspan="2" class="right" style="width: 8%">Rec Qty</th>
+                <th rowspan="2" class="right" style="width: 8%">Act Qty</th>
+                <th rowspan="2" class="right" style="width: 8%">Short</th>
+                <th colspan="4" class="center" style="border-left: 1px solid #cbd5e1">Weaving Defects</th>
+                <th colspan="2" class="center" style="border-left: 1px solid #cbd5e1">Yarn Defects</th>
+                <th colspan="2" class="center" style="border-left: 1px solid #cbd5e1">Holes & Stains</th>
+                <th rowspan="2" style="width: 8%; border-left: 1px solid #cbd5e1">Place</th>
+                <th rowspan="2" style="width: 12%">Inspectors</th>
+              </tr>
+              <tr>
+                <th class="center" style="border-left: 1px solid #cbd5e1; width: 4%">1 Pt</th>
+                <th class="center" style="width: 4%">2 Pt</th>
+                <th class="center" style="width: 4%">3 Pt</th>
+                <th class="center" style="width: 4%">4 Pt</th>
+                <th class="center" style="border-left: 1px solid #cbd5e1; width: 4%">1 Pt</th>
+                <th class="center" style="width: 4%">4 Pt</th>
+                <th class="center" style="border-left: 1px solid #cbd5e1; width: 4%">2 Pt</th>
+                <th class="center" style="width: 4%">4 Pt</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rollsHtml}
+            </tbody>
+          </table>
+        </div>
+      `;
+    });
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Washed Fabric Inspection Report</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #1e293b; line-height: 1.4; }
+            .header-container { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #800000; padding-bottom: 10px; margin-bottom: 15px; }
+            .logo-section { display: flex; align-items: center; gap: 10px; }
+            .logo-text { font-size: 22px; font-weight: 850; color: #800000; letter-spacing: -0.5px; }
+            .logo-sub { font-size: 9px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+            h1 { margin: 0; color: #800000; font-size: 16px; text-transform: uppercase; }
+            .meta { font-size: 10px; color: #64748b; margin-bottom: 15px; }
+            .summary-card {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 10px;
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 12px;
+              margin-bottom: 20px;
+            }
+            .summary-item { text-align: center; }
+            .summary-label { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 2px; }
+            .summary-value { font-size: 14px; font-weight: 800; color: #0f172a; }
+            .summary-value.primary { color: #800000; }
+            .summary-value.green { color: #15803d; }
+            .summary-value.amber { color: #b45309; }
+            table { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: 8px; margin-bottom: 15px; }
+            th, td { border: 1px solid #cbd5e1; padding: 5px 6px; text-align: left; }
+            th { background: #f1f5f9; font-weight: 700; color: #334155; }
+            .right { text-align: right; }
+            .center { text-align: center; }
+            .order-title { font-size: 11px; font-weight: 800; color: #0f172a; margin-top: 15px; background: #f8fafc; padding: 4px 8px; border-left: 3px solid #800000; }
+            @media print {
+              @page { size: landscape; margin: 10mm; }
+              body { padding: 0; }
+              button { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header-container">
+            <div class="logo-section">
+              <img src="/logo.png" alt="Company Logo" style="max-height: 48px; object-fit: contain;" onerror="this.style.display='none'; document.getElementById('fallback-logo').style.display='flex';" />
+              <div id="fallback-logo" style="display: none; align-items: center; gap: 0.6rem;">
+                <div style="width: 32px; height: 32px; background: #800000; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; font-weight: 900;">AT</div>
+                <h1 style="margin: 0; color: #800000; font-size: 16px; text-transform: uppercase; font-weight: 850;">AT FABRICS</h1>
+              </div>
+            </div>
+            <h1>Inspection Report Summary (Washed)</h1>
+            <button onclick="window.print()" style="padding: 6px 12px; background: #800000; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">Print Report</button>
+          </div>
+          <div class="meta">Report Generated: ${new Date().toLocaleString('en-IN')} | Total Selected Rolls: ${totalRolls}</div>
+          
+          <div class="summary-card">
+            <div class="summary-item">
+              <div class="summary-label">Total Rolls</div>
+              <div class="summary-value primary">${totalRolls}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Total Received Qty</div>
+              <div class="summary-value">${totalRecQty.toFixed(2)} m</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Total Actual Qty</div>
+              <div class="summary-value green">${totalActQty.toFixed(2)} m</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Total Shortage</div>
+              <div class="summary-value ${totalShortage > 0 ? 'amber' : ''}">${totalShortage.toFixed(2)} m</div>
+            </div>
+          </div>
+          
+          ${groupedHtml}
+          
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted-current)', padding: '1rem' }}>
@@ -1234,269 +1469,177 @@ function TabInspection({ order }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      {/* ── Top Level Metric Cards ── */}
-      <div className="grid-4-to-2" style={{ gap: '1rem' }}>
-        <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Production Qty</span>
-          <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
-            {typeof productionQty === 'number' ? Number(productionQty).toLocaleString() : productionQty} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>{productionQty !== '—' ? 'Mtrs' : ''}</span>
-          </span>
-        </div>
-
-        <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Daily Production Logs</span>
-          <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
-            {totalDailyLogs.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
-          </span>
-        </div>
-
-        <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Greige Input Qty</span>
-          <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
-            {totalGreigeInputQty.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
-          </span>
-        </div>
-
-        <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total 4-Point Inspection Qty</span>
-          <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
-            {totalFourPointQty.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
-          </span>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-current)', gap: '1.5rem', marginBottom: '0.5rem' }}>
+        <button
+          onClick={() => setSubTab('four_point')}
+          style={{
+            padding: '0.6rem 0.4rem',
+            border: 'none',
+            borderBottom: subTab === 'four_point' ? '3px solid var(--color-primary)' : '3px solid transparent',
+            background: 'none',
+            fontWeight: subTab === 'four_point' ? '800' : '600',
+            color: subTab === 'four_point' ? 'var(--color-primary)' : 'var(--text-muted-current)',
+            cursor: 'pointer',
+            fontSize: '0.8rem',
+            transition: 'all 0.15s'
+          }}
+        >
+          4-Point Inspection (Greige)
+        </button>
+        <button
+          onClick={() => setSubTab('washed')}
+          style={{
+            padding: '0.6rem 0.4rem',
+            border: 'none',
+            borderBottom: subTab === 'washed' ? '3px solid var(--color-primary)' : '3px solid transparent',
+            background: 'none',
+            fontWeight: subTab === 'washed' ? '800' : '600',
+            color: subTab === 'washed' ? 'var(--color-primary)' : 'var(--text-muted-current)',
+            cursor: 'pointer',
+            fontSize: '0.8rem',
+            transition: 'all 0.15s'
+          }}
+        >
+          Washed Inspection
+        </button>
       </div>
 
-      {/* ── Details Table ── */}
-      <div>
-        <h4 style={{ margin: '0 0 1rem 0', fontWeight: '800', fontSize: '0.95rem', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          Weaving Order Forms & Rolls QC Status
-        </h4>
+      {subTab === 'four_point' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          <div className="grid-4-to-2" style={{ gap: '1rem' }}>
+            <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Production Qty</span>
+              <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
+                {typeof productionQty === 'number' ? Number(productionQty).toLocaleString() : productionQty} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>{productionQty !== '—' ? 'Mtrs' : ''}</span>
+              </span>
+            </div>
 
-        <style>{`
-          .qc-tooltip-trigger {
-            position: relative;
-            display: inline-block;
-          }
-          .qc-tooltip-trigger:hover .qc-tooltip-content {
-            display: block !important;
-          }
-        `}</style>
+            <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Daily Production Logs</span>
+              <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
+                {totalDailyLogs.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
+              </span>
+            </div>
 
-        {weavingOrders.length === 0 ? (
-          <p style={{ color: 'var(--text-muted-current)', fontSize: '0.875rem', fontStyle: 'italic', padding: '1rem' }}>No Weaving Order Forms found for this order.</p>
-        ) : (
-          <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '2px solid var(--border-current)', textAlign: 'left' }}>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Weaving Order Form</th>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty</th>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Actual Qty</th>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'center' }}>Greige Input</th>
-                  <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'center' }}>4 Point Inspection</th>
-                </tr>
-              </thead>
-              <tbody>
-                {weavingOrders.map(wvof => {
-                  const rolls = Array.isArray(wvof.fabric_rolls) ? wvof.fabric_rolls : [];
-                  const allocation = wvof.weaving_type === 'in_house' 
-                    ? `Loom: ${wvof.machine?.machine_name || wvof.machine_name || '—'}` 
-                    : `Job: ${wvof.partner?.partner_name || wvof.partner_name || '—'}`;
-                  const startDateStr = wvof.start_date ? new Date(wvof.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-                  const endDateStr = wvof.end_date ? new Date(wvof.end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+            <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Greige Input Qty</span>
+              <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
+                {totalGreigeInputQty.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
+              </span>
+            </div>
 
-                  const isExpanded = !!expandedWvofs[wvof.id];
-                  const totalWvofGreigeQty = rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
-                  const totalWvofActualQty = rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.actual_length || 0), 0);
-                  
-                  const scannedCount = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing').length;
-                  const inspectedCount = rolls.filter(r => r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing').length;
+            <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total 4-Point Inspection Qty</span>
+              <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
+                {totalFourPointQty.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
+              </span>
+            </div>
+          </div>
 
-                  return (
-                    <React.Fragment key={wvof.id}>
-                      {/* Weaving Order Form Header Row */}
-                      <tr 
-                        onClick={() => setExpandedWvofs(prev => ({ ...prev, [wvof.id]: !prev[wvof.id] }))}
-                        style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid var(--border-current)', cursor: 'pointer', transition: 'background-color 0.15s' }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#e2e8f0'}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
-                      >
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: 'bold' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                            <span style={{ fontWeight: '800', color: '#800000', fontFamily: 'monospace' }}>{wvof.weaving_number}</span>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', fontWeight: 'normal' }}>({startDateStr} → {endDateStr})</span>
-                            <span style={{ fontSize: '0.75rem', fontWeight: '750', color: 'var(--text-current)', marginLeft: '0.5rem' }}>{allocation}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '800' }}>
-                          {totalWvofGreigeQty.toLocaleString()} m
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '800', color: '#800000' }}>
-                          {totalWvofActualQty > 0 ? `${totalWvofActualQty.toLocaleString()} m` : '—'}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted-current)', fontWeight: '700' }}>
-                          {scannedCount} / {rolls.length} Scanned
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted-current)', fontWeight: '700' }}>
-                          {inspectedCount} / {rolls.length} Inspected
-                        </td>
-                      </tr>
+          <div>
+            <h4 style={{ margin: '0 0 1rem 0', fontWeight: '800', fontSize: '0.95rem', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              Weaving Order Forms & Rolls QC Status (Greige)
+            </h4>
 
-                      {/* Fabric Rolls rows */}
-                      {isExpanded && (
-                        rolls.length === 0 ? (
-                          <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
-                            <td colSpan={5} style={{ padding: '0.75rem 1.5rem', color: 'var(--text-muted-current)', fontStyle: 'italic', fontSize: '0.78rem' }}>
-                              No fabric rolls generated for this form yet.
+            <style>{`
+              .qc-tooltip-trigger { position: relative; display: inline-block; }
+              .qc-tooltip-trigger:hover .qc-tooltip-content { display: block !important; }
+            `}</style>
+
+            {weavingOrders.length === 0 ? (
+              <p style={{ color: 'var(--text-muted-current)', fontSize: '0.875rem', fontStyle: 'italic', padding: '1rem' }}>No Weaving Order Forms found for this order.</p>
+            ) : (
+              <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '2px solid var(--border-current)', textAlign: 'left' }}>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Weaving Order Form</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Qty</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'right' }}>Actual Qty</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'center' }}>Greige Input</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', textAlign: 'center' }}>4 Point Inspection</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weavingOrders.map(wvof => {
+                      const rolls = Array.isArray(wvof.fabric_rolls) ? wvof.fabric_rolls : [];
+                      const allocation = wvof.weaving_type === 'in_house' ? `Loom: ${wvof.machine?.machine_name || wvof.machine_name || '—'}` : `Job: ${wvof.partner?.partner_name || wvof.partner_name || '—'}`;
+                      const startDateStr = wvof.start_date ? new Date(wvof.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                      const endDateStr = wvof.end_date ? new Date(wvof.end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                      const isExpanded = !!expandedWvofs[wvof.id];
+                      const totalWvofGreigeQty = rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+                      const totalWvofActualQty = rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.actual_length || 0), 0);
+                      const scannedCount = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing').length;
+                      const inspectedCount = rolls.filter(r => r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing').length;
+
+                      return (
+                        <React.Fragment key={wvof.id}>
+                          <tr 
+                            onClick={() => setExpandedWvofs(prev => ({ ...prev, [wvof.id]: !prev[wvof.id] }))}
+                            style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid var(--border-current)', cursor: 'pointer', transition: 'background-color 0.15s' }}
+                          >
+                            <td style={{ padding: '0.75rem 1rem', fontWeight: 'bold' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                <span style={{ fontWeight: '800', color: '#800000', fontFamily: 'monospace' }}>{wvof.weaving_number}</span>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', fontWeight: 'normal' }}>({startDateStr} → {endDateStr})</span>
+                                <span style={{ fontSize: '0.75rem', fontWeight: '750', color: 'var(--text-current)', marginLeft: '0.5rem' }}>{allocation}</span>
+                              </div>
                             </td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '800' }}>{totalWvofGreigeQty.toLocaleString()} m</td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '800', color: '#800000' }}>{totalWvofActualQty > 0 ? `${totalWvofActualQty.toLocaleString()} m` : '—'}</td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted-current)', fontWeight: '700' }}>{scannedCount} / {rolls.length} Scanned</td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted-current)', fontWeight: '700' }}>{inspectedCount} / {rolls.length} Inspected</td>
                           </tr>
-                        ) : (
-                          [...rolls]
-                            .sort((a, b) => a.roll_no - b.roll_no)
-                            .map(roll => {
-                              const isGreigeScanned = roll.status === 'greige received' || roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing';
-                              const isQCInspected = roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing';
-
-                              return (
-                                <tr key={roll.id} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: 'white' }}>
-                                  {/* Weaving Order Form column shows Roll ID */}
-                                  <td style={{ padding: '0.65rem 1.5rem', fontWeight: '600', color: 'var(--text-current)', fontFamily: 'monospace' }}>
-                                    Roll ID: {roll.id}
-                                  </td>
-                                  
-                                  {/* Qty column: greige input qty */}
-                                  <td style={{ padding: '0.65rem 1rem', textAlign: 'right', fontWeight: '600' }}>
-                                    {roll.qty} m
-                                  </td>
-                                  
-                                  {/* Actual Qty column: actual qty entered in 4-point inspection */}
-                                  <td style={{ padding: '0.65rem 1rem', textAlign: 'right', fontWeight: '600', color: '#800000' }}>
-                                    {roll.actual_qty || roll.actual_length || '—'} {isQCInspected ? 'm' : ''}
-                                  </td>
-                                  
-                                  {/* Greige Input Scanned tick mark */}
-                                  <td style={{ padding: '0.65rem 1rem', textAlign: 'center' }}>
-                                    {isGreigeScanned ? (
-                                      <div className="qc-tooltip-trigger">
-                                        <span style={{
-                                          backgroundColor: '#dcfce7', color: '#166534',
-                                          padding: '2px 8px', borderRadius: '4px',
-                                          fontSize: '0.7rem', fontWeight: '800', cursor: 'help'
-                                        }}>
-                                          ✔️ Scanned
-                                        </span>
-                                        <div className="qc-tooltip-content" style={{
-                                          display: 'none', position: 'absolute', right: '105%', top: '50%', transform: 'translateY(-50%)',
-                                          backgroundColor: '#1e293b', color: 'white', padding: '0.75rem 1rem', borderRadius: '8px',
-                                          width: '240px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)',
-                                          zIndex: 1000, fontSize: '0.72rem', textAlign: 'left', lineHeight: '1.4', fontStyle: 'normal',
-                                          border: '1px solid #334155'
-                                        }}>
-                                          <div style={{ fontWeight: '800', color: '#38bdf8', marginBottom: '4px', borderBottom: '1px solid #334155', paddingBottom: '4px' }}>
-                                            📥 Greige Input Scan
-                                          </div>
-                                          <div>
-                                            <span style={{ color: '#94a3b8' }}>Scan Date:</span>{' '}
-                                            <strong style={{ color: 'white' }}>
-                                              {roll.received_at ? new Date(roll.received_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
-                                            </strong>
+                          {isExpanded && (
+                            rolls.length === 0 ? (
+                              <tr style={{ borderBottom: '1px solid var(--border-current)' }}>
+                                <td colSpan={5} style={{ padding: '0.75rem 1.5rem', color: 'var(--text-muted-current)', fontStyle: 'italic', fontSize: '0.78rem' }}>No fabric rolls generated for this form yet.</td>
+                              </tr>
+                            ) : (
+                              [...rolls].sort((a, b) => a.roll_no - b.roll_no).map(roll => {
+                                const isGreigeScanned = roll.status === 'greige received' || roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing';
+                                const isQCInspected = roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing';
+                                return (
+                                  <tr key={roll.id} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: 'white' }}>
+                                    <td style={{ padding: '0.65rem 1.5rem', fontWeight: '600', color: 'var(--text-current)', fontFamily: 'monospace' }}>Roll ID: {roll.id}</td>
+                                    <td style={{ padding: '0.65rem 1rem', textAlign: 'right', fontWeight: '600' }}>{roll.qty} m</td>
+                                    <td style={{ padding: '0.65rem 1rem', textAlign: 'right', fontWeight: '600', color: '#800000' }}>{roll.actual_qty || roll.actual_length || '—'} {isQCInspected ? 'm' : ''}</td>
+                                    <td style={{ padding: '0.65rem 1rem', textAlign: 'center' }}>
+                                      {isGreigeScanned ? (
+                                        <div className="qc-tooltip-trigger">
+                                          <span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: '800', cursor: 'help' }}>✔️ Scanned</span>
+                                          <div className="qc-tooltip-content" style={{ display: 'none', position: 'absolute', right: '105%', top: '50%', transform: 'translateY(-50%)', backgroundColor: '#1e293b', color: 'white', padding: '0.75rem 1rem', borderRadius: '8px', width: '240px', zIndex: 1000, fontSize: '0.72rem', textAlign: 'left', border: '1px solid #334155' }}>
+                                            <div style={{ fontWeight: '800', color: '#38bdf8', marginBottom: '4px', borderBottom: '1px solid #334155', paddingBottom: '4px' }}>📥 Greige Input Scan</div>
+                                            <div><span style={{ color: '#94a3b8' }}>Scan Date:</span> <strong style={{ color: 'white' }}>{roll.received_at ? new Date(roll.received_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</strong></div>
                                           </div>
                                         </div>
-                                      </div>
-                                    ) : (
-                                      <span style={{
-                                        backgroundColor: '#fee2e2', color: '#b91c1c',
-                                        padding: '2px 8px', borderRadius: '4px',
-                                        fontSize: '0.7rem', fontWeight: '800'
-                                      }}>
-                                        ❌ Pending
-                                      </span>
-                                    )}
-                                  </td>
-
-                                  {/* 4 Point Inspection Done tick mark */}
-                                  <td style={{ padding: '0.65rem 1rem', textAlign: 'center' }}>
-                                    {isQCInspected ? (
-                                      <div className="qc-tooltip-trigger">
-                                        <span style={{
-                                          backgroundColor: '#ecfdf5', color: '#047857',
-                                          padding: '2px 8px', borderRadius: '4px',
-                                          fontSize: '0.7rem', fontWeight: '800', cursor: 'help'
-                                        }}>
-                                          ✔️ Inspected
-                                        </span>
-                                        <div className="qc-tooltip-content" style={{
-                                          display: 'none', position: 'absolute', right: '105%', top: '50%', transform: 'translateY(-50%)',
-                                          backgroundColor: '#1e293b', color: 'white', padding: '0.75rem 1rem', borderRadius: '8px',
-                                          width: '300px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)',
-                                          zIndex: 1000, fontSize: '0.72rem', textAlign: 'left', lineHeight: '1.4', fontStyle: 'normal',
-                                          border: '1px solid #334155'
-                                        }}>
-                                          <div style={{ borderBottom: '1px solid #334155', paddingBottom: '4px', marginBottom: '6px', fontWeight: '800', color: '#38bdf8', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                            <span>🔍 4-Point QC Details</span>
-                                            <span style={{ fontSize: '0.6rem', color: '#94a3b8', marginLeft: 'auto' }}>
-                                              {roll.inspected_at ? new Date(roll.inspected_at).toLocaleDateString('en-IN') : ''}
-                                            </span>
-                                          </div>
-                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                              <span style={{ color: '#94a3b8' }}>Actual Qty:</span>
-                                              <strong style={{ color: 'white' }}>{roll.actual_qty || roll.actual_length || '—'} m</strong>
+                                      ) : (
+                                        <span style={{ backgroundColor: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: '800' }}>❌ Pending</span>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: '0.65rem 1rem', textAlign: 'center' }}>
+                                      {isQCInspected ? (
+                                        <div className="qc-tooltip-trigger">
+                                          <span style={{ backgroundColor: '#ecfdf5', color: '#047857', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: '800', cursor: 'help' }}>✔️ Inspected</span>
+                                          <div className="qc-tooltip-content" style={{ display: 'none', position: 'absolute', right: '105%', top: '50%', transform: 'translateY(-50%)', backgroundColor: '#1e293b', color: 'white', padding: '0.75rem 1rem', borderRadius: '8px', width: '300px', zIndex: 1000, fontSize: '0.72rem', textAlign: 'left', border: '1px solid #334155' }}>
+                                            <div style={{ borderBottom: '1px solid #334155', paddingBottom: '4px', marginBottom: '6px', fontWeight: '800', color: '#38bdf8' }}>🔍 4-Point QC Details</div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Actual Qty:</span> <strong>{roll.actual_qty || roll.actual_length || '—'} m</strong></div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Shortage:</span> <strong style={{ color: (roll.shortage || 0) > 0 ? '#fbbf24' : '#34d399' }}>{roll.shortage || 0} m</strong></div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Mistakes:</span> <strong style={{ color: '#f87171' }}>{roll.mistake || 0} m</strong></div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#34d399' }}>Ok Qty:</span> <strong style={{ color: '#34d399' }}>{roll.approved_qty || 0} m</strong></div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Inspectors:</span> <strong style={{ color: 'white', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '170px' }}>{roll.inspector_1 || '—'}{roll.inspector_2 ? ` & ${roll.inspector_2}` : ''}</strong></div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Fitter:</span> <strong style={{ color: 'white' }}>{roll.attended_fitter || '—'}</strong></div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Result:</span> <strong style={{ color: roll.roll_ok ? '#34d399' : '#f87171' }}>{roll.roll_ok ? '🟢 Roll OK' : '🔴 Defects Observed'}</strong></div>
                                             </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                              <span style={{ color: '#94a3b8' }}>Shortage:</span>
-                                              <strong style={{ color: (roll.shortage || 0) > 0 ? '#fbbf24' : '#34d399' }}>{roll.shortage || 0} m</strong>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                              <span style={{ color: '#94a3b8' }}>Mistakes:</span>
-                                              <strong style={{ color: '#f87171' }}>{roll.mistake || 0} m</strong>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                              <span style={{ color: '#94a3b8' }}>Ok Qty:</span>
-                                              <strong style={{ color: '#34d399' }}>{roll.approved_qty || 0} m</strong>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                              <span style={{ color: '#94a3b8' }}>Inspectors:</span>
-                                              <strong style={{ color: 'white', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '170px' }}>
-                                                {roll.inspector_1 || '—'}{roll.inspector_2 ? ` & ${roll.inspector_2}` : ''}
-                                              </strong>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                              <span style={{ color: '#94a3b8' }}>Fitter:</span>
-                                              <strong style={{ color: 'white' }}>{roll.attended_fitter || '—'}</strong>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                              <span style={{ color: '#94a3b8' }}>Result:</span>
-                                              <strong style={{ color: roll.roll_ok ? '#34d399' : '#f87171' }}>
-                                                {roll.roll_ok ? '🟢 Roll OK' : '🔴 Defects Observed'}
-                                              </strong>
-                                            </div>
-                                            {!roll.roll_ok && roll.warp_comments?.length > 0 && (
-                                              <div style={{ display: 'flex', flexDirection: 'column', borderTop: '1px dashed #334155', paddingTop: '2px', marginTop: '2px' }}>
-                                                <span style={{ color: '#f87171', fontSize: '0.65rem', fontWeight: '700' }}>Warp Comments:</span>
-                                                <span style={{ color: '#e2e8f0', fontSize: '0.65rem' }}>{roll.warp_comments.join(', ')}</span>
-                                              </div>
-                                            )}
-                                            {!roll.roll_ok && roll.weft_comments?.length > 0 && (
-                                              <div style={{ display: 'flex', flexDirection: 'column', borderTop: '1px dashed #334155', paddingTop: '2px', marginTop: '2px' }}>
-                                                <span style={{ color: '#f87171', fontSize: '0.65rem', fontWeight: '700' }}>Weft Comments:</span>
-                                                <span style={{ color: '#e2e8f0', fontSize: '0.65rem' }}>{roll.weft_comments.join(', ')}</span>
-                                              </div>
-                                            )}
                                           </div>
                                         </div>
-                                      </div>
-                                    ) : (
-                                      <span style={{
-                                        backgroundColor: '#fee2e2', color: '#b91c1c',
-                                        padding: '2px 8px', borderRadius: '4px',
-                                        fontSize: '0.7rem', fontWeight: '800'
-                                      }}>
-                                        ❌ Pending
-                                      </span>
-                                    )}
-                                  </td>
+                                      ) : (
+                                        <span style={{ backgroundColor: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: '800' }}>❌ Pending</span>
+                                      )}
+                                    </td>
                                 </tr>
                               );
                             })
@@ -1511,7 +1654,139 @@ function TabInspection({ order }) {
         )}
       </div>
     </div>
-  );
+  ) : (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        {/* ── Top Level Metric Cards (Washed) ── */}
+        <div className="grid-4-to-2" style={{ gap: '1rem', gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total 4-Point Inspected Qty</span>
+            <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
+              {totalFourPointQty.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
+            </span>
+          </div>
+
+          <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Number of Processed Rolls Inspected</span>
+            <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
+              {washedRollsList.length} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Rolls</span>
+            </span>
+          </div>
+
+          <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Washed Inspection Qty (Actual)</span>
+            <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
+              {totalWashedInspectionQty.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Washed Table with selection and printing */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h4 style={{ margin: 0, fontWeight: '800', fontSize: '0.95rem', color: '#800000' }}>
+              Washed Fabric Inspection Rolls
+            </h4>
+            <button
+              onClick={handlePrintSelectedWashed}
+              disabled={Object.keys(selectedWashedRolls).filter(k => selectedWashedRolls[k]).length === 0}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.4rem',
+                border: '1.5px solid var(--color-primary)', background: 'rgba(128,0,0,0.04)',
+                color: 'var(--color-primary)', padding: '0.45rem 0.85rem',
+                borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '750',
+                opacity: Object.keys(selectedWashedRolls).filter(k => selectedWashedRolls[k]).length === 0 ? 0.5 : 1
+              }}
+            >
+              <Printer size={14} /> Print Selected Rolls
+            </button>
+          </div>
+
+          {washedRollsList.length === 0 ? (
+            <p style={{ color: 'var(--text-muted-current)', fontSize: '0.875rem', fontStyle: 'italic', padding: '1rem' }}>No washed inspections found for this order.</p>
+          ) : (
+            <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--surface-current)', borderBottom: '2px solid var(--border-current)', textAlign: 'left' }}>
+                    <th style={{ padding: '0.75rem 1rem', width: '4%' }}>
+                      <input
+                        type="checkbox"
+                        checked={isAllWashedSelected}
+                        onChange={handleToggleSelectAllWashed}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '8%' }}>Date</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '14%' }}>Processed Roll ID</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '8%', textAlign: 'right' }}>Rec Qty</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '8%', textAlign: 'right' }}>Act Qty</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '14%', textAlign: 'center' }}>Weaving Defects</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '10%', textAlign: 'center' }}>Yarn Defects</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '10%', textAlign: 'center' }}>Holes & Stains</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '10%' }}>Place</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '14%' }}>Inspectors</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {washedRollsList.map(({ roll: r, weavingOrder: w }) => {
+                    const date = r.washed_inspected_at ? new Date(r.washed_inspected_at) : (r.inspected_at ? new Date(r.inspected_at) : null);
+                    const dateStr = date ? date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
+                    const rollId = r.processed_roll_id || r.id;
+                    const isChecked = !!selectedWashedRolls[rollId];
+                    const recQty = parseFloat(r.received_qty ?? r.qty ?? 0);
+                    const actQty = parseFloat(r.washed_actual_qty ?? r.actual_qty ?? 0);
+
+                    return (
+                      <tr key={rollId} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: 'white' }}>
+                        <td style={{ padding: '0.65rem 1rem' }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleWashedRoll(rollId)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </td>
+                        <td style={{ padding: '0.65rem 0.5rem', color: 'var(--text-muted-current)' }}>{dateStr}</td>
+                        <td style={{ padding: '0.65rem 0.5rem', fontFamily: 'monospace', fontWeight: '750', color: 'var(--color-primary)' }}>{rollId}</td>
+                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'right', fontWeight: '600' }}>{recQty.toFixed(2)}</td>
+                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'right', fontWeight: '600' }}>{actQty.toFixed(2)}</td>
+                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '2px', fontSize: '0.68rem' }}>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_weaving_defect_1pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_weaving_defect_1pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>1P: {r.washed_weaving_defect_1pt_count ?? 0}</span>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_weaving_defect_2pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_weaving_defect_2pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>2P: {r.washed_weaving_defect_2pt_count ?? 0}</span>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_weaving_defect_3pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_weaving_defect_3pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>3P: {r.washed_weaving_defect_3pt_count ?? 0}</span>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_weaving_defect_4pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_weaving_defect_4pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>4P: {r.washed_weaving_defect_4pt_count ?? 0}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '2px', fontSize: '0.68rem' }}>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_yarn_defect_1pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_yarn_defect_1pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>1P: {r.washed_yarn_defect_1pt_count ?? 0}</span>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_yarn_defect_4pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_yarn_defect_4pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>4P: {r.washed_yarn_defect_4pt_count ?? 0}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '2px', fontSize: '0.68rem' }}>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_holes_stains_2pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_holes_stains_2pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>2P: {r.washed_holes_stains_2pt_count ?? 0}</span>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_holes_stains_4pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_holes_stains_4pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>4P: {r.washed_holes_stains_4pt_count ?? 0}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.5rem' }}>{r.washed_place || 'Factory'}</td>
+                        <td style={{ padding: '0.65rem 0.5rem' }}>
+                          <div style={{ fontWeight: '600' }}>{r.washed_inspector_1 || r.inspector_1 || '—'}</div>
+                          {(r.washed_inspector_2 || r.inspector_2) && <div style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)' }}>{r.washed_inspector_2 || r.inspector_2}</div>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+);
 }
 
 function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR, onViewDYRR }) {

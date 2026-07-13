@@ -12,8 +12,12 @@ import {
   Search,
   CheckCircle,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Plus,
+  Minus,
+  Printer
 } from 'lucide-react';
+
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const WARP_COMMENTS_OPTIONS = [
@@ -1122,6 +1126,902 @@ function FourPointReportTab() {
   );
 }
 
+
+// ─── Washed Edit Modal ─────────────────────────────────────────────────────────
+function WashedEditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
+  const [form, setForm] = useState({
+    actual_qty: roll.washed_actual_qty ?? roll.actual_qty ?? roll.received_qty ?? roll.qty ?? '',
+    inspector_1: roll.washed_inspector_1 ?? roll.inspector_1 ?? '',
+    inspector_2: roll.washed_inspector_2 ?? roll.inspector_2 ?? '',
+    washed_place: roll.washed_place ?? 'Factory',
+    weaving1pt: roll.washed_weaving_defect_1pt_count ?? 0,
+    weaving2pt: roll.washed_weaving_defect_2pt_count ?? 0,
+    weaving3pt: roll.washed_weaving_defect_3pt_count ?? 0,
+    weaving4pt: roll.washed_weaving_defect_4pt_count ?? 0,
+    yarn1pt: roll.washed_yarn_defect_1pt_count ?? 0,
+    yarn4pt: roll.washed_yarn_defect_4pt_count ?? 0,
+    holes2pt: roll.washed_holes_stains_2pt_count ?? 0,
+    holes4pt: roll.washed_holes_stains_4pt_count ?? 0,
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const receivedQty = parseFloat(roll.received_qty ?? roll.qty ?? 0);
+  const actualQty = parseFloat(form.actual_qty || 0);
+  const shortage = parseFloat((receivedQty - actualQty).toFixed(2));
+
+  const weavingTotal = form.weaving1pt * 1 + form.weaving2pt * 2 + form.weaving3pt * 3 + form.weaving4pt * 4;
+  const yarnTotal = form.yarn1pt * 1 + form.yarn4pt * 4;
+  const holesStainsTotal = form.holes2pt * 2 + form.holes4pt * 4;
+  const totalPoints = weavingTotal + yarnTotal + holesStainsTotal;
+
+  const handleSave = async () => {
+    if (actualQty <= 0) { setErr('Actual qty must be > 0.'); return; }
+    if (!form.inspector_1) { setErr('Inspector 1 is required.'); return; }
+    setSaving(true);
+    setErr('');
+    try {
+      const currentRolls = Array.isArray(weavingOrder.fabric_rolls) ? weavingOrder.fabric_rolls : [];
+      const updatedRolls = currentRolls.map(r => {
+        if (r.id.toLowerCase() === roll.id.toLowerCase()) {
+          return {
+            ...r,
+            actual_qty: actualQty,
+            actual_length: actualQty,
+            shortage: shortage,
+            inspector_1: form.inspector_1,
+            inspector_2: form.inspector_2,
+            inspected_at: new Date().toISOString(),
+            roll_ok: totalPoints === 0,
+            
+            washed_actual_qty: actualQty,
+            washed_shortage: shortage,
+            washed_inspector_1: form.inspector_1,
+            washed_inspector_2: form.inspector_2,
+            washed_place: form.washed_place || 'Factory',
+            washed_inspected_at: new Date().toISOString(),
+            
+            washed_weaving_defect_1pt_count: form.weaving1pt,
+            washed_weaving_defect_2pt_count: form.weaving2pt,
+            washed_weaving_defect_3pt_count: form.weaving3pt,
+            washed_weaving_defect_4pt_count: form.weaving4pt,
+            washed_weaving_defect_total_points: weavingTotal,
+            
+            washed_yarn_defect_1pt_count: form.yarn1pt,
+            washed_yarn_defect_4pt_count: form.yarn4pt,
+            washed_yarn_defect_total_points: yarnTotal,
+            
+            washed_holes_stains_2pt_count: form.holes2pt,
+            washed_holes_stains_4pt_count: form.holes4pt,
+            washed_holes_stains_total_points: holesStainsTotal,
+            
+            washed_total_defect_points: totalPoints
+          };
+        }
+        return r;
+      });
+
+      const { error: updateErr } = await supabase
+        .from('weaving_orders')
+        .update({ fabric_rolls: updatedRolls })
+        .eq('id', weavingOrder.id);
+
+      if (updateErr) throw updateErr;
+
+      onSave();
+    } catch (e) {
+      setErr('Save failed: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const defectCounterStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '0.4rem 0.75rem',
+    border: '1px solid var(--border-current)',
+    borderRadius: '8px',
+    background: '#f8fafc'
+  };
+
+  const btnStyle = {
+    background: 'var(--color-primary)',
+    color: 'white',
+    border: 'none',
+    width: '24px',
+    height: '24px',
+    borderRadius: '4px',
+    fontWeight: '800',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+    }}>
+      <div style={{
+        background: 'white', borderRadius: '16px', width: '100%', maxWidth: '560px',
+        maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.25)',
+        display: 'flex', flexDirection: 'column'
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-current)',
+          position: 'sticky', top: 0, background: 'white', zIndex: 2
+        }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: '800', color: 'var(--color-primary)' }}>
+              Edit Washed Inspection: {roll.processed_roll_id || roll.id}
+            </h2>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted-current)' }}>
+              Updates will reflect in washed QC reports
+            </span>
+          </div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted-current)' }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {err && (
+            <div style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#b91c1c', padding: '0.6rem 0.8rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '600' }}>
+              <AlertTriangle size={14} style={{ marginRight: '0.4rem', verticalAlign: 'middle' }} />{err}
+            </div>
+          )}
+
+          {/* Roll Metadata */}
+          <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '0.85rem', border: '1px solid var(--border-current)', fontSize: '0.8rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+            <div>
+              <div style={{ color: 'var(--text-muted-current)', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase' }}>Order No</div>
+              <strong>{weavingOrder.order?.order_number || '—'}</strong>
+            </div>
+            <div>
+              <div style={{ color: 'var(--text-muted-current)', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase' }}>WVOF</div>
+              <strong>{weavingOrder.weaving_number || '—'}</strong>
+            </div>
+            <div>
+              <div style={{ color: 'var(--text-muted-current)', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase' }}>Design</div>
+              <strong>{weavingOrder.order?.design_no || weavingOrder.design_no} / {weavingOrder.order?.design_name || '—'}</strong>
+            </div>
+            <div>
+              <div style={{ color: 'var(--text-muted-current)', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase' }}>Received Qty</div>
+              <strong>{receivedQty} m</strong>
+            </div>
+          </div>
+
+          {/* Qty Inputs */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', marginBottom: '0.3rem' }}>Actual Qty (m)</label>
+              <input type="number" step="0.01" className="input-field" value={form.actual_qty}
+                onChange={e => setForm(f => ({ ...f, actual_qty: e.target.value }))} style={{ fontWeight: '700' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', marginBottom: '0.3rem', color: '#b45309' }}>Shortage (m)</label>
+              <div style={{ padding: '0.5rem 0.75rem', border: '1.5px solid #fcd34d', borderRadius: '8px', background: '#fffbeb', fontWeight: '800', color: '#b45309', minHeight: '38px', display: 'flex', alignItems: 'center' }}>
+                {shortage} m
+              </div>
+            </div>
+          </div>
+
+          {/* Defect Point counters */}
+          <div style={{ borderTop: '1px dashed var(--border-current)', paddingTop: '1rem' }}>
+            <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', color: 'var(--color-primary)' }}>Defect Point Counts</h4>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {/* Weaving Defects */}
+              <div style={{ border: '1px solid var(--border-current)', padding: '0.75rem', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: '800', display: 'block', marginBottom: '0.5rem', color: 'var(--text-current)' }}>Weaving Defects (Total: {weavingTotal} Pt)</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                  <div style={defectCounterStyle}>
+                    <span style={{ fontSize: '0.72rem' }}>1 Point: <strong>{form.weaving1pt}</strong></span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, weaving1pt: Math.max(0, f.weaving1pt - 1) }))} style={btnStyle}>-</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, weaving1pt: f.weaving1pt + 1 }))} style={btnStyle}>+</button>
+                    </div>
+                  </div>
+                  <div style={defectCounterStyle}>
+                    <span style={{ fontSize: '0.72rem' }}>2 Point: <strong>{form.weaving2pt}</strong></span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, weaving2pt: Math.max(0, f.weaving2pt - 1) }))} style={btnStyle}>-</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, weaving2pt: f.weaving2pt + 1 }))} style={btnStyle}>+</button>
+                    </div>
+                  </div>
+                  <div style={defectCounterStyle}>
+                    <span style={{ fontSize: '0.72rem' }}>3 Point: <strong>{form.weaving3pt}</strong></span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, weaving3pt: Math.max(0, f.weaving3pt - 1) }))} style={btnStyle}>-</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, weaving3pt: f.weaving3pt + 1 }))} style={btnStyle}>+</button>
+                    </div>
+                  </div>
+                  <div style={defectCounterStyle}>
+                    <span style={{ fontSize: '0.72rem' }}>4 Point: <strong>{form.weaving4pt}</strong></span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, weaving4pt: Math.max(0, f.weaving4pt - 1) }))} style={btnStyle}>-</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, weaving4pt: f.weaving4pt + 1 }))} style={btnStyle}>+</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Yarn Defects */}
+              <div style={{ border: '1px solid var(--border-current)', padding: '0.75rem', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: '800', display: 'block', marginBottom: '0.5rem', color: 'var(--text-current)' }}>Yarn Defects (Total: {yarnTotal} Pt)</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                  <div style={defectCounterStyle}>
+                    <span style={{ fontSize: '0.72rem' }}>1 Point: <strong>{form.yarn1pt}</strong></span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, yarn1pt: Math.max(0, f.yarn1pt - 1) }))} style={btnStyle}>-</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, yarn1pt: f.yarn1pt + 1 }))} style={btnStyle}>+</button>
+                    </div>
+                  </div>
+                  <div style={defectCounterStyle}>
+                    <span style={{ fontSize: '0.72rem' }}>4 Point: <strong>{form.yarn4pt}</strong></span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, yarn4pt: Math.max(0, f.yarn4pt - 1) }))} style={btnStyle}>-</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, yarn4pt: f.yarn4pt + 1 }))} style={btnStyle}>+</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Holes & Stains */}
+              <div style={{ border: '1px solid var(--border-current)', padding: '0.75rem', borderRadius: '8px' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: '800', display: 'block', marginBottom: '0.5rem', color: 'var(--text-current)' }}>Holes & Stains (Total: {holesStainsTotal} Pt)</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                  <div style={defectCounterStyle}>
+                    <span style={{ fontSize: '0.72rem' }}>2 Point: <strong>{form.holes2pt}</strong></span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, holes2pt: Math.max(0, f.holes2pt - 1) }))} style={btnStyle}>-</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, holes2pt: f.holes2pt + 1 }))} style={btnStyle}>+</button>
+                    </div>
+                  </div>
+                  <div style={defectCounterStyle}>
+                    <span style={{ fontSize: '0.72rem' }}>4 Point: <strong>{form.holes4pt}</strong></span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, holes4pt: Math.max(0, f.holes4pt - 1) }))} style={btnStyle}>-</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, holes4pt: f.holes4pt + 1 }))} style={btnStyle}>+</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Inspectors & Place */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.85rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', marginBottom: '0.3rem' }}>Inspector 1 *</label>
+              <select className="input-field" value={form.inspector_1} onChange={e => setForm(f => ({ ...f, inspector_1: e.target.value }))}>
+                <option value="">Select Inspector 1</option>
+                {inspectors.map(w => <option key={w.id} value={w.worker_name}>{w.worker_name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', marginBottom: '0.3rem' }}>Inspector 2</label>
+              <select className="input-field" value={form.inspector_2} onChange={e => setForm(f => ({ ...f, inspector_2: e.target.value }))}>
+                <option value="">Select Inspector 2</option>
+                {inspectors.map(w => <option key={w.id} value={w.worker_name}>{w.worker_name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', marginBottom: '0.3rem' }}>Place *</label>
+              <select className="input-field" value={form.washed_place} onChange={e => setForm(f => ({ ...f, washed_place: e.target.value }))}>
+                <option value="Factory">Factory</option>
+                <option value="Office">Office</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          display: 'flex', gap: '0.75rem', padding: '1.25rem 1.5rem',
+          borderTop: '1px solid var(--border-current)', position: 'sticky', bottom: 0, background: 'white', zIndex: 2
+        }}>
+          <button onClick={onClose} disabled={saving} style={{ flex: 1, padding: '0.65rem', border: '1.5px solid var(--border-current)', borderRadius: '8px', background: 'white', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', color: 'var(--text-muted-current)' }}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving} style={{
+            flex: 2, padding: '0.65rem', border: 'none', borderRadius: '8px',
+            background: 'var(--color-primary)', color: 'white', fontSize: '0.85rem', fontWeight: '800',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'
+          }}>
+            {saving ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={16} />}
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Washed Report Tab ───────────────────────────────────────────────────────────
+function WashedReportTab() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [inspectors, setInspectors] = useState([]);
+  const [editTarget, setEditTarget] = useState(null); // { roll, weavingOrder }
+  const [successMsg, setSuccessMsg] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  // Filters
+  const [filters, setFilters] = useState({
+    rollIds: [],
+    orderNumbers: [],
+    wvofs: [],
+    designNames: [],
+    designNos: [],
+    inspector1s: [],
+    inspector2s: [],
+    rollOk: [], // 'Yes', 'No'
+    partners: [],
+    looms: [],
+    dateFrom: '',
+    dateTo: '',
+    search: '',
+  });
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data: woData, error: err } = await supabase
+        .from('weaving_orders')
+        .select('*, order:orders(id, order_number, design_no, design_name)')
+        .order('created_at', { ascending: false });
+      if (err) throw err;
+
+      const { data: pofsData } = await supabase
+        .from('processing_orders')
+        .select('received_place, received_rolls');
+
+      const washedRolls = [];
+      for (const order of woData || []) {
+        const rolls = Array.isArray(order.fabric_rolls) ? order.fabric_rolls : [];
+        for (const roll of rolls) {
+          if (roll.washed_inspected === true) {
+            let pofPlace = roll.washed_place || 'Factory';
+            if (pofsData) {
+              const targetId = (roll.processed_roll_id || roll.id).toLowerCase();
+              for (const pof of pofsData) {
+                const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+                const foundRx = rxRolls.find(rx => rx.id && rx.id.toLowerCase() === targetId);
+                if (foundRx) {
+                  pofPlace = foundRx.received_place || pof.received_place || pofPlace;
+                  break;
+                }
+              }
+            }
+
+            // Normalize to Office/Factory
+            if (pofPlace.toLowerCase().includes('office')) {
+              pofPlace = 'Office';
+            } else {
+              pofPlace = 'Factory';
+            }
+
+            washedRolls.push({ 
+              roll: {
+                ...roll,
+                washed_place: pofPlace
+              }, 
+              weavingOrder: order 
+            });
+          }
+        }
+      }
+      setRows(washedRolls);
+    } catch (e) {
+      setError('Failed to load washed inspection data: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchInspectors = useCallback(async () => {
+    try {
+      const { data: deptData } = await supabase.from('master_departments').select('id').ilike('department_name', '%inspection%');
+      const ids = (deptData || []).map(d => d.id);
+      const { data: workers } = ids.length > 0
+        ? await supabase.from('master_workers').select('*').in('department_id', ids).order('worker_name')
+        : await supabase.from('master_workers').select('*').order('worker_name');
+      setInspectors(workers || []);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  useEffect(() => { fetchData(); fetchInspectors(); }, [fetchData, fetchInspectors]);
+
+  // Unique options for filters
+  const allOptions = useMemo(() => {
+    const set = (fn) => [...new Set(rows.map(fn).filter(Boolean))].sort();
+    return {
+      rollIds: set(r => r.roll.processed_roll_id || r.roll.id),
+      orderNumbers: set(r => r.weavingOrder.order?.order_number),
+      wvofs: set(r => r.weavingOrder.weaving_number),
+      designNames: set(r => r.weavingOrder.order?.design_name || r.weavingOrder.design_name),
+      designNos: set(r => r.weavingOrder.order?.design_no || r.weavingOrder.design_no),
+      inspector1s: set(r => r.roll.washed_inspector_1),
+      inspector2s: set(r => r.roll.washed_inspector_2),
+      rollOk: ['Yes', 'No'],
+      partners: set(r => r.weavingOrder.partner_name || (r.weavingOrder.weaving_type === 'in_house' ? 'In-House Loom Shed' : null)),
+      looms: set(r => r.weavingOrder.machine_name),
+    };
+  }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    return rows.filter(({ roll, weavingOrder }) => {
+      const r = roll; const w = weavingOrder;
+      const rollId = r.processed_roll_id || r.id;
+      const orderNo = w.order?.order_number;
+      const designName = w.order?.design_name || w.design_name;
+      const designNo = w.order?.design_no || w.design_no;
+      const inspectedAt = r.washed_inspected_at ? new Date(r.washed_inspected_at) : null;
+      const partnerVal = w.partner_name || (w.weaving_type === 'in_house' ? 'In-House Loom Shed' : '');
+      const loomVal = w.machine_name || '';
+      const isOk = (r.washed_total_defect_points || 0) === 0 ? 'Yes' : 'No';
+
+      if (filters.rollIds.length > 0 && !filters.rollIds.includes(rollId)) return false;
+      if (filters.orderNumbers.length > 0 && !filters.orderNumbers.includes(orderNo)) return false;
+      if (filters.wvofs.length > 0 && !filters.wvofs.includes(w.weaving_number)) return false;
+      if (filters.designNames.length > 0 && !filters.designNames.includes(designName)) return false;
+      if (filters.designNos.length > 0 && !filters.designNos.includes(designNo)) return false;
+      if (filters.inspector1s.length > 0 && !filters.inspector1s.includes(r.washed_inspector_1)) return false;
+      if (filters.inspector2s.length > 0 && !filters.inspector2s.includes(r.washed_inspector_2)) return false;
+      if (filters.partners.length > 0 && !filters.partners.includes(partnerVal)) return false;
+      if (filters.looms.length > 0 && !filters.looms.includes(loomVal)) return false;
+      if (filters.rollOk.length > 0 && !filters.rollOk.includes(isOk)) return false;
+
+      if (filters.dateFrom && inspectedAt && new Date(inspectedAt) < new Date(filters.dateFrom + 'T00:00:00')) return false;
+      if (filters.dateTo && inspectedAt && new Date(inspectedAt) > new Date(filters.dateTo + 'T23:59:59')) return false;
+
+      if (filters.search) {
+        const term = filters.search.toLowerCase();
+        return (
+          rollId.toLowerCase().includes(term) ||
+          (orderNo || '').toLowerCase().includes(term) ||
+          (w.weaving_number || '').toLowerCase().includes(term) ||
+          (designName || '').toLowerCase().includes(term) ||
+          (designNo || '').toLowerCase().includes(term) ||
+          (r.washed_inspector_1 || '').toLowerCase().includes(term) ||
+          (r.washed_inspector_2 || '').toLowerCase().includes(term)
+        );
+      }
+
+      return true;
+    });
+  }, [rows, filters]);
+
+  const handleEditSave = () => {
+    setEditTarget(null);
+    setSuccessMsg('Washed inspection details updated successfully!');
+    fetchData();
+    setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
+  const handlePrint = () => {
+    const totalRolls = filteredRows.length;
+    const totalRecQty = filteredRows.reduce((acc, { roll: r }) => acc + parseFloat(r.received_qty ?? r.qty ?? 0), 0);
+    const totalActQty = filteredRows.reduce((acc, { roll: r }) => acc + parseFloat(r.washed_actual_qty ?? r.actual_qty ?? 0), 0);
+    const totalShortage = totalRecQty - totalActQty;
+
+    // Group rolls by Order and Design
+    const grouped = {};
+    filteredRows.forEach(({ roll: r, weavingOrder: w }) => {
+      const orderNumber = w.order?.order_number || '—';
+      const designNo = w.order?.design_no || w.design_no || '—';
+      const designName = w.order?.design_name || w.design_name || '—';
+      const key = `${orderNumber}_${designNo}_${designName}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          orderNumber,
+          designNo,
+          designName,
+          rolls: []
+        };
+      }
+      grouped[key].rolls.push(r);
+    });
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Washed Fabric Inspection Report</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #1e293b; line-height: 1.4; }
+            .header-container { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #800000; padding-bottom: 10px; margin-bottom: 15px; }
+            .logo-section { display: flex; align-items: center; gap: 10px; }
+            .logo-text { font-size: 22px; font-weight: 850; color: #800000; letter-spacing: -0.5px; }
+            .logo-sub { font-size: 9px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+            h1 { margin: 0; color: #800000; font-size: 16px; text-transform: uppercase; }
+            .meta { font-size: 10px; color: #64748b; margin-bottom: 15px; }
+            .summary-card {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 10px;
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 12px;
+              margin-bottom: 20px;
+            }
+            .summary-item { text-align: center; }
+            .summary-label { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 2px; }
+            .summary-value { font-size: 14px; font-weight: 800; color: #0f172a; }
+            .summary-value.primary { color: #800000; }
+            .summary-value.green { color: #15803d; }
+            .summary-value.amber { color: #b45309; }
+            table { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: 8px; margin-bottom: 15px; }
+            th, td { border: 1px solid #cbd5e1; padding: 5px 6px; text-align: left; }
+            th { background: #f1f5f9; font-weight: 700; color: #334155; }
+            .right { text-align: right; }
+            .center { text-align: center; }
+            .order-title { font-size: 11px; font-weight: 800; color: #0f172a; margin-top: 15px; background: #f8fafc; padding: 4px 8px; border-left: 3px solid #800000; }
+            @media print {
+              @page { size: landscape; margin: 10mm; }
+              body { padding: 0; }
+              button { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header-container">
+            <div class="logo-section">
+              <img src="/logo.png" alt="Company Logo" style="max-height: 48px; object-fit: contain;" onerror="this.style.display='none'; document.getElementById('fallback-logo').style.display='flex';" />
+              <div id="fallback-logo" style="display: none; align-items: center; gap: 0.6rem;">
+                <div style="width: 32px; height: 32px; background: #800000; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; font-weight: 900;">AT</div>
+                <h1 style="margin: 0; color: #800000; font-size: 16px; text-transform: uppercase; font-weight: 850;">AT FABRICS</h1>
+              </div>
+            </div>
+            <h1>Inspection Report Summary (Washed)</h1>
+            <button onclick="window.print()" style="padding: 6px 12px; background: #800000; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">Print Report</button>
+          </div>
+          <div class="meta">Report Generated: ${new Date().toLocaleString('en-IN')} | Total Filtered Rolls: ${totalRolls}</div>
+          
+          <div class="summary-card">
+            <div class="summary-item">
+              <div class="summary-label">Total Rolls</div>
+              <div class="summary-value primary">${totalRolls}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Total Received Qty</div>
+              <div class="summary-value">${totalRecQty.toFixed(2)} m</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Total Actual Qty</div>
+              <div class="summary-value green">${totalActQty.toFixed(2)} m</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Total Shortage</div>
+              <div class="summary-value ${totalShortage > 0 ? 'amber' : ''}">${totalShortage.toFixed(2)} m</div>
+            </div>
+          </div>
+          
+          ${Object.values(grouped).map(group => `
+            <div style="page-break-inside: avoid; margin-bottom: 20px;">
+              <div class="order-title">
+                ORDER NO: ${group.orderNumber} &nbsp;&nbsp;|&nbsp;&nbsp; DESIGN: ${group.designNo} - ${group.designName}
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th rowspan="2" style="width: 20%">Roll Number</th>
+                    <th rowspan="2" class="right" style="width: 10%">Rec Qty</th>
+                    <th rowspan="2" class="right" style="width: 10%">Act Qty</th>
+                    <th rowspan="2" class="right" style="width: 10%">Short</th>
+                    <th colspan="4" class="center" style="border-left: 1px solid #cbd5e1">Weaving Defects</th>
+                    <th colspan="2" class="center" style="border-left: 1px solid #cbd5e1">Yarn Defects</th>
+                    <th colspan="2" class="center" style="border-left: 1px solid #cbd5e1">Holes & Stains</th>
+                  </tr>
+                  <tr>
+                    <th class="center" style="border-left: 1px solid #cbd5e1; width: 6%">1 Pt</th>
+                    <th class="center" style="width: 6%">2 Pt</th>
+                    <th class="center" style="width: 6%">3 Pt</th>
+                    <th class="center" style="width: 6%">4 Pt</th>
+                    <th class="center" style="border-left: 1px solid #cbd5e1; width: 6%">1 Pt</th>
+                    <th class="center" style="width: 6%">4 Pt</th>
+                    <th class="center" style="border-left: 1px solid #cbd5e1; width: 6%">2 Pt</th>
+                    <th class="center" style="width: 6%">4 Pt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${group.rolls.map(r => {
+                    const recVal = parseFloat(r.received_qty ?? r.qty ?? 0);
+                    const actVal = parseFloat(r.washed_actual_qty ?? r.actual_qty ?? 0);
+                    const shortVal = parseFloat(r.washed_shortage ?? (recVal - actVal)).toFixed(2);
+                    return `
+                      <tr>
+                        <td style="font-family: monospace; font-weight: bold;">${r.processed_roll_id || r.id}</td>
+                        <td class="right">${recVal.toFixed(2)}</td>
+                        <td class="right">${actVal.toFixed(2)}</td>
+                        <td class="right" style="${parseFloat(shortVal) > 0 ? 'background: #fffbeb; color: #b45309; font-weight: bold;' : ''}">${shortVal}</td>
+                        
+                        <td class="center" style="border-left: 1px solid #cbd5e1; ${r.washed_weaving_defect_1pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_1pt_count ?? 0}</td>
+                        <td class="center" style="${r.washed_weaving_defect_2pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_2pt_count ?? 0}</td>
+                        <td class="center" style="${r.washed_weaving_defect_3pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_3pt_count ?? 0}</td>
+                        <td class="center" style="${r.washed_weaving_defect_4pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_4pt_count ?? 0}</td>
+                        
+                        <td class="center" style="border-left: 1px solid #cbd5e1; ${r.washed_yarn_defect_1pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_yarn_defect_1pt_count ?? 0}</td>
+                        <td class="center" style="${r.washed_yarn_defect_4pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_yarn_defect_4pt_count ?? 0}</td>
+                        
+                        <td class="center" style="border-left: 1px solid #cbd5e1; ${r.washed_holes_stains_2pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_holes_stains_2pt_count ?? 0}</td>
+                        <td class="center" style="${r.washed_holes_stains_4pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_holes_stains_4pt_count ?? 0}</td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `).join('')}
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  return (
+    <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '12px', padding: '1.25rem', boxShadow: 'var(--shadow-sm)' }}>
+      
+      {successMsg && (
+        <div style={{ backgroundColor: '#ecfdf5', border: '1px solid #10b981', color: '#047857', padding: '0.85rem 1rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '750', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <CheckCircle size={14} />{successMsg}
+        </div>
+      )}
+
+      {/* Filter bar */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+          <div style={{ position: 'relative', width: '220px' }}>
+            <input
+              type="text"
+              placeholder="Search washed roll report..."
+              className="input-field"
+              value={filters.search}
+              onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+              style={{ paddingLeft: '2rem', height: '36px', fontSize: '0.8rem' }}
+            />
+            <Search size={14} color="var(--text-muted-current)" style={{ position: 'absolute', left: '0.75rem', top: '11px' }} />
+          </div>
+          <button
+            onClick={() => setFilterOpen(o => !o)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.35rem',
+              padding: '0.45rem 0.85rem', height: '36px', border: '1.5px solid var(--border-current)',
+              borderRadius: '8px', background: filterOpen ? 'rgba(128,0,0,0.06)' : 'white',
+              cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', color: filterOpen ? 'var(--color-primary)' : 'var(--text-current)'
+            }}
+          >
+            <Filter size={14} /> {filterOpen ? 'Hide Filters' : 'More Filters'}
+          </button>
+          <button onClick={() => { setFilters({ rollIds: [], orderNumbers: [], wvofs: [], designNames: [], designNos: [], inspector1s: [], inspector2s: [], rollOk: [], partners: [], looms: [], dateFrom: '', dateTo: '', search: '' }); }} style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '700' }}>
+            Clear All
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            onClick={handlePrint}
+            disabled={loading || filteredRows.length === 0}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              border: '1.5px solid var(--color-primary)', background: 'rgba(128,0,0,0.04)',
+              color: 'var(--color-primary)', padding: '0.45rem 0.85rem', height: '36px',
+              borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '750'
+            }}
+          >
+            <Printer size={14} /> Print Summary
+          </button>
+          <button onClick={fetchData} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', border: '1.5px solid var(--border-current)', background: 'white', padding: '0.45rem 0.85rem', height: '36px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '700' }}>
+            <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} /> Reload
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded filters */}
+      {filterOpen && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem', padding: '1rem', border: '1.5px solid var(--border-current)', borderRadius: '10px', background: '#fafafa', marginBottom: '1rem', animation: 'fadeIn 0.15s ease-out' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: '750', textTransform: 'uppercase', marginBottom: '0.25rem', color: 'var(--text-muted-current)' }}>Date From</label>
+            <input type="date" className="input-field" style={{ height: '34px', fontSize: '0.75rem' }} value={filters.dateFrom} onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: '750', textTransform: 'uppercase', marginBottom: '0.25rem', color: 'var(--text-muted-current)' }}>Date To</label>
+            <input type="date" className="input-field" style={{ height: '34px', fontSize: '0.75rem' }} value={filters.dateTo} onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))} />
+          </div>
+          <MultiSelect label="Roll ID" options={allOptions.rollIds} selected={filters.rollIds} onChange={val => setFilters(f => ({ ...f, rollIds: val }))} />
+          <MultiSelect label="Order No" options={allOptions.orderNumbers} selected={filters.orderNumbers} onChange={val => setFilters(f => ({ ...f, orderNumbers: val }))} />
+          <MultiSelect label="WVOF" options={allOptions.wvofs} selected={filters.wvofs} onChange={val => setFilters(f => ({ ...f, wvofs: val }))} />
+          <MultiSelect label="Design No" options={allOptions.designNos} selected={filters.designNos} onChange={val => setFilters(f => ({ ...f, designNos: val }))} />
+          <MultiSelect label="Weaving Unit" options={allOptions.partners} selected={filters.partners} onChange={val => setFilters(f => ({ ...f, partners: val }))} />
+          <MultiSelect label="Machine" options={allOptions.looms} selected={filters.looms} onChange={val => setFilters(f => ({ ...f, looms: val }))} />
+          <MultiSelect label="Inspector 1" options={allOptions.inspector1s} selected={filters.inspector1s} onChange={val => setFilters(f => ({ ...f, inspector1s: val }))} />
+          <MultiSelect label="Inspector 2" options={allOptions.inspector2s} selected={filters.inspector2s} onChange={val => setFilters(f => ({ ...f, inspector2s: val }))} />
+          <MultiSelect label="Roll Status" options={allOptions.rollOk} selected={filters.rollOk} onChange={val => setFilters(f => ({ ...f, rollOk: val }))} />
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '220px', gap: '0.5rem', color: 'var(--text-muted-current)' }}>
+          <Loader size={26} style={{ animation: 'spin 1.2s linear infinite' }} />
+          <span style={{ fontSize: '0.8rem', fontWeight: '600' }}>Fetching records...</span>
+        </div>
+      ) : filteredRows.length === 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '220px', color: 'var(--text-muted-current)' }}>
+          <AlertTriangle size={32} style={{ marginBottom: '0.5rem' }} />
+          <strong style={{ fontSize: '0.9rem', color: 'var(--text-current)' }}>No Washed Inspections Found</strong>
+          <span style={{ fontSize: '0.75rem' }}>Try adjusting your search query or check if washed rolls are scanned.</span>
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto', border: '1.5px solid var(--border-current)', borderRadius: '10px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', textRendering: 'optimizeLegibility' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border-current)', color: 'var(--text-muted-current)' }}>
+                <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left', verticalAlign: 'middle' }}>Date</th>
+                <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left', verticalAlign: 'middle' }}>Roll ID</th>
+                <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left', verticalAlign: 'middle' }}>Order & Design</th>
+                <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right', verticalAlign: 'middle' }}>Rec Qty</th>
+                <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right', verticalAlign: 'middle' }}>Act Qty</th>
+                <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right', verticalAlign: 'middle' }}>Short</th>
+                <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left', verticalAlign: 'middle' }}>Inspection</th>
+                
+                {/* Defect categories */}
+                <th colSpan="4" style={{ padding: '0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center', borderBottom: '1px solid var(--border-current)', borderLeft: '1px solid var(--border-current)' }}>Weaving Defects</th>
+                <th colSpan="2" style={{ padding: '0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center', borderBottom: '1px solid var(--border-current)', borderLeft: '1px solid var(--border-current)' }}>Yarn Defects</th>
+                <th colSpan="2" style={{ padding: '0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center', borderBottom: '1px solid var(--border-current)', borderLeft: '1px solid var(--border-current)' }}>Holes & Stains</th>
+                
+                <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left', verticalAlign: 'middle', borderLeft: '1px solid var(--border-current)' }}>Place</th>
+                <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center', verticalAlign: 'middle' }}>Edit</th>
+              </tr>
+              <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid var(--border-current)', color: 'var(--text-muted-current)' }}>
+                {/* Weaving sub-headers */}
+                <th style={{ padding: '0.35rem', textAlign: 'center', fontSize: '0.65rem', fontWeight: '800', borderLeft: '1px solid var(--border-current)' }}>1 Pt</th>
+                <th style={{ padding: '0.35rem', textAlign: 'center', fontSize: '0.65rem', fontWeight: '800' }}>2 Pt</th>
+                <th style={{ padding: '0.35rem', textAlign: 'center', fontSize: '0.65rem', fontWeight: '800' }}>3 Pt</th>
+                <th style={{ padding: '0.35rem', textAlign: 'center', fontSize: '0.65rem', fontWeight: '800' }}>4 Pt</th>
+                {/* Yarn sub-headers */}
+                <th style={{ padding: '0.35rem', textAlign: 'center', fontSize: '0.65rem', fontWeight: '800', borderLeft: '1px solid var(--border-current)' }}>1 Pt</th>
+                <th style={{ padding: '0.35rem', textAlign: 'center', fontSize: '0.65rem', fontWeight: '800' }}>4 Pt</th>
+                {/* Holes sub-headers */}
+                <th style={{ padding: '0.35rem', textAlign: 'center', fontSize: '0.65rem', fontWeight: '800', borderLeft: '1px solid var(--border-current)' }}>2 Pt</th>
+                <th style={{ padding: '0.35rem', textAlign: 'center', fontSize: '0.65rem', fontWeight: '800' }}>4 Pt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map(({ roll: r, weavingOrder: w }) => {
+                const orderNo = w.order?.order_number || '—';
+                const designName = w.order?.design_name || w.design_name || '—';
+                const designNo = w.order?.design_no || w.design_no || '—';
+                const date = r.washed_inspected_at ? new Date(r.washed_inspected_at) : (r.inspected_at ? new Date(r.inspected_at) : null);
+                const dateStr = date ? date.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
+                const recQty = parseFloat(r.received_qty ?? r.qty ?? 0);
+                const actQty = parseFloat(r.washed_actual_qty ?? r.actual_qty ?? 0);
+                const shortage = parseFloat(r.washed_shortage ?? (recQty - actQty)).toFixed(2);
+                
+                const w1 = r.washed_weaving_defect_1pt_count ?? 0;
+                const w2 = r.washed_weaving_defect_2pt_count ?? 0;
+                const w3 = r.washed_weaving_defect_3pt_count ?? 0;
+                const w4 = r.washed_weaving_defect_4pt_count ?? 0;
+                
+                const y1 = r.washed_yarn_defect_1pt_count ?? 0;
+                const y4 = r.washed_yarn_defect_4pt_count ?? 0;
+                
+                const h2 = r.washed_holes_stains_2pt_count ?? 0;
+                const h4 = r.washed_holes_stains_4pt_count ?? 0;
+
+                const placeStr = r.washed_place || 'Factory';
+
+                return (
+                  <tr
+                    key={`${w.id}-${r.id}`}
+                    style={{ borderBottom: '1px solid var(--border-current)', transition: 'background-color 0.15s' }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    {/* Date */}
+                    <td style={{ padding: '0.5rem 0.4rem', color: 'var(--text-muted-current)' }}>{dateStr}</td>
+                    
+                    {/* Roll ID (No WVOF) */}
+                    <td style={{ padding: '0.5rem 0.4rem', fontFamily: 'monospace', fontWeight: '700', color: 'var(--color-primary)', fontSize: '0.7rem' }}>
+                      {r.processed_roll_id || r.id}
+                    </td>
+
+                    {/* Order & Design */}
+                    <td style={{ padding: '0.5rem 0.4rem' }}>
+                      <div style={{ fontWeight: '750', color: 'var(--text-current)', marginBottom: '2px' }}>{orderNo}</div>
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)', lineHeight: 1.15 }}>
+                        <strong>{designNo}</strong> / {designName}
+                      </div>
+                    </td>
+
+                    {/* Rec Qty */}
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right', fontWeight: '600' }}>{recQty.toFixed(2)}</td>
+                    
+                    {/* Act Qty */}
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right', fontWeight: '600' }}>{actQty.toFixed(2)}</td>
+                    
+                    {/* Shortage */}
+                    <td style={{
+                      padding: '0.5rem 0.4rem', textAlign: 'right', fontWeight: '700',
+                      color: parseFloat(shortage) > 0 ? '#b45309' : '#047857',
+                      backgroundColor: parseFloat(shortage) > 0 ? '#fffbeb' : 'transparent'
+                    }}>{shortage}</td>
+
+                    {/* Inspection (Inspectors) */}
+                    <td style={{ padding: '0.5rem 0.4rem' }}>
+                      <div style={{ fontWeight: '600' }}>{r.washed_inspector_1 || r.inspector_1 || '—'}</div>
+                      {(r.washed_inspector_2 || r.inspector_2) && <div style={{ fontSize: '0.65rem', color: 'var(--text-muted-current)' }}>{r.washed_inspector_2 || r.inspector_2}</div>}
+                    </td>
+
+                    {/* Weaving Points */}
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'center', borderLeft: '1px solid var(--border-current)', color: w1 > 0 ? 'var(--color-primary)' : '#94a3b8', fontWeight: w1 > 0 ? '700' : '400' }}>{w1}</td>
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'center', color: w2 > 0 ? 'var(--color-primary)' : '#94a3b8', fontWeight: w2 > 0 ? '700' : '400' }}>{w2}</td>
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'center', color: w3 > 0 ? 'var(--color-primary)' : '#94a3b8', fontWeight: w3 > 0 ? '700' : '400' }}>{w3}</td>
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'center', color: w4 > 0 ? 'var(--color-primary)' : '#94a3b8', fontWeight: w4 > 0 ? '700' : '400' }}>{w4}</td>
+
+                    {/* Yarn Points */}
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'center', borderLeft: '1px solid var(--border-current)', color: y1 > 0 ? 'var(--color-primary)' : '#94a3b8', fontWeight: y1 > 0 ? '700' : '400' }}>{y1}</td>
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'center', color: y4 > 0 ? 'var(--color-primary)' : '#94a3b8', fontWeight: y4 > 0 ? '700' : '400' }}>{y4}</td>
+
+                    {/* Holes & Stains */}
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'center', borderLeft: '1px solid var(--border-current)', color: h2 > 0 ? 'var(--color-primary)' : '#94a3b8', fontWeight: h2 > 0 ? '700' : '400' }}>{h2}</td>
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'center', color: h4 > 0 ? 'var(--color-primary)' : '#94a3b8', fontWeight: h4 > 0 ? '700' : '400' }}>{h4}</td>
+
+                    {/* Place */}
+                    <td style={{ padding: '0.5rem 0.4rem', borderLeft: '1px solid var(--border-current)', fontSize: '0.7rem', color: 'var(--text-current)' }} title={placeStr}>
+                      {placeStr}
+                    </td>
+
+                    {/* Edit */}
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'center' }}>
+                      <button
+                        onClick={() => setEditTarget({ roll: r, weavingOrder: w })}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '2px', padding: '3px 8px',
+                          border: '1.5px solid var(--color-primary)', borderRadius: '5px',
+                          background: 'rgba(128,0,0,0.04)', color: 'var(--color-primary)',
+                          fontSize: '0.68rem', fontWeight: '800', cursor: 'pointer', transition: 'all 0.15s'
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-primary)'; e.currentTarget.style.color = 'white'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(128,0,0,0.04)'; e.currentTarget.style.color = 'var(--color-primary)'; }}
+                      >
+                        <Edit3 size={10} /> Edit
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editTarget && (
+        <WashedEditModal
+          roll={editTarget.roll}
+          weavingOrder={editTarget.weavingOrder}
+          inspectors={inspectors}
+          onClose={() => setEditTarget(null)}
+          onSave={handleEditSave}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── Placeholder tabs ─────────────────────────────────────────────────────────
 function PlaceholderTab({ emoji, title, description }) {
   return (
@@ -1192,13 +2092,7 @@ export default function InspectionReport() {
             description="Unwashed inspection records will appear here once the module is active."
           />
         )}
-        {activeTab === 'washed' && (
-          <PlaceholderTab
-            emoji="🧼"
-            title="Washed Inspection Report"
-            description="Washed inspection records will appear here once the module is active."
-          />
-        )}
+        {activeTab === 'washed' && <WashedReportTab />}
       </div>
     </div>
   );
