@@ -43,6 +43,7 @@ import UnwashedInspection from './pages/Inspection/UnwashedInspection';
 import WashedInspection from './pages/Inspection/WashedInspection';
 import InspectionReport from './pages/Inspection/InspectionReport';
 import ProcessingModule from './pages/Processing/ProcessingModule';
+import DispatchModule from './pages/Dispatch/DispatchModule';
 import { Loader } from 'lucide-react';
 
 function AppRoutes() {
@@ -140,6 +141,7 @@ function AppRoutes() {
               <Route path="report" element={<InspectionReport />} />
             </Route>
             <Route path="/processing" element={<ProcessingModule />} />
+            <Route path="/dispatch" element={<DispatchModule />} />
             {/* Masters Routing */}
             <Route path="/masters">
               <Route index element={<MastersDashboard />} />

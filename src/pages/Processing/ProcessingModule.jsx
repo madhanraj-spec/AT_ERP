@@ -347,6 +347,7 @@ export default function ProcessingModule() {
   const [childProcessedRollsInput, setChildProcessedRollsInput] = useState([]);
   const [cutViewState, setCutViewState] = useState('search'); // 'search' | 'details' | 'success'
   const [savedChildProcessedRolls, setSavedChildProcessedRolls] = useState([]);
+  const [inspectors, setInspectors] = useState([]);
   const cutScanInputRef = useRef(null);
 
   // Printing state
@@ -746,6 +747,7 @@ export default function ProcessingModule() {
       fetchProcessedRollsData();
     } else if (viewMode === 'processed_cut') {
       handleResetCut();
+      fetchInspectors();
     }
     setError('');
     setSuccessMsg('');
@@ -1661,6 +1663,7 @@ export default function ProcessingModule() {
                 design_name: child.roll.design_name || child.wo.order?.design_name || '—',
                 design_no: child.roll.design_no || child.wo.order?.design_no || child.wo.design_no || '—',
                 weaving_number: child.wo.weaving_number || '—',
+                washed_inspected: rx.washed_inspected || child.roll.washed_inspected || false,
                 parentRoll: child.roll,
                 latestMovement: latestMovement,
                 allMovements: matchingMovements,
@@ -1723,6 +1726,7 @@ export default function ProcessingModule() {
               design_name: pofRollMatch?.design_name || parentRoll?.design_name || parentWeavingOrder?.order?.design_name || '—',
               design_no: pofRollMatch?.design_no || parentRoll?.design_no || parentWeavingOrder?.order?.design_no || parentWeavingOrder?.design_no || '—',
               weaving_number: parentWeavingOrder?.weaving_number || '—',
+              washed_inspected: rx.washed_inspected || parentRoll?.washed_inspected || false,
               parentRoll: parentRoll,
               latestMovement: latestMovement,
               allMovements: matchingMovements,
@@ -1743,8 +1747,39 @@ export default function ProcessingModule() {
   };
 
   // ---------------------------------------------------------------------------
-  // PROCESSED FABRIC ROLL CUT FUNCTIONS
-  // ---------------------------------------------------------------------------
+  const fetchInspectors = async () => {
+    try {
+      const { data: deptData, error: deptErr } = await supabase
+        .from('master_departments')
+        .select('id')
+        .ilike('department_name', '%inspection%');
+      
+      if (deptErr) throw deptErr;
+
+      const inspectionDeptIds = (deptData || []).map(d => d.id);
+      
+      if (inspectionDeptIds.length > 0) {
+        const { data: workersData, error: workersErr } = await supabase
+          .from('master_workers')
+          .select('*')
+          .in('department_id', inspectionDeptIds)
+          .order('worker_name', { ascending: true });
+        
+        if (workersErr) throw workersErr;
+        setInspectors(workersData || []);
+      } else {
+        // Fallback: fetch all workers
+        const { data: workersData } = await supabase
+          .from('master_workers')
+          .select('*')
+          .order('worker_name', { ascending: true });
+        setInspectors(workersData || []);
+      }
+    } catch (err) {
+      console.error('Error fetching inspectors:', err);
+    }
+  };
+
   const handleResetCut = () => {
     setCutViewState('search');
     setParentProcessedRoll(null);
@@ -1901,6 +1936,10 @@ export default function ProcessingModule() {
       // Assemble full processed roll payload
       const rollPayload = {
         ...foundRoll,
+        washed_inspected: parentRollDetails?.washed_inspected || false,
+        washed_inspector_1: parentRollDetails?.washed_inspector_1 || parentRollDetails?.inspector_1 || null,
+        washed_inspector_2: parentRollDetails?.washed_inspector_2 || parentRollDetails?.inspector_2 || null,
+        washed_place: parentRollDetails?.washed_place || null,
         order_number: pofRollMatch?.order_number || parentRollDetails?.order_number || parentWeavingOrder?.order?.order_number || '—',
         design_name: pofRollMatch?.design_name || parentRollDetails?.design_name || parentWeavingOrder?.order?.design_name || '—',
         design_no: pofRollMatch?.design_no || parentRollDetails?.design_no || parentWeavingOrder?.order?.design_no || parentWeavingOrder?.design_no || '—',
@@ -1930,13 +1969,37 @@ export default function ProcessingModule() {
     }
 
     const configs = [];
+    const isWashedInspected = parentProcessedRoll?.washed_inspected || false;
     for (let i = 0; i < count; i++) {
       const idxStr = String(i + 1).padStart(2, '0');
       const childId = `${parentProcessedRoll.id}/${idxStr}`;
-      configs.push({
-        id: childId,
-        qty: ''
-      });
+      
+      if (isWashedInspected) {
+        configs.push({
+          id: childId,
+          qty: '',
+          width: '',
+          inspector_1: parentProcessedRoll.washed_inspector_1 || '',
+          inspector_2: parentProcessedRoll.washed_inspector_2 || '',
+          washed_place: parentProcessedRoll.washed_place || 'Factory',
+          weaving_1pt: 0,
+          weaving_2pt: 0,
+          weaving_3pt: 0,
+          weaving_4pt: 0,
+          yarn_1pt: 0,
+          yarn_4pt: 0,
+          holes_2pt: 0,
+          holes_4pt: 0,
+          weaving_history: [],
+          yarn_history: [],
+          holes_history: []
+        });
+      } else {
+        configs.push({
+          id: childId,
+          qty: ''
+        });
+      }
     }
     setChildProcessedRollsInput(configs);
   };
@@ -1952,9 +2015,111 @@ export default function ProcessingModule() {
     });
   };
 
+  const incrementChildDefect = (index, category, points) => {
+    setChildProcessedRollsInput(prev => {
+      const updated = [...prev];
+      const child = { ...updated[index] };
+      
+      if (category === 'weaving') {
+        const field = `weaving_${points}pt`;
+        child[field] = (child[field] || 0) + 1;
+        child.weaving_history = [...(child.weaving_history || []), points];
+      } else if (category === 'yarn') {
+        const field = `yarn_${points}pt`;
+        child[field] = (child[field] || 0) + 1;
+        child.yarn_history = [...(child.yarn_history || []), points];
+      } else if (category === 'holes') {
+        const field = `holes_${points}pt`;
+        child[field] = (child[field] || 0) + 1;
+        child.holes_history = [...(child.holes_history || []), points];
+      }
+      
+      updated[index] = child;
+      return updated;
+    });
+  };
+
+  const undoLastChildDefect = (index, category) => {
+    setChildProcessedRollsInput(prev => {
+      const updated = [...prev];
+      const child = { ...updated[index] };
+      
+      if (category === 'weaving' && child.weaving_history?.length > 0) {
+        const history = [...child.weaving_history];
+        const lastPt = history.pop();
+        const field = `weaving_${lastPt}pt`;
+        child[field] = Math.max(0, (child[field] || 0) - 1);
+        child.weaving_history = history;
+      } else if (category === 'yarn' && child.yarn_history?.length > 0) {
+        const history = [...child.yarn_history];
+        const lastPt = history.pop();
+        const field = `yarn_${lastPt}pt`;
+        child[field] = Math.max(0, (child[field] || 0) - 1);
+        child.yarn_history = history;
+      } else if (category === 'holes' && child.holes_history?.length > 0) {
+        const history = [...child.holes_history];
+        const lastPt = history.pop();
+        const field = `holes_${lastPt}pt`;
+        child[field] = Math.max(0, (child[field] || 0) - 1);
+        child.holes_history = history;
+      }
+      
+      updated[index] = child;
+      return updated;
+    });
+  };
+
+  const resetChildDefects = (index, category) => {
+    setChildProcessedRollsInput(prev => {
+      const updated = [...prev];
+      const child = { ...updated[index] };
+      
+      if (category === 'weaving') {
+        child.weaving_1pt = 0;
+        child.weaving_2pt = 0;
+        child.weaving_3pt = 0;
+        child.weaving_4pt = 0;
+        child.weaving_history = [];
+      } else if (category === 'yarn') {
+        child.yarn_1pt = 0;
+        child.yarn_4pt = 0;
+        child.yarn_history = [];
+      } else if (category === 'holes') {
+        child.holes_2pt = 0;
+        child.holes_4pt = 0;
+        child.holes_history = [];
+      }
+      
+      updated[index] = child;
+      return updated;
+    });
+  };
+
+  const getChildDefectTotals = (child) => {
+    const weavingTotal = 
+      (child.weaving_1pt || 0) * 1 +
+      (child.weaving_2pt || 0) * 2 +
+      (child.weaving_3pt || 0) * 3 +
+      (child.weaving_4pt || 0) * 4;
+      
+    const yarnTotal = 
+      (child.yarn_1pt || 0) * 1 +
+      (child.yarn_4pt || 0) * 4;
+      
+    const holesTotal = 
+      (child.holes_2pt || 0) * 2 +
+      (child.holes_4pt || 0) * 4;
+      
+    const grandTotal = weavingTotal + yarnTotal + holesTotal;
+    
+    return { weavingTotal, yarnTotal, holesTotal, grandTotal };
+  };
+
   const handleSubmitProcessedCut = async (e) => {
     e.preventDefault();
     if (!parentProcessedRoll || !parentPof || childProcessedRollsInput.length === 0) return;
+
+    const isWashedInspected = parentProcessedRoll.washed_inspected || false;
 
     // Validations
     for (let i = 0; i < childProcessedRollsInput.length; i++) {
@@ -1963,6 +2128,17 @@ export default function ProcessingModule() {
       if (isNaN(qty) || qty <= 0) {
         alert(`Roll ${child.id}: Please enter a valid quantity.`);
         return;
+      }
+      if (isWashedInspected) {
+        if (!child.inspector_1) {
+          alert(`Roll ${child.id}: Please select Inspector 1.`);
+          return;
+        }
+        const widthVal = parseFloat(child.width);
+        if (isNaN(widthVal) || widthVal <= 0) {
+          alert(`Roll ${child.id}: Please enter a valid width.`);
+          return;
+        }
       }
     }
 
@@ -1989,21 +2165,67 @@ export default function ProcessingModule() {
 
       const currentReceivedRolls = Array.isArray(freshPof.received_rolls) ? freshPof.received_rolls : [];
 
-      // Create child processed rolls
-      const childProcessedRolls = childProcessedRollsInput.map((child, idx) => {
-        const idxStr = String(idx + 1).padStart(2, '0');
-        return {
-          ...parentProcessedRoll, // Inherit metadata
-          id: child.id,
-          qty: parseFloat(child.qty),
-          greige_roll_id: parentProcessedRoll.greige_roll_id ? `${parentProcessedRoll.greige_roll_id}/${idxStr}` : null
-        };
-      });
+      // Create child processed rolls and update received_rolls array
+      const childProcessedRolls = [];
+      const updatedReceivedRolls = [];
 
-      // Update POF updated_at in DB - we do not update received_rolls so that the original receipt record (8 rolls received) is preserved in historical POF and order sections.
+      for (const rx of currentReceivedRolls) {
+        if (rx.id.toLowerCase() === parentProcessedRoll.id.toLowerCase()) {
+          const childRxRolls = childProcessedRollsInput.map((child, idx) => {
+            const idxStr = String(idx + 1).padStart(2, '0');
+            const childRx = {
+              ...rx,
+              id: child.id,
+              qty: parseFloat(child.qty),
+              greige_roll_id: rx.greige_roll_id ? `${rx.greige_roll_id}/${idxStr}` : null
+            };
+
+            if (isWashedInspected) {
+              const { weavingTotal, yarnTotal, holesTotal, grandTotal } = getChildDefectTotals(child);
+              childRx.washed_inspected = true;
+              childRx.washed_inspected_at = new Date().toISOString();
+              childRx.washed_actual_qty = parseFloat(child.qty);
+              childRx.washed_shortage = 0;
+              childRx.washed_width = parseFloat(child.width) || null;
+              childRx.washed_inspector_1 = child.inspector_1 || null;
+              childRx.washed_inspector_2 = child.inspector_2 || null;
+              childRx.washed_place = child.washed_place || 'Factory';
+              
+              childRx.washed_weaving_defect_1pt_count = parseInt(child.weaving_1pt) || 0;
+              childRx.washed_weaving_defect_2pt_count = parseInt(child.weaving_2pt) || 0;
+              childRx.washed_weaving_defect_3pt_count = parseInt(child.weaving_3pt) || 0;
+              childRx.washed_weaving_defect_4pt_count = parseInt(child.weaving_4pt) || 0;
+              childRx.washed_weaving_defect_total_points = weavingTotal;
+              
+              childRx.washed_yarn_defect_1pt_count = parseInt(child.yarn_1pt) || 0;
+              childRx.washed_yarn_defect_4pt_count = parseInt(child.yarn_4pt) || 0;
+              childRx.washed_yarn_defect_total_points = yarnTotal;
+              
+              childRx.washed_holes_stains_2pt_count = parseInt(child.holes_2pt) || 0;
+              childRx.washed_holes_stains_4pt_count = parseInt(child.holes_4pt) || 0;
+              childRx.washed_holes_stains_total_points = holesTotal;
+              
+              childRx.washed_total_defect_points = grandTotal;
+            }
+
+            childProcessedRolls.push({
+              ...parentProcessedRoll,
+              ...childRx
+            });
+
+            return childRx;
+          });
+          updatedReceivedRolls.push(...childRxRolls);
+        } else {
+          updatedReceivedRolls.push(rx);
+        }
+      }
+
+      // Update POF with new received_rolls list (which deletes the parent roll and inserts the child rolls)
       const { error: updatePofErr } = await supabase
         .from('processing_orders')
         .update({
+          received_rolls: updatedReceivedRolls,
           updated_at: new Date().toISOString()
         })
         .eq('id', parentPof.id);
@@ -2026,23 +2248,60 @@ export default function ProcessingModule() {
           
           if (parentGreigeRoll) {
             const ratio = parentProcessedRoll.qty > 0 ? parseFloat(parentGreigeRoll.qty || 0) / parentProcessedRoll.qty : 1;
-            const actualRatio = parentProcessedRoll.qty > 0 ? parseFloat(parentGreigeRoll.actual_qty || 0) / parentProcessedRoll.qty : 1;
 
             const childGreigeRolls = childProcessedRollsInput.map((child, idx) => {
               const childProcessedQty = parseFloat(child.qty);
               const childGreigeQty = parseFloat((childProcessedQty * ratio).toFixed(2));
-              const childActualQty = parseFloat((childProcessedQty * actualRatio).toFixed(2));
               
-              return {
+              const baseRoll = {
                 ...parentGreigeRoll,
                 id: `${parentGreigeRoll.id}/${String(idx + 1).padStart(2, '0')}`,
                 qty: childGreigeQty,
-                actual_qty: childActualQty,
-                actual_length: childActualQty,
+                actual_qty: childProcessedQty,
+                actual_length: childProcessedQty,
                 processed_roll_id: child.id,
                 received_qty: childProcessedQty,
                 received_from_processing_at: new Date().toISOString()
               };
+
+              if (isWashedInspected) {
+                const { weavingTotal, yarnTotal, holesTotal, grandTotal } = getChildDefectTotals(child);
+
+                baseRoll.actual_qty = childProcessedQty;
+                baseRoll.actual_length = childProcessedQty;
+                baseRoll.shortage = 0;
+                baseRoll.inspector_1 = child.inspector_1 || null;
+                baseRoll.inspector_2 = child.inspector_2 || null;
+                baseRoll.inspected_at = new Date().toISOString();
+                baseRoll.roll_ok = grandTotal === 0;
+
+                baseRoll.washed_inspected = true;
+                baseRoll.washed_inspected_at = new Date().toISOString();
+                baseRoll.washed_actual_qty = childProcessedQty;
+                baseRoll.washed_shortage = 0;
+                baseRoll.washed_width = parseFloat(child.width) || null;
+                baseRoll.washed_inspector_1 = child.inspector_1 || null;
+                baseRoll.washed_inspector_2 = child.inspector_2 || null;
+                baseRoll.washed_place = child.washed_place || 'Factory';
+                
+                baseRoll.washed_weaving_defect_1pt_count = parseInt(child.weaving_1pt) || 0;
+                baseRoll.washed_weaving_defect_2pt_count = parseInt(child.weaving_2pt) || 0;
+                baseRoll.washed_weaving_defect_3pt_count = parseInt(child.weaving_3pt) || 0;
+                baseRoll.washed_weaving_defect_4pt_count = parseInt(child.weaving_4pt) || 0;
+                baseRoll.washed_weaving_defect_total_points = weavingTotal;
+                
+                baseRoll.washed_yarn_defect_1pt_count = parseInt(child.yarn_1pt) || 0;
+                baseRoll.washed_yarn_defect_4pt_count = parseInt(child.yarn_4pt) || 0;
+                baseRoll.washed_yarn_defect_total_points = yarnTotal;
+                
+                baseRoll.washed_holes_stains_2pt_count = parseInt(child.holes_2pt) || 0;
+                baseRoll.washed_holes_stains_4pt_count = parseInt(child.holes_4pt) || 0;
+                baseRoll.washed_holes_stains_total_points = holesTotal;
+                
+                baseRoll.washed_total_defect_points = grandTotal;
+              }
+
+              return baseRoll;
             });
 
             const updatedWoRolls = [];
@@ -2061,6 +2320,7 @@ export default function ProcessingModule() {
 
             if (updateWoErr) {
               console.error('Error updating weaving order fabric rolls sync:', updateWoErr);
+              throw updateWoErr;
             }
           }
         }
@@ -2113,10 +2373,6 @@ export default function ProcessingModule() {
             <div class="field-row">
               <span class="field-label">ROLL ID:</span>
               <span class="field-value roll-id">${roll.id}</span>
-            </div>
-            <div class="field-row">
-              <span class="field-label">POF NUMBER:</span>
-              <span class="field-value">${roll.pof_number || parentPof?.pof_number || '—'}</span>
             </div>
             <div class="field-row">
               <span class="field-label">ORDER NO:</span>
@@ -3767,10 +4023,6 @@ export default function ProcessingModule() {
               <span class="field-value roll-id">${roll.id}</span>
             </div>
             <div class="field-row">
-              <span class="field-label">POF NO:</span>
-              <span class="field-value">${activePof?.pof_number || '—'}</span>
-            </div>
-            <div class="field-row">
               <span class="field-label">ORDER NO:</span>
               <span class="field-value">${orderNo}</span>
             </div>
@@ -3957,16 +4209,16 @@ export default function ProcessingModule() {
               <span class="field-value roll-id">${roll.id}</span>
             </div>
             <div class="field-row">
-              <span class="field-label">POF NO:</span>
-              <span class="field-value">${roll.pof_number || '—'}</span>
-            </div>
-            <div class="field-row">
               <span class="field-label">ORDER NO:</span>
               <span class="field-value">${roll.order_number || '—'}</span>
             </div>
             <div class="field-row">
-              <span class="field-label">DESIGN:</span>
-              <span class="field-value">${roll.design_name || '—'} (${roll.design_no || '—'})</span>
+              <span class="field-label">DESIGN NO:</span>
+              <span class="field-value">${roll.design_no || '—'}</span>
+            </div>
+            <div class="field-row">
+              <span class="field-label">DESIGN NAME:</span>
+              <span class="field-value">${roll.design_name || '—'}</span>
             </div>
             <div class="field-row" style="margin-top: 2px;">
               <span class="field-label" style="font-size: 8px;">QUANTITY:</span>
@@ -7799,11 +8051,14 @@ export default function ProcessingModule() {
                             tooltipAlign = 'bottom';
                           }
 
-                          const hasWashedInspection = roll.parentRoll && 
-                             roll.parentRoll.inspector_1 && 
-                             roll.parentRoll.inspected_at && 
-                             roll.parentRoll.received_from_processing_at && 
-                             new Date(roll.parentRoll.inspected_at).getTime() > new Date(roll.parentRoll.received_from_processing_at).getTime();
+                          const hasWashedInspection = roll.washed_inspected || (roll.parentRoll && (
+                             roll.parentRoll.washed_inspected || (
+                               roll.parentRoll.inspector_1 && 
+                               roll.parentRoll.inspected_at && 
+                               roll.parentRoll.received_from_processing_at && 
+                               new Date(roll.parentRoll.inspected_at).getTime() >= new Date(roll.parentRoll.received_from_processing_at).getTime()
+                             )
+                          ));
                           const hasDispatch = roll.latestMovement && 
                              roll.latestMovement.to_location !== 'Factory' && 
                              roll.latestMovement.to_location !== 'Office';
@@ -8172,31 +8427,396 @@ export default function ProcessingModule() {
                       📐 Enter Child Rolls Quantities
                     </span>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      {childProcessedRollsInput.map((child, idx) => (
-                        <div key={child.id} style={{
-                          display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem',
-                          backgroundColor: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb'
-                        }}>
-                          <span style={{ fontSize: '0.75rem', fontWeight: '800', fontFamily: 'monospace', color: '#475569', minWidth: '180px' }}>
-                            {child.id}
-                          </span>
-                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0.01"
-                              required
-                              placeholder="Qty (meters)"
-                              className="input-field"
-                              value={child.qty}
-                              onChange={e => updateChildProcessedRollField(idx, 'qty', e.target.value)}
-                              style={{ height: '36px', fontWeight: '700' }}
-                            />
-                            <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>m</span>
-                          </div>
-                        </div>
-                      ))}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      {childProcessedRollsInput.map((child, idx) => {
+                        const isWashedInspected = parentProcessedRoll.washed_inspected;
+                        
+                        if (isWashedInspected) {
+                          const { weavingTotal, yarnTotal, holesTotal, grandTotal } = getChildDefectTotals(child);
+                          
+                          return (
+                            <div key={child.id} className="glass-panel" style={{
+                              padding: '1.25rem',
+                              border: '1px solid var(--border-current)',
+                              borderRadius: '12px',
+                              backgroundColor: 'rgba(255, 255, 255, 0.65)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '1rem',
+                              boxShadow: 'var(--shadow-sm)'
+                            }}>
+                              {/* Roll ID Header */}
+                              <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                borderBottom: '1px dashed var(--border-current)',
+                                paddingBottom: '0.5rem',
+                                marginBottom: '0.25rem'
+                              }}>
+                                <span style={{ fontSize: '0.8rem', fontWeight: '850', fontFamily: 'monospace', color: 'var(--color-primary)' }}>
+                                  🧼 CHILD ROLL ID: {child.id}
+                                </span>
+                                <span className="badge" style={{ fontSize: '0.62rem', backgroundColor: '#f3e8ff', color: '#6b21a8', fontWeight: '800', padding: '2px 6px', borderRadius: '4px' }}>
+                                  QC INSPECTION REQUIRED
+                                </span>
+                              </div>
+
+                              {/* QC parameters: Qty, Shortage, Width */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                <div className="input-group" style={{ margin: 0 }}>
+                                  <label className="input-label" style={{ fontWeight: '700', fontSize: '0.7rem' }}>Actual Length (m)</label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    className="input-field"
+                                    placeholder="Actual meters"
+                                    required
+                                    value={child.qty}
+                                    onChange={e => updateChildProcessedRollField(idx, 'qty', e.target.value)}
+                                    style={{ fontWeight: '700', fontSize: '0.85rem', height: '36px' }}
+                                  />
+                                </div>
+                                <div className="input-group" style={{ margin: 0 }}>
+                                  <label className="input-label" style={{ fontWeight: '700', fontSize: '0.7rem' }}>Width (inches)</label>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    min="1"
+                                    className="input-field"
+                                    placeholder="Width"
+                                    required
+                                    value={child.width}
+                                    onChange={e => updateChildProcessedRollField(idx, 'width', e.target.value)}
+                                    style={{ fontWeight: '700', fontSize: '0.85rem', height: '36px' }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Washed Place options */}
+                              <div className="input-group" style={{ margin: 0 }}>
+                                <label className="input-label" style={{ fontWeight: '750', fontSize: '0.7rem' }}>Washed Roll Place (Location)</label>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                  {['Factory', 'Office'].map((place) => (
+                                    <button
+                                      key={place}
+                                      type="button"
+                                      onClick={() => updateChildProcessedRollField(idx, 'washed_place', place)}
+                                      style={{
+                                        flex: 1,
+                                        height: '32px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontWeight: '700',
+                                        fontSize: '0.75rem',
+                                        borderRadius: '6px',
+                                        border: child.washed_place === place ? '2px solid var(--color-primary)' : '1px solid var(--border-current)',
+                                        background: child.washed_place === place ? 'rgba(128, 0, 0, 0.05)' : 'white',
+                                        color: child.washed_place === place ? 'var(--color-primary)' : 'var(--text-muted-current)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s'
+                                      }}
+                                    >
+                                      {place}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Defect point loggers */}
+                              {/* 1. Weaving Defects */}
+                              <div style={{
+                                backgroundColor: '#fdfbfb',
+                                border: '1px solid #f3ebeb',
+                                borderRadius: '8px',
+                                padding: '0.75rem',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.5rem'
+                              }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--color-primary)', textTransform: 'uppercase' }}>⚠️ Weaving Defects</span>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: '850', color: 'white', backgroundColor: 'var(--color-primary)', padding: '2px 6px', borderRadius: '4px' }}>
+                                    Total: {weavingTotal} Pt
+                                  </span>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
+                                  {[1, 2, 3, 4].map(pt => (
+                                    <button
+                                      key={pt}
+                                      type="button"
+                                      onClick={() => incrementChildDefect(idx, 'weaving', pt)}
+                                      style={{
+                                        position: 'relative',
+                                        height: '34px',
+                                        borderRadius: '6px',
+                                        border: '1px solid var(--border-current)',
+                                        backgroundColor: child[`weaving_${pt}pt`] > 0 ? 'rgba(128, 0, 0, 0.05)' : 'white',
+                                        color: child[`weaving_${pt}pt`] > 0 ? 'var(--color-primary)' : 'var(--text-muted-current)',
+                                        fontWeight: '750',
+                                        fontSize: '0.72rem',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {pt} Pt
+                                      {child[`weaving_${pt}pt`] > 0 && (
+                                        <span style={{
+                                          position: 'absolute',
+                                          top: '-6px',
+                                          right: '-6px',
+                                          backgroundColor: 'var(--color-primary)',
+                                          color: 'white',
+                                          fontSize: '0.58rem',
+                                          fontWeight: '800',
+                                          borderRadius: '50%',
+                                          width: '15px',
+                                          height: '15px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center'
+                                        }}>
+                                          {child[`weaving_${pt}pt`]}
+                                        </span>
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem' }}>
+                                  {child.weaving_history?.length > 0 ? (
+                                    <button type="button" onClick={() => undoLastChildDefect(idx, 'weaving')} style={{ border: 'none', background: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontWeight: '700' }}>
+                                      ↩ Undo
+                                    </button>
+                                  ) : <div />}
+                                  {(child.weaving_1pt > 0 || child.weaving_2pt > 0 || child.weaving_3pt > 0 || child.weaving_4pt > 0) && (
+                                    <button type="button" onClick={() => resetChildDefects(idx, 'weaving')} style={{ border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontWeight: '700' }}>
+                                      Reset
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 2. Yarn Defects */}
+                              <div style={{
+                                backgroundColor: '#fcfdfa',
+                                border: '1px solid #ebf3eb',
+                                borderRadius: '8px',
+                                padding: '0.75rem',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.5rem'
+                              }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: '800', color: '#047857', textTransform: 'uppercase' }}>⚠️ Yarn Defects</span>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: '850', color: 'white', backgroundColor: '#047857', padding: '2px 6px', borderRadius: '4px' }}>
+                                    Total: {yarnTotal} Pt
+                                  </span>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                                  {[1, 4].map(pt => (
+                                    <button
+                                      key={pt}
+                                      type="button"
+                                      onClick={() => incrementChildDefect(idx, 'yarn', pt)}
+                                      style={{
+                                        position: 'relative',
+                                        height: '34px',
+                                        borderRadius: '6px',
+                                        border: '1px solid var(--border-current)',
+                                        backgroundColor: child[`yarn_${pt}pt`] > 0 ? 'rgba(4, 120, 87, 0.05)' : 'white',
+                                        color: child[`yarn_${pt}pt`] > 0 ? '#047857' : 'var(--text-muted-current)',
+                                        fontWeight: '750',
+                                        fontSize: '0.72rem',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {pt} Pt
+                                      {child[`yarn_${pt}pt`] > 0 && (
+                                        <span style={{
+                                          position: 'absolute',
+                                          top: '-6px',
+                                          right: '-6px',
+                                          backgroundColor: '#047857',
+                                          color: 'white',
+                                          fontSize: '0.58rem',
+                                          fontWeight: '800',
+                                          borderRadius: '50%',
+                                          width: '15px',
+                                          height: '15px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center'
+                                        }}>
+                                          {child[`yarn_${pt}pt`]}
+                                        </span>
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem' }}>
+                                  {child.yarn_history?.length > 0 ? (
+                                    <button type="button" onClick={() => undoLastChildDefect(idx, 'yarn')} style={{ border: 'none', background: 'none', color: '#047857', cursor: 'pointer', fontWeight: '700' }}>
+                                      ↩ Undo
+                                    </button>
+                                  ) : <div />}
+                                  {(child.yarn_1pt > 0 || child.yarn_4pt > 0) && (
+                                    <button type="button" onClick={() => resetChildDefects(idx, 'yarn')} style={{ border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontWeight: '700' }}>
+                                      Reset
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 3. Holes & Stains */}
+                              <div style={{
+                                backgroundColor: '#fafbfe',
+                                border: '1px solid #ebebf3',
+                                borderRadius: '8px',
+                                padding: '0.75rem',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.5rem'
+                              }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: '800', color: '#3b82f6', textTransform: 'uppercase' }}>⚠️ Holes & Stains</span>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: '850', color: 'white', backgroundColor: '#3b82f6', padding: '2px 6px', borderRadius: '4px' }}>
+                                    Total: {holesTotal} Pt
+                                  </span>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                                  {[2, 4].map(pt => (
+                                    <button
+                                      key={pt}
+                                      type="button"
+                                      onClick={() => incrementChildDefect(idx, 'holes', pt)}
+                                      style={{
+                                        position: 'relative',
+                                        height: '34px',
+                                        borderRadius: '6px',
+                                        border: '1px solid var(--border-current)',
+                                        backgroundColor: child[`holes_${pt}pt`] > 0 ? 'rgba(59, 130, 246, 0.05)' : 'white',
+                                        color: child[`holes_${pt}pt`] > 0 ? '#3b82f6' : 'var(--text-muted-current)',
+                                        fontWeight: '750',
+                                        fontSize: '0.72rem',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {pt} Pt
+                                      {child[`holes_${pt}pt`] > 0 && (
+                                        <span style={{
+                                          position: 'absolute',
+                                          top: '-6px',
+                                          right: '-6px',
+                                          backgroundColor: '#3b82f6',
+                                          color: 'white',
+                                          fontSize: '0.58rem',
+                                          fontWeight: '800',
+                                          borderRadius: '50%',
+                                          width: '15px',
+                                          height: '15px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center'
+                                        }}>
+                                          {child[`holes_${pt}pt`]}
+                                        </span>
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem' }}>
+                                  {child.holes_history?.length > 0 ? (
+                                    <button type="button" onClick={() => undoLastChildDefect(idx, 'holes')} style={{ border: 'none', background: 'none', color: '#3b82f6', cursor: 'pointer', fontWeight: '700' }}>
+                                      ↩ Undo
+                                    </button>
+                                  ) : <div />}
+                                  {(child.holes_2pt > 0 || child.holes_4pt > 0) && (
+                                    <button type="button" onClick={() => resetChildDefects(idx, 'holes')} style={{ border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontWeight: '700' }}>
+                                      Reset
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* QC Summary and Inspectors dropdowns */}
+                              <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                backgroundColor: '#f8fafc',
+                                padding: '0.5rem 0.75rem',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-current)',
+                                fontSize: '0.75rem'
+                              }}>
+                                <span style={{ fontWeight: '700', color: 'var(--text-current)' }}>Defect score:</span>
+                                <span style={{ fontWeight: '800', color: grandTotal > 0 ? '#be123c' : '#047857' }}>
+                                  {grandTotal} Points ({grandTotal === 0 ? 'Grade A' : 'Defective'})
+                                </span>
+                              </div>
+
+                              {/* Workers Dropdowns */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                <div className="input-group" style={{ margin: 0 }}>
+                                  <label className="input-label" style={{ fontWeight: '700', fontSize: '0.7rem' }}>Inspector 1</label>
+                                  <select
+                                    className="input-field"
+                                    value={child.inspector_1}
+                                    required
+                                    onChange={e => updateChildProcessedRollField(idx, 'inspector_1', e.target.value)}
+                                    style={{ paddingRight: '1rem', fontWeight: '600', height: '36px', fontSize: '0.8rem' }}
+                                  >
+                                    <option value="">Inspector 1</option>
+                                    {inspectors.map((w) => (
+                                      <option key={w.id} value={w.worker_name}>{w.worker_name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="input-group" style={{ margin: 0 }}>
+                                  <label className="input-label" style={{ fontWeight: '700', fontSize: '0.7rem' }}>Inspector 2</label>
+                                  <select
+                                    className="input-field"
+                                    value={child.inspector_2}
+                                    onChange={e => updateChildProcessedRollField(idx, 'inspector_2', e.target.value)}
+                                    style={{ paddingRight: '1rem', fontWeight: '600', height: '36px', fontSize: '0.8rem' }}
+                                  >
+                                    <option value="">Inspector 2</option>
+                                    {inspectors.map((w) => (
+                                      <option key={w.id} value={w.worker_name}>{w.worker_name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div key={child.id} style={{
+                              display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem',
+                              backgroundColor: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb'
+                            }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: '800', fontFamily: 'monospace', color: '#475569', minWidth: '180px' }}>
+                                {child.id}
+                              </span>
+                              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0.01"
+                                  required
+                                  placeholder="Qty (meters)"
+                                  className="input-field"
+                                  value={child.qty}
+                                  onChange={e => updateChildProcessedRollField(idx, 'qty', e.target.value)}
+                                  style={{ height: '36px', fontWeight: '700' }}
+                                />
+                                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>m</span>
+                              </div>
+                            </div>
+                          );
+                        }
+                      })}
                     </div>
 
                     {/* Mismatch warnings */}

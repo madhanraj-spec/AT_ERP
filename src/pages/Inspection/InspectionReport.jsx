@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   FileText,
@@ -15,7 +15,8 @@ import {
   RefreshCw,
   Plus,
   Minus,
-  Printer
+  Printer,
+  Camera
 } from 'lucide-react';
 
 
@@ -1445,7 +1446,7 @@ function WashedEditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
 }
 
 // ─── Washed Report Tab ───────────────────────────────────────────────────────────
-function WashedReportTab() {
+function WashedReportTab({ onCreateNewReport }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1813,6 +1814,20 @@ function WashedReportTab() {
 
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <button
+            onClick={onCreateNewReport}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              backgroundColor: 'var(--color-primary)', color: 'white', border: 'none',
+              padding: '0.45rem 0.85rem', height: '36px', borderRadius: '8px',
+              cursor: 'pointer', fontSize: '0.78rem', fontWeight: '750',
+              boxShadow: 'var(--shadow-sm)', transition: 'all 0.15s'
+            }}
+            onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.15)'}
+            onMouseLeave={e => e.currentTarget.style.filter = 'none'}
+          >
+            <Plus size={14} /> New Inspection Report
+          </button>
+          <button
             onClick={handlePrint}
             disabled={loading || filteredRows.length === 0}
             style={{
@@ -1875,6 +1890,7 @@ function WashedReportTab() {
                 <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right', verticalAlign: 'middle' }}>Rec Qty</th>
                 <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right', verticalAlign: 'middle' }}>Act Qty</th>
                 <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'right', verticalAlign: 'middle' }}>Short</th>
+                <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center', verticalAlign: 'middle' }}>Width</th>
                 <th rowSpan="2" style={{ padding: '0.6rem 0.4rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'left', verticalAlign: 'middle' }}>Inspection</th>
                 
                 {/* Defect categories */}
@@ -1959,6 +1975,11 @@ function WashedReportTab() {
                       backgroundColor: parseFloat(shortage) > 0 ? '#fffbeb' : 'transparent'
                     }}>{shortage}</td>
 
+                    {/* Width */}
+                    <td style={{ padding: '0.5rem 0.4rem', textAlign: 'center', fontWeight: '600' }}>
+                      {r.washed_width ? `${r.washed_width}"` : '—'}
+                    </td>
+
                     {/* Inspection (Inspectors) */}
                     <td style={{ padding: '0.5rem 0.4rem' }}>
                       <div style={{ fontWeight: '600' }}>{r.washed_inspector_1 || r.inspector_1 || '—'}</div>
@@ -2042,6 +2063,8 @@ const TABS = [
 
 export default function InspectionReport() {
   const [activeTab, setActiveTab] = useState('4point');
+  const [showNewReportModal, setShowNewReportModal] = useState(false);
+  const [washedTabKey, setWashedTabKey] = useState(0);
 
   return (
     <div style={{ padding: '1.5rem', maxWidth: '100%', fontFamily: 'var(--font-sans)' }}>
@@ -2092,8 +2115,1121 @@ export default function InspectionReport() {
             description="Unwashed inspection records will appear here once the module is active."
           />
         )}
-        {activeTab === 'washed' && <WashedReportTab />}
+        {activeTab === 'washed' && <WashedReportTab key={washedTabKey} onCreateNewReport={() => setShowNewReportModal(true)} />}
+      </div>
+
+      {/* New Report Modal */}
+      {showNewReportModal && (
+        <NewReportModal
+          onClose={() => setShowNewReportModal(false)}
+          onSave={() => {
+            setShowNewReportModal(false);
+            setWashedTabKey(k => k + 1);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+
+// ─── New Inspection Report Modal ────────────────────────────────────────────────
+function NewReportModal({ onClose, onSave }) {
+  const [scanInput, setScanInput] = useState('');
+  const [addedRolls, setAddedRolls] = useState([]); // Array of { roll, weavingOrderId, orderId }
+  const [unit, setUnit] = useState('meters'); // 'meters' | 'yards'
+  const [avgWeightMeter, setAvgWeightMeter] = useState('');
+  const [rollWeights, setRollWeights] = useState({}); // { [rollId]: weight }
+  const [manualWeightFlags, setManualWeightFlags] = useState({}); // { [rollId]: boolean }
+  const [allWeavingOrders, setAllWeavingOrders] = useState([]);
+
+  useEffect(() => {
+    const preload = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('weaving_orders')
+          .select(`
+            *,
+            order:orders(id, order_number, design_no, design_name, buyer_po_number, avg_weight_meter)
+          `);
+        if (!error && data) {
+          setAllWeavingOrders(data);
+        }
+      } catch (err) {
+        console.error("Error preloading orders:", err);
+      }
+    };
+    preload();
+  }, []);
+
+  const [meta, setMeta] = useState({
+    orderNo: '—',
+    designNo: '—',
+    designName: '—',
+    piNumber: '—',
+    poNumber: '—',
+    lockedOrderId: null
+  });
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  // Camera Scanner modal state
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
+  const [cameraScanError, setCameraScanError] = useState('');
+  const scannerInstanceRef = useRef(null);
+
+  const startCameraScanner = () => {
+    setCameraScanError('');
+    if (!window.Html5Qrcode) {
+      setCameraScanError('Scanner library not loaded yet. Please wait a moment and retry.');
+      return;
+    }
+    setShowCameraScanner(true);
+    
+    setTimeout(() => {
+      try {
+        const html5QrCode = new window.Html5Qrcode("modal-reader");
+        scannerInstanceRef.current = html5QrCode;
+        
+        html5QrCode.start(
+          { facingMode: "environment" }, 
+          {
+            fps: 10,
+            qrbox: (width, height) => {
+              const size = Math.min(width, height) * 0.7;
+              return { width: size, height: size };
+            }
+          },
+          (decodedText) => {
+            setScanInput(decodedText);
+            stopCameraScanner();
+            handleAddRoll(decodedText);
+          },
+          () => {}
+        ).catch(err => {
+          console.error("Camera start error: ", err);
+          setCameraScanError("Could not access camera. Ensure permissions are allowed.");
+        });
+      } catch (err) {
+        console.error("Scanner init error:", err);
+        setCameraScanError("Failed to initialize camera scanner.");
+      }
+    }, 300);
+  };
+
+  const stopCameraScanner = () => {
+    if (scannerInstanceRef.current && scannerInstanceRef.current.isScanning) {
+      scannerInstanceRef.current.stop().then(() => {
+        scannerInstanceRef.current = null;
+        setShowCameraScanner(false);
+      }).catch(err => {
+        console.error("Failed to stop scanner:", err);
+        setShowCameraScanner(false);
+      });
+    } else {
+      setShowCameraScanner(false);
+    }
+  };
+
+  const executeAddRoll = async (foundRoll, foundOrder) => {
+    setError('');
+    setSuccessMsg('');
+    const targetId = foundRoll.processed_roll_id || foundRoll.id;
+    const mQty = parseFloat(foundRoll.washed_actual_qty ?? foundRoll.actual_qty ?? 0);
+
+    try {
+      // If it is the first roll, fetch PI Number and set order details
+      if (!meta.lockedOrderId) {
+        // Fetch PI Numbers
+        const { data: piData, error: piErr } = await supabase
+          .from('proforma_invoices')
+          .select('invoice_number')
+          .eq('order_id', foundOrder.order_id);
+        
+        let piStr = '—';
+        if (piData && piData.length > 0) {
+          piStr = piData.map(pi => pi.invoice_number).join(', ');
+        }
+
+        setMeta({
+          orderNo: foundOrder.order?.order_number || '—',
+          designNo: foundOrder.order?.design_no || '—',
+          designName: foundOrder.order?.design_name || '—',
+          piNumber: piStr,
+          poNumber: foundOrder.order?.buyer_po_number || '—',
+          lockedOrderId: foundOrder.order_id
+        });
+
+        // Set average weight and calculate weight
+        if (foundOrder.order?.avg_weight_meter) {
+          const avgW = foundOrder.order.avg_weight_meter;
+          setAvgWeightMeter(avgW.toString());
+          setRollWeights(prev => ({ ...prev, [foundRoll.id]: (mQty * avgW).toFixed(2) }));
+        } else {
+          setAvgWeightMeter('');
+          setRollWeights(prev => ({ ...prev, [foundRoll.id]: '' }));
+          alert('Avg Weight / Meter is not set for this order. Please enter it in the input field.');
+        }
+      } else {
+        // Calculate roll weight based on current avgWeightMeter state
+        const numericAvg = parseFloat(avgWeightMeter);
+        if (!isNaN(numericAvg)) {
+          setRollWeights(prev => ({ ...prev, [foundRoll.id]: (mQty * numericAvg).toFixed(2) }));
+        } else {
+          setRollWeights(prev => ({ ...prev, [foundRoll.id]: '' }));
+        }
+      }
+
+      setAddedRolls(prev => [...prev, {
+        roll: foundRoll,
+        weavingOrderId: foundOrder.id,
+        orderId: foundOrder.order_id
+      }]);
+      setSuccessMsg(`Roll "${targetId}" added successfully.`);
+      setScanInput('');
+    } catch (err) {
+      console.error(err);
+      setError('Error adding roll: ' + err.message);
+    }
+  };
+
+  const handleAddRoll = async (id) => {
+    const targetId = (id || scanInput).trim();
+    if (!targetId) return;
+
+    setIsLoading(true);
+    setError('');
+    setSuccessMsg('');
+
+    try {
+      // Check if already added
+      const exists = addedRolls.some(item => 
+        (item.roll.processed_roll_id || item.roll.id).toLowerCase() === targetId.toLowerCase()
+      );
+      if (exists) {
+        setError('Roll is already added to this report.');
+        setIsLoading(false);
+        return;
+      }
+
+      let weavingOrders = allWeavingOrders;
+      if (weavingOrders.length === 0) {
+        const { data, error: fetchErr } = await supabase
+          .from('weaving_orders')
+          .select(`
+            *,
+            order:orders(id, order_number, design_no, design_name, buyer_po_number, avg_weight_meter)
+          `);
+        if (fetchErr) throw fetchErr;
+        weavingOrders = data || [];
+        setAllWeavingOrders(weavingOrders);
+      }
+
+      let foundRoll = null;
+      let foundOrder = null;
+
+      for (const wo of weavingOrders) {
+        const rolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
+        const match = rolls.find(r => 
+          (r.processed_roll_id && r.processed_roll_id.toLowerCase() === targetId.toLowerCase()) ||
+          (r.id && r.id.toLowerCase() === targetId.toLowerCase())
+        );
+        if (match) {
+          foundRoll = match;
+          foundOrder = wo;
+          break;
+        }
+      }
+
+      if (!foundRoll) {
+        setError(`Roll ID "${targetId}" not found in database.`);
+        setIsLoading(false);
+        return;
+      }
+
+      if (foundRoll.washed_inspected !== true) {
+        setError('Roll not washed inspected');
+        setIsLoading(false);
+        return;
+      }
+
+      if (meta.lockedOrderId && foundOrder.order_id !== meta.lockedOrderId) {
+        setError('Roll from different order number');
+        setIsLoading(false);
+        return;
+      }
+
+      await executeAddRoll(foundRoll, foundOrder);
+    } catch (err) {
+      console.error(err);
+      setError('Error adding roll: ' + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleScanInputChange = (e) => {
+    const val = e.target.value;
+    setScanInput(val);
+
+    const targetId = val.trim();
+    if (!targetId) return;
+
+    // Check if matching in preloaded list in memory
+    let foundRoll = null;
+    let foundOrder = null;
+
+    for (const wo of allWeavingOrders) {
+      const rolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
+      const match = rolls.find(r => 
+        (r.processed_roll_id && r.processed_roll_id.toLowerCase() === targetId.toLowerCase()) ||
+        (r.id && r.id.toLowerCase() === targetId.toLowerCase())
+      );
+      if (match) {
+        foundRoll = match;
+        foundOrder = wo;
+        break;
+      }
+    }
+
+    if (foundRoll && foundOrder) {
+      // Check if already added
+      const exists = addedRolls.some(item => 
+        (item.roll.processed_roll_id || item.roll.id).toLowerCase() === targetId.toLowerCase()
+      );
+      if (exists) {
+        setError('Roll is already added to this report.');
+        return;
+      }
+
+      // Check washed inspected
+      if (foundRoll.washed_inspected !== true) {
+        setError('Roll not washed inspected');
+        return;
+      }
+
+      // Check locked order
+      if (meta.lockedOrderId && foundOrder.order_id !== meta.lockedOrderId) {
+        setError('Roll from different order number');
+        return;
+      }
+
+      // If all checks pass, auto-add
+      executeAddRoll(foundRoll, foundOrder);
+    }
+  };
+
+  const handleAvgWeightMeterChange = (e) => {
+    const val = e.target.value;
+    setAvgWeightMeter(val);
+    const numericAvg = parseFloat(val);
+    
+    setRollWeights(prev => {
+      const next = { ...prev };
+      addedRolls.forEach(item => {
+        const rId = item.roll.id;
+        if (!manualWeightFlags[rId]) {
+          if (!isNaN(numericAvg)) {
+            const mQty = parseFloat(item.roll.washed_actual_qty ?? item.roll.actual_qty ?? 0);
+            next[rId] = (mQty * numericAvg).toFixed(2);
+          } else {
+            next[rId] = '';
+          }
+        }
+      });
+      return next;
+    });
+  };
+
+  const handleRemoveRoll = (rollId) => {
+    const updated = addedRolls.filter(item => item.roll.id !== rollId);
+    setAddedRolls(updated);
+    
+    // Clean weights state
+    setRollWeights(prev => {
+      const next = { ...prev };
+      delete next[rollId];
+      return next;
+    });
+    setManualWeightFlags(prev => {
+      const next = { ...prev };
+      delete next[rollId];
+      return next;
+    });
+
+    // If no rolls left, unlock metadata
+    if (updated.length === 0) {
+      setMeta({
+        orderNo: '—',
+        designNo: '—',
+        designName: '—',
+        piNumber: '—',
+        poNumber: '—',
+        lockedOrderId: null
+      });
+      setAvgWeightMeter('');
+    }
+  };
+
+  const handlePrintReport = (rolls, metaInfo, qtyUnit) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Please allow pop-ups to print the report.");
+      return;
+    }
+
+    const rollsPerPage = 45;
+    const totalPages = Math.ceil(rolls.length / rollsPerPage) || 1;
+
+    let pagesHtml = '';
+
+    for (let p = 0; p < totalPages; p++) {
+      const pageRolls = rolls.slice(p * rollsPerPage, (p + 1) * rollsPerPage);
+      
+      // Render table rows
+      let rowsHtml = '';
+      pageRolls.forEach((item, idx) => {
+        const r = item.roll;
+        const index = p * rollsPerPage + idx + 1;
+        const rollId = r.processed_roll_id || r.id;
+        const actualQtyMtrs = parseFloat(r.washed_actual_qty ?? r.actual_qty ?? 0);
+        const actualQty = qtyUnit === 'yards' ? actualQtyMtrs * 1.09361 : actualQtyMtrs;
+        const widthStr = r.washed_width ? `${r.washed_width}"` : '—';
+        
+        const w1 = r.washed_weaving_defect_1pt_count ?? 0;
+        const w2 = r.washed_weaving_defect_2pt_count ?? 0;
+        const w3 = r.washed_weaving_defect_3pt_count ?? 0;
+        const w4 = r.washed_weaving_defect_4pt_count ?? 0;
+        const weavingPoints = w1 * 1 + w2 * 2 + w3 * 3 + w4 * 4;
+
+        const y1 = r.washed_yarn_defect_1pt_count ?? 0;
+        const y4 = r.washed_yarn_defect_4pt_count ?? 0;
+        const yarnPoints = y1 * 1 + y4 * 4;
+
+        const h2 = r.washed_holes_stains_2pt_count ?? 0;
+        const h4 = r.washed_holes_stains_4pt_count ?? 0;
+        const holesPoints = h2 * 2 + h4 * 4;
+
+        const totalPoints = weavingPoints + yarnPoints + holesPoints;
+        const weightKg = rollWeights[r.id] ? parseFloat(rollWeights[r.id]).toFixed(2) : '—';
+
+        rowsHtml += `
+          <tr>
+            <td>${index}</td>
+            <td style="font-family: monospace; font-weight: bold; font-size: 8px;">${rollId}</td>
+            <td class="right bold">${actualQty.toFixed(2)}</td>
+            <td>${widthStr}</td>
+            <td>${w1}</td>
+            <td>${w2}</td>
+            <td>${w3}</td>
+            <td>${w4}</td>
+            <td class="bold bg-light">${weavingPoints}</td>
+            <td>${y1}</td>
+            <td>${y4}</td>
+            <td class="bold bg-light">${yarnPoints}</td>
+            <td>${h2}</td>
+            <td>${h4}</td>
+            <td class="bold bg-light">${holesPoints}</td>
+            <td class="bold" style="background-color: #f1f5f9;">${totalPoints}</td>
+            <td class="right bold" style="border-left: 1.5px solid #64748b;">${weightKg}</td>
+          </tr>
+        `;
+      });
+
+      // Render page
+      pagesHtml += `
+        <div class="page-container">
+          <!-- Logo & Title Section -->
+          <div class="header-container">
+            <div class="logo-box">
+              <img src="/logo.png" alt="Logo" style="max-height: 40px; max-width: 120px; object-fit: contain;" onError="this.style.display='none'; this.nextSibling.style.display='flex';" />
+              <div style="display: none; align-items: center; gap: 6px;">
+                <div style="width: 32px; height: 32px; background: #800000; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 900;">AT</div>
+                <span style="font-size: 12px; font-weight: 800; color: #1e1b4b;">AT Fabric ERP</span>
+              </div>
+            </div>
+            <div class="report-title">
+              FABRIC INSPECTION REPORT
+            </div>
+            <div style="width: 120px;"></div> <!-- spacer to balance flex -->
+          </div>
+
+          <!-- Order Metadata Grid -->
+          <div class="meta-grid">
+            <div class="meta-col">
+              <span class="meta-label">ORDER NO</span>
+              <strong class="meta-value">${metaInfo.orderNo}</strong>
+            </div>
+            <div class="meta-col">
+              <span class="meta-label">DESIGN NO</span>
+              <strong class="meta-value">${metaInfo.designNo}</strong>
+            </div>
+            <div class="meta-col">
+              <span class="meta-label">DESIGN NAME</span>
+              <strong class="meta-value">${metaInfo.designName}</strong>
+            </div>
+            <div class="meta-col">
+              <span class="meta-label">PI NUMBER</span>
+              <strong class="meta-value">${metaInfo.piNumber}</strong>
+            </div>
+            <div class="meta-col">
+              <span class="meta-label">PO NUMBER</span>
+              <strong class="meta-value">${metaInfo.poNumber}</strong>
+            </div>
+          </div>
+
+          <!-- Rolls Table -->
+          <table>
+            <thead>
+              <tr>
+                <th rowspan="2" style="width: 4%">S.No</th>
+                <th rowspan="2" style="width: 16%">Roll ID</th>
+                <th rowspan="2" style="width: 8%" class="right">Qty (${qtyUnit === 'yards' ? 'Yds' : 'Mtr'})</th>
+                <th rowspan="2" style="width: 6%">Width</th>
+                <th colspan="5" class="center" style="border-left: 1.5px solid #64748b">Weaving Defects</th>
+                <th colspan="3" class="center" style="border-left: 1.5px solid #64748b">Yarn Defects</th>
+                <th colspan="3" class="center" style="border-left: 1.5px solid #64748b">Holes & Stains</th>
+                <th rowspan="2" style="width: 6%; background-color: #e2e8f0; border-left: 1.5px solid #64748b">Total Pts</th>
+                <th rowspan="2" style="width: 8%; border-left: 1.5px solid #64748b;" class="right">Weight (Kg)</th>
+              </tr>
+              <tr>
+                <th style="border-left: 1.5px solid #64748b">1 Pt</th>
+                <th>2 Pt</th>
+                <th>3 Pt</th>
+                <th>4 Pt</th>
+                <th style="background-color: #f1f5f9; font-weight: bold;">Pts</th>
+                <th style="border-left: 1.5px solid #64748b">1 Pt</th>
+                <th>4 Pt</th>
+                <th style="background-color: #f1f5f9; font-weight: bold;">Pts</th>
+                <th style="border-left: 1.5px solid #64748b">2 Pt</th>
+                <th>4 Pt</th>
+                <th style="background-color: #f1f5f9; font-weight: bold;">Pts</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+
+          <!-- Page Totals (Only on the last page) -->
+          ${p === totalPages - 1 ? `
+            <div class="summary-box">
+              <div><strong>Total Rolls:</strong> ${rolls.length}</div>
+              <div><strong>Total Quantity:</strong> ${qtyUnit === 'yards' ? (rolls.reduce((sum, item) => sum + parseFloat(item.roll.washed_actual_qty ?? item.roll.actual_qty ?? 0), 0) * 1.09361).toFixed(2) + ' Yards' : rolls.reduce((sum, item) => sum + parseFloat(item.roll.washed_actual_qty ?? item.roll.actual_qty ?? 0), 0).toFixed(2) + ' Meters'}</div>
+              <div><strong>Total Weight:</strong> ${rolls.reduce((sum, item) => sum + parseFloat(rollWeights[item.roll.id] || 0), 0).toFixed(2)} Kg</div>
+            </div>
+          ` : ''}
+
+          <!-- Page Footer -->
+          <div class="page-footer">
+            Page ${p + 1}/${totalPages}
+          </div>
+        </div>
+      `;
+    }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Inspection Report - ${metaInfo.orderNo}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 0;
+            }
+            body {
+              margin: 0;
+              padding: 0;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              color: #1e293b;
+              background-color: #fff;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .page-container {
+              width: 210mm;
+              height: 297mm;
+              padding: 12mm 15mm;
+              box-sizing: border-box;
+              position: relative;
+              page-break-after: always;
+            }
+            .page-container:last-child {
+              page-break-after: avoid;
+            }
+            .header-container {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-bottom: 2px solid #800000;
+              padding-bottom: 8px;
+              margin-bottom: 10px;
+            }
+            .logo-box {
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              width: 150px;
+            }
+            .report-title {
+              font-size: 14px;
+              font-weight: 900;
+              color: #800000;
+              letter-spacing: 0.5px;
+              text-align: center;
+              flex-grow: 1;
+            }
+            .meta-grid {
+              display: grid;
+              grid-template-columns: repeat(5, 1fr);
+              gap: 6px 12px;
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 6px;
+              padding: 8px 12px;
+              margin-bottom: 10px;
+              font-size: 9px;
+            }
+            .meta-col {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              gap: 4px;
+            }
+            .meta-label {
+              color: #64748b;
+              font-weight: 700;
+              font-size: 8px;
+              text-transform: uppercase;
+            }
+            .meta-value {
+              color: #0f172a;
+              font-size: 10px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 8px;
+              margin-top: 5px;
+            }
+            th {
+              background-color: #f8fafc;
+              border: 1px solid #cbd5e1;
+              padding: 4px 3px;
+              font-weight: 800;
+              text-transform: uppercase;
+              font-size: 7px;
+            }
+            td {
+              border: 1px solid #cbd5e1;
+              padding: 4px 3px;
+              text-align: center;
+            }
+            .center { text-align: center; }
+            .left { text-align: left; }
+            .right { text-align: right; }
+            .bold { font-weight: bold; }
+            .bg-light { background-color: #f8fafc; }
+            .summary-box {
+              display: flex;
+              justify-content: flex-end;
+              gap: 24px;
+              margin-top: 15px;
+              font-size: 10px;
+              padding: 8px 12px;
+              background: #f8fafc;
+              border: 1px solid #cbd5e1;
+              border-radius: 6px;
+            }
+            .page-footer {
+              position: absolute;
+              bottom: 10mm;
+              left: 15mm;
+              right: 15mm;
+              text-align: center;
+              font-size: 9px;
+              color: #64748b;
+              border-top: 1px solid #e2e8f0;
+              padding-top: 4px;
+            }
+          </style>
+        </head>
+        <body>
+          ${pagesHtml}
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
+  const handleSaveReport = async () => {
+    if (addedRolls.length === 0) {
+      setError('Please add at least one roll to print/save the report.');
+      return;
+    }
+
+    setIsSaving(true);
+    setError('');
+    try {
+      // 1. Update avg_weight_meter in orders table
+      const { error: orderErr } = await supabase
+        .from('orders')
+        .update({ avg_weight_meter: avgWeightMeter ? parseFloat(avgWeightMeter) : null })
+        .eq('id', meta.lockedOrderId);
+      if (orderErr) throw orderErr;
+
+      // 2. Group by weavingOrderId to make atomic updates
+      const groups = {};
+      addedRolls.forEach(item => {
+        if (!groups[item.weavingOrderId]) {
+          groups[item.weavingOrderId] = [];
+        }
+        groups[item.weavingOrderId].push({ id: item.roll.id, weight: rollWeights[item.roll.id] });
+      });
+
+      for (const [woId, itemsList] of Object.entries(groups)) {
+        const { data: wo, error: fetchErr } = await supabase
+          .from('weaving_orders')
+          .select('fabric_rolls')
+          .eq('id', woId)
+          .single();
+        if (fetchErr) throw fetchErr;
+
+        const currentRolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
+        const updatedRolls = currentRolls.map(r => {
+          const matchItem = itemsList.find(i => i.id === r.id);
+          if (matchItem) {
+            return {
+              ...r,
+              added_to_report: true,
+              washed_weight_kg: matchItem.weight ? parseFloat(matchItem.weight) : null
+            };
+          }
+          return r;
+        });
+
+        const { error: updateErr } = await supabase
+          .from('weaving_orders')
+          .update({ fabric_rolls: updatedRolls })
+          .eq('id', woId);
+        if (updateErr) throw updateErr;
+      }
+
+      // 3. Print Report
+      handlePrintReport(addedRolls, meta, unit);
+
+      // 4. Trigger onClose and reload
+      if (onSave) onSave();
+    } catch (err) {
+      console.error(err);
+      setError('Error saving report: ' + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      handleAddRoll();
+    }
+  };
+
+  // Calculations for summary
+  const totalMeters = addedRolls.reduce((sum, item) => 
+    sum + parseFloat(item.roll.washed_actual_qty ?? item.roll.actual_qty ?? 0), 
+    0
+  );
+  const totalQty = unit === 'yards' ? totalMeters * 1.09361 : totalMeters;
+  const totalWeight = addedRolls.reduce((sum, item) => 
+    sum + parseFloat(rollWeights[item.roll.id] || 0), 
+    0
+  );
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+    }}>
+      <div style={{
+        background: 'white', borderRadius: '16px', width: '96%', maxWidth: '1350px',
+        height: '92vh', maxHeight: '95vh', boxShadow: '0 24px 64px rgba(0,0,0,0.25)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden'
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-current)',
+          background: 'white', zIndex: 2
+        }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: 'var(--color-primary)' }}>
+              Create New Inspection Report
+            </h2>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted-current)' }}>
+              Scan and group washed fabric rolls for A4 printable report
+            </span>
+          </div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted-current)' }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Modal Content */}
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', flexGrow: 1, overflowY: 'auto' }}>
+          
+          {/* Top Panel: Scan / Input */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '1.5rem', alignItems: 'start' }}>
+            {/* Input Row */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-current)' }}>Scan or Enter Processed Roll ID</label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ position: 'relative', flexGrow: 1 }}>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="e.g. AT/2026/B/00001/P3/00015"
+                    value={scanInput}
+                    onChange={handleScanInputChange}
+                    onKeyDown={handleKeyDown}
+                    style={{ paddingLeft: '2.5rem', fontWeight: '700', width: '100%', boxSizing: 'border-box' }}
+                  />
+                  <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted-current)' }} />
+                </div>
+                <button
+                  type="button"
+                  onClick={startCameraScanner}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.35rem',
+                    padding: '0 1rem', border: '1.5px solid var(--color-primary)',
+                    borderRadius: '8px', background: 'rgba(128,0,0,0.04)',
+                    color: 'var(--color-primary)', fontWeight: '750', fontSize: '0.8rem', cursor: 'pointer'
+                  }}
+                >
+                  <Camera size={16} /> Scan QR
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddRoll()}
+                  disabled={isLoading || !scanInput.trim()}
+                  style={{
+                    padding: '0 1.25rem', background: 'var(--color-primary)',
+                    color: 'white', border: 'none', borderRadius: '8px',
+                    fontWeight: '750', fontSize: '0.8rem', cursor: 'pointer',
+                    opacity: (isLoading || !scanInput.trim()) ? 0.6 : 1
+                  }}
+                >
+                  {isLoading ? 'Adding...' : 'Add Roll'}
+                </button>
+              </div>
+            </div>
+
+            {/* Average Weight/Meter */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-current)' }}>Avg Weight/Meter (kg)</label>
+              <input
+                type="number"
+                step="0.001"
+                className="input-field"
+                placeholder={meta.lockedOrderId ? "Enter weight (kg)" : "Scan a roll first"}
+                disabled={!meta.lockedOrderId}
+                value={avgWeightMeter}
+                onChange={handleAvgWeightMeterChange}
+                style={{ fontWeight: '700', width: '160px', height: '38px' }}
+              />
+            </div>
+
+            {/* Qty Unit Option selector */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-current)' }}>Display Quantity Unit</label>
+              <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '8px', width: 'max-content' }}>
+                <button
+                  onClick={() => setUnit('meters')}
+                  style={{
+                    border: 'none', outline: 'none', padding: '5px 12px', borderRadius: '6px',
+                    fontSize: '0.75rem', fontWeight: '750', cursor: 'pointer',
+                    background: unit === 'meters' ? 'white' : 'transparent',
+                    color: unit === 'meters' ? 'var(--color-primary)' : 'var(--text-muted-current)',
+                    boxShadow: unit === 'meters' ? 'var(--shadow-sm)' : 'none',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  Meters
+                </button>
+                <button
+                  onClick={() => setUnit('yards')}
+                  style={{
+                    border: 'none', outline: 'none', padding: '5px 12px', borderRadius: '6px',
+                    fontSize: '0.75rem', fontWeight: '750', cursor: 'pointer',
+                    background: unit === 'yards' ? 'white' : 'transparent',
+                    color: unit === 'yards' ? 'var(--color-primary)' : 'var(--text-muted-current)',
+                    boxShadow: unit === 'yards' ? 'var(--shadow-sm)' : 'none',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  Yards
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Camera Scanner View */}
+          {showCameraScanner && (
+            <div style={{
+              border: '1.5px solid var(--border-current)', borderRadius: '12px', padding: '1rem',
+              background: '#f8fafc', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                <strong style={{ fontSize: '0.8rem', color: 'var(--color-primary)' }}>📷 QR Code Scanner</strong>
+                <button onClick={stopCameraScanner} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#be123c', fontSize: '0.75rem', fontWeight: '700' }}>
+                  Close Camera
+                </button>
+              </div>
+              <div id="modal-reader" style={{ width: '100%', maxWidth: '320px', borderRadius: '8px', overflow: 'hidden' }}></div>
+              {cameraScanError && <span style={{ color: '#be123c', fontSize: '0.7rem', fontWeight: '600' }}>{cameraScanError}</span>}
+            </div>
+          )}
+
+          {/* Message Prompts */}
+          {error && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem', background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '8px', color: '#be123c', fontSize: '0.75rem', fontWeight: '650' }}>
+              <AlertTriangle size={16} />
+              <span>{error}</span>
+            </div>
+          )}
+          {successMsg && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', color: '#16a34a', fontSize: '0.75rem', fontWeight: '650' }}>
+              <CheckCircle size={16} />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
+          {/* Metadata Display Info */}
+          {meta.lockedOrderId && (
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem',
+              background: '#f8fafc', border: '1px solid var(--border-current)', borderRadius: '10px',
+              padding: '1rem'
+            }}>
+              <div>
+                <span style={{ color: 'var(--text-muted-current)', display: 'block', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase' }}>Order Number</span>
+                <strong style={{ color: 'var(--text-current)', fontSize: '0.85rem' }}>{meta.orderNo}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted-current)', display: 'block', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase' }}>Design No</span>
+                <strong style={{ color: 'var(--text-current)', fontSize: '0.85rem' }}>{meta.designNo}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted-current)', display: 'block', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase' }}>Design Name</span>
+                <strong style={{ color: 'var(--text-current)', fontSize: '0.85rem' }}>{meta.designName}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted-current)', display: 'block', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase' }}>PI Number</span>
+                <strong style={{ color: 'var(--text-current)', fontSize: '0.85rem' }} title={meta.piNumber}>{meta.piNumber}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted-current)', display: 'block', fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase' }}>PO Number</span>
+                <strong style={{ color: 'var(--text-current)', fontSize: '0.85rem' }}>{meta.poNumber}</strong>
+              </div>
+            </div>
+          )}
+
+          {/* Table List of Added Rolls */}
+          {addedRolls.length === 0 ? (
+            <div style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              border: '2px dashed var(--border-current)', borderRadius: '12px', minHeight: '180px',
+              color: 'var(--text-muted-current)'
+            }}>
+              <FileText size={32} style={{ marginBottom: '0.5rem', opacity: 0.7 }} />
+              <strong style={{ fontSize: '0.85rem', color: 'var(--text-current)' }}>No Rolls Scanned Yet</strong>
+              <span style={{ fontSize: '0.72rem' }}>Scanned washed rolls will list here to form the report.</span>
+            </div>
+          ) : (
+            <div>
+              <div style={{ overflowX: 'auto', border: '1.5px solid var(--border-current)', borderRadius: '10px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem', textRendering: 'optimizeLegibility' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border-current)', color: 'var(--text-muted-current)' }}>
+                      <th rowSpan="2" style={{ padding: '0.4rem', fontWeight: '800', textAlign: 'center', verticalAlign: 'middle' }}>S.No</th>
+                      <th rowSpan="2" style={{ padding: '0.4rem', fontWeight: '800', textAlign: 'left', verticalAlign: 'middle' }}>Roll ID</th>
+                      <th rowSpan="2" style={{ padding: '0.4rem', fontWeight: '800', textAlign: 'right', verticalAlign: 'middle' }}>Qty (${unit === 'yards' ? 'Yds' : 'Mtr'})</th>
+                      <th rowSpan="2" style={{ padding: '0.4rem', fontWeight: '800', textAlign: 'center', verticalAlign: 'middle' }}>Width</th>
+                      <th colSpan="5" style={{ padding: '0.3rem', fontWeight: '800', textAlign: 'center', borderBottom: '1px solid var(--border-current)', borderLeft: '1.5px solid #cbd5e1' }}>Weaving Defects</th>
+                      <th colSpan="3" style={{ padding: '0.3rem', fontWeight: '800', textAlign: 'center', borderBottom: '1px solid var(--border-current)', borderLeft: '1.5px solid #cbd5e1' }}>Yarn Defects</th>
+                      <th colSpan="3" style={{ padding: '0.3rem', fontWeight: '800', textAlign: 'center', borderBottom: '1px solid var(--border-current)', borderLeft: '1.5px solid #cbd5e1' }}>Holes & Stains</th>
+                      <th rowSpan="2" style={{ padding: '0.4rem', fontWeight: '800', textAlign: 'center', verticalAlign: 'middle', borderLeft: '1.5px solid #cbd5e1', background: '#e2e8f0' }}>Total Pts</th>
+                      <th rowSpan="2" style={{ padding: '0.4rem', fontWeight: '800', textAlign: 'right', verticalAlign: 'middle', borderLeft: '1.5px solid #cbd5e1' }}>Weight (Kg)</th>
+                      <th rowSpan="2" style={{ padding: '0.4rem', fontWeight: '800', textAlign: 'center', verticalAlign: 'middle' }}>Action</th>
+                    </tr>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid var(--border-current)', color: 'var(--text-muted-current)' }}>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem', borderLeft: '1.5px solid #cbd5e1' }}>1 Pt</th>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem' }}>2 Pt</th>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem' }}>3 Pt</th>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem' }}>4 Pt</th>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem', background: '#f1f5f9', fontWeight: 'bold' }}>Pts</th>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem', borderLeft: '1.5px solid #cbd5e1' }}>1 Pt</th>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem' }}>4 Pt</th>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem', background: '#f1f5f9', fontWeight: 'bold' }}>Pts</th>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem', borderLeft: '1.5px solid #cbd5e1' }}>2 Pt</th>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem' }}>4 Pt</th>
+                      <th style={{ padding: '0.25rem', textAlign: 'center', fontSize: '0.65rem', background: '#f1f5f9', fontWeight: 'bold' }}>Pts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {addedRolls.map((item, index) => {
+                      const r = item.roll;
+                      const mQty = parseFloat(r.washed_actual_qty ?? r.actual_qty ?? 0);
+                      const displayQty = unit === 'yards' ? mQty * 1.09361 : mQty;
+
+                      const w1 = r.washed_weaving_defect_1pt_count ?? 0;
+                      const w2 = r.washed_weaving_defect_2pt_count ?? 0;
+                      const w3 = r.washed_weaving_defect_3pt_count ?? 0;
+                      const w4 = r.washed_weaving_defect_4pt_count ?? 0;
+                      const weavingPoints = w1 * 1 + w2 * 2 + w3 * 3 + w4 * 4;
+
+                      const y1 = r.washed_yarn_defect_1pt_count ?? 0;
+                      const y4 = r.washed_yarn_defect_4pt_count ?? 0;
+                      const yarnPoints = y1 * 1 + y4 * 4;
+
+                      const h2 = r.washed_holes_stains_2pt_count ?? 0;
+                      const h4 = r.washed_holes_stains_4pt_count ?? 0;
+                      const holesPoints = h2 * 2 + h4 * 4;
+
+                      const totalPoints = weavingPoints + yarnPoints + holesPoints;
+
+                      return (
+                        <tr key={r.id} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                          <td style={{ padding: '0.4rem', textAlign: 'center' }}>{index + 1}</td>
+                          <td style={{ padding: '0.4rem', fontFamily: 'monospace', fontWeight: '700', color: 'var(--color-primary)' }}>{r.processed_roll_id || r.id}</td>
+                          <td style={{ padding: '0.4rem', textAlign: 'right', fontWeight: '650' }}>{displayQty.toFixed(2)}</td>
+                          <td style={{ padding: '0.4rem', textAlign: 'center', fontWeight: '600' }}>{r.washed_width ? `${r.washed_width}"` : '—'}</td>
+                          
+                          {/* Weaving Detail cells */}
+                          <td style={{ padding: '0.3rem', textAlign: 'center', borderLeft: '1.5px solid #cbd5e1' }}>{w1}</td>
+                          <td style={{ padding: '0.3rem', textAlign: 'center' }}>{w2}</td>
+                          <td style={{ padding: '0.3rem', textAlign: 'center' }}>{w3}</td>
+                          <td style={{ padding: '0.3rem', textAlign: 'center' }}>{w4}</td>
+                          <td style={{ padding: '0.3rem', textAlign: 'center', background: '#f8fafc', fontWeight: 'bold' }}>{weavingPoints}</td>
+
+                          {/* Yarn Detail cells */}
+                          <td style={{ padding: '0.3rem', textAlign: 'center', borderLeft: '1.5px solid #cbd5e1' }}>{y1}</td>
+                          <td style={{ padding: '0.3rem', textAlign: 'center' }}>{y4}</td>
+                          <td style={{ padding: '0.3rem', textAlign: 'center', background: '#f8fafc', fontWeight: 'bold' }}>{yarnPoints}</td>
+
+                          {/* Holes Detail cells */}
+                          <td style={{ padding: '0.3rem', textAlign: 'center', borderLeft: '1.5px solid #cbd5e1' }}>{h2}</td>
+                          <td style={{ padding: '0.3rem', textAlign: 'center' }}>{h4}</td>
+                          <td style={{ padding: '0.3rem', textAlign: 'center', background: '#f8fafc', fontWeight: 'bold' }}>{holesPoints}</td>
+
+                          <td style={{ padding: '0.4rem', textAlign: 'center', fontWeight: '750', borderLeft: '1.5px solid #cbd5e1', background: '#f1f5f9' }}>{totalPoints}</td>
+                          
+                          {/* Weight editable cell */}
+                          <td style={{ padding: '0.3rem', textAlign: 'right', borderLeft: '1.5px solid #cbd5e1' }}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={rollWeights[r.id] ?? ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setRollWeights(prev => ({ ...prev, [r.id]: val }));
+                                setManualWeightFlags(prev => ({ ...prev, [r.id]: true }));
+                              }}
+                              style={{
+                                width: '70px',
+                                padding: '3px 6px',
+                                border: '1px solid var(--border-current)',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                fontWeight: '600',
+                                textAlign: 'right',
+                                height: '26px'
+                              }}
+                            />
+                          </td>
+
+                          <td style={{ padding: '0.4rem', textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveRoll(r.id)}
+                              style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#be123c', padding: '2px 4px' }}
+                            >
+                              <X size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Summary Block */}
+              <div style={{
+                display: 'flex', justifyContent: 'flex-end', gap: '2rem',
+                marginTop: '1rem', padding: '0.75rem 1.25rem', background: '#f8fafc',
+                border: '1px solid var(--border-current)', borderRadius: '8px', fontSize: '0.85rem'
+              }}>
+                <div><strong>Total Rolls:</strong> {addedRolls.length}</div>
+                <div><strong>Total Quantity:</strong> {totalQty.toFixed(2)} {unit === 'yards' ? 'Yards' : 'Meters'}</div>
+                <div><strong>Total Weight:</strong> {totalWeight.toFixed(2)} Kg</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem',
+          padding: '1.25rem 1.5rem', borderTop: '1px solid var(--border-current)',
+          position: 'sticky', bottom: 0, background: 'white', zIndex: 2
+        }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '0.5rem 1.25rem', border: '1.5px solid var(--border-current)',
+              background: 'white', color: 'var(--text-current)', borderRadius: '8px',
+              fontWeight: '750', fontSize: '0.8rem', cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveReport}
+            disabled={isSaving || addedRolls.length === 0}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              padding: '0.5rem 1.5rem', background: 'var(--color-primary)',
+              color: 'white', border: 'none', borderRadius: '8px',
+              fontWeight: '750', fontSize: '0.8rem', cursor: 'pointer',
+              opacity: (isSaving || addedRolls.length === 0) ? 0.6 : 1
+            }}
+          >
+            {isSaving ? (
+              <>
+                <Loader size={14} style={{ animation: 'spin 1.2s linear infinite' }} /> Saving...
+              </>
+            ) : (
+              <>
+                <Printer size={14} /> Save & Print Report
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+

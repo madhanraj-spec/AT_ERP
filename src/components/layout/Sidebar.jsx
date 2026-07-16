@@ -17,7 +17,8 @@ import {
   ChevronDown,
   X,
   Coins,
-  Users
+  Users,
+  Truck
 } from 'lucide-react';
 
 const MASTER_LINKS = [
@@ -44,6 +45,7 @@ const MASTER_LINKS = [
     ]
   },
   { name: 'Processing', path: '/processing', icon: Layers },
+  { name: 'Dispatch', path: '/dispatch', icon: Truck },
   { name: 'Masters', path: '/masters', icon: Settings },
   { name: 'User Management', path: '/admin/users', icon: Users }
 ];
@@ -99,6 +101,7 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
               ]
             },
             { name: 'Processing', path: '/processing', icon: Layers },
+            { name: 'Dispatch', path: '/dispatch', icon: Truck },
             { name: 'Masters', path: '/masters', icon: Settings },
             { name: 'User Management', path: '/admin/users', icon: Users }
           ];
@@ -113,6 +116,7 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
             { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch },
             { name: 'Dyed Yarn', path: '/dyed-yarn', icon: Droplet },
             { name: 'Processing', path: '/processing', icon: Layers },
+            { name: 'Dispatch', path: '/dispatch', icon: Truck },
             { name: 'Masters', path: '/masters', icon: Settings }
           ];
         case 'greige_yarn':
@@ -130,6 +134,7 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
             { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
             { name: 'Production Management', path: '/production', icon: Scissors },
             { name: 'Processing', path: '/processing', icon: Layers },
+            { name: 'Dispatch', path: '/dispatch', icon: Truck },
             { name: 'Masters', path: '/masters', icon: Settings }
           ];
         case 'warping_sizing':

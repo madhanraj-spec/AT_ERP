@@ -37,6 +37,7 @@ const ALL_SIDEBAR_ITEMS = [
   { group: 'Inspection', name: 'Washed Inspection', path: '/inspection/washed' },
   { group: 'Inspection', name: 'Inspection Report', path: '/inspection/report' },
   { group: 'Processing', name: 'Processing', path: '/processing' },
+  { group: 'Dispatch', name: 'Dispatch', path: '/dispatch' },
   { group: 'System', name: 'Masters', path: '/masters' },
   { group: 'System', name: 'User Management', path: '/admin/users' }
 ];

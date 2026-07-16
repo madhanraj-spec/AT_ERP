@@ -25,6 +25,7 @@ export default function WashedInspection() {
 
   // Form states
   const [actualQty, setActualQty] = useState('');
+  const [width, setWidth] = useState('');
   const [inspector1, setInspector1] = useState('');
   const [inspector2, setInspector2] = useState('');
   const [inspectors, setInspectors] = useState([]);
@@ -44,6 +45,38 @@ export default function WashedInspection() {
   // Holes and stains (2pt, 4pt)
   const [holes2pt, setHoles2pt] = useState(0);
   const [holes4pt, setHoles4pt] = useState(0);
+
+  // Defect Action History stacks for Undo
+  const [weavingHistory, setWeavingHistory] = useState([]);
+  const [yarnHistory, setYarnHistory] = useState([]);
+  const [holesHistory, setHolesHistory] = useState([]);
+
+  // Undo Handlers
+  const undoLastWeaving = () => {
+    if (weavingHistory.length === 0) return;
+    const last = weavingHistory[weavingHistory.length - 1];
+    setWeavingHistory(prev => prev.slice(0, -1));
+    if (last === 1) setWeaving1pt(c => Math.max(0, c - 1));
+    else if (last === 2) setWeaving2pt(c => Math.max(0, c - 1));
+    else if (last === 3) setWeaving3pt(c => Math.max(0, c - 1));
+    else if (last === 4) setWeaving4pt(c => Math.max(0, c - 1));
+  };
+
+  const undoLastYarn = () => {
+    if (yarnHistory.length === 0) return;
+    const last = yarnHistory[yarnHistory.length - 1];
+    setYarnHistory(prev => prev.slice(0, -1));
+    if (last === 1) setYarn1pt(c => Math.max(0, c - 1));
+    else if (last === 4) setYarn4pt(c => Math.max(0, c - 1));
+  };
+
+  const undoLastHoles = () => {
+    if (holesHistory.length === 0) return;
+    const last = holesHistory[holesHistory.length - 1];
+    setHolesHistory(prev => prev.slice(0, -1));
+    if (last === 2) setHoles2pt(c => Math.max(0, c - 1));
+    else if (last === 4) setHoles4pt(c => Math.max(0, c - 1));
+  };
 
   // Camera Scanner modal state
   const [showCameraScanner, setShowCameraScanner] = useState(false);
@@ -194,8 +227,14 @@ export default function WashedInspection() {
       
       // Pre-fill form fields
       setActualQty(foundRoll.washed_actual_qty ? String(foundRoll.washed_actual_qty) : (foundRoll.received_qty ? String(foundRoll.received_qty) : (foundRoll.actual_qty ? String(foundRoll.actual_qty) : '')));
+      setWidth(foundRoll.washed_width ? String(foundRoll.washed_width) : '');
       setInspector1(foundRoll.washed_inspector_1 || foundRoll.inspector_1 || '');
       setInspector2(foundRoll.washed_inspector_2 || foundRoll.inspector_2 || '');
+
+      // Reset Undo Histories
+      setWeavingHistory([]);
+      setYarnHistory([]);
+      setHolesHistory([]);
 
       // Retrieve default place of the washed roll received: either Factory or Office
       let rollReceivedPlace = foundRoll.washed_place || 'Factory';
@@ -354,6 +393,7 @@ export default function WashedInspection() {
             washed_inspected_at: new Date().toISOString(),
             washed_actual_qty: parsedActualQty,
             washed_shortage: shortage,
+            washed_width: width ? parseFloat(width) : null,
             washed_inspector_1: inspector1,
             washed_inspector_2: inspector2,
             washed_place: washedPlace,
@@ -393,6 +433,7 @@ export default function WashedInspection() {
       setWeavingOrder(null);
       setScanInput('');
       setActualQty('');
+      setWidth('');
       setInspector1('');
       setInspector2('');
       setWeaving1pt(0);
@@ -403,6 +444,9 @@ export default function WashedInspection() {
       setYarn4pt(0);
       setHoles2pt(0);
       setHoles4pt(0);
+      setWeavingHistory([]);
+      setYarnHistory([]);
+      setHolesHistory([]);
 
       if (inputRef.current) {
         inputRef.current.focus();
@@ -510,6 +554,19 @@ export default function WashedInspection() {
     background: 'none',
     border: 'none',
     color: '#94a3b8',
+    fontSize: '0.68rem',
+    fontWeight: '700',
+    cursor: 'pointer',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    transition: 'color 0.12s'
+  };
+
+  const undoBtnStyle = {
+    alignSelf: 'flex-end',
+    background: 'none',
+    border: 'none',
+    color: '#475569',
     fontSize: '0.68rem',
     fontWeight: '700',
     cursor: 'pointer',
@@ -647,7 +704,7 @@ export default function WashedInspection() {
           
           <button
             type="button"
-            onClick={() => { setMatchedRoll(null); setWeavingOrder(null); }}
+            onClick={() => { setMatchedRoll(null); setWeavingOrder(null); setActualQty(''); setWidth(''); setInspector1(''); setInspector2(''); setWeaving1pt(0); setWeaving2pt(0); setWeaving3pt(0); setWeaving4pt(0); setYarn1pt(0); setYarn4pt(0); setHoles2pt(0); setHoles4pt(0); setWeavingHistory([]); setYarnHistory([]); setHolesHistory([]); }}
             style={{
               display: 'flex', alignItems: 'center', gap: '0.35rem', border: 'none',
               background: 'none', color: 'var(--text-muted-current)', fontSize: '0.75rem',
@@ -663,7 +720,7 @@ export default function WashedInspection() {
             padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem',
             boxShadow: 'var(--shadow-sm)'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e9d5ff', paddingBottom: '0.4rem' }}>
+            <div style={{ display: 'flex', justifycontent: 'space-between', alignitems: 'center', borderbottom: '1px solid #e9d5ff', paddingbottom: '0.4rem' }}>
               <span style={{ fontFamily: 'monospace', fontSize: '0.9rem', fontWeight: '800', color: 'var(--color-primary)' }}>
                 🧼 WASHED ID: {matchedRoll.processed_roll_id || matchedRoll.id}
               </span>
@@ -700,7 +757,7 @@ export default function WashedInspection() {
               📋 QC Parameters
             </h3>
 
-            {/* Qty and Calculations */}
+            {/* Qty and Shortage Row */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
               <div className="input-group" style={{ margin: 0 }}>
                 <label className="input-label" style={{ fontWeight: '700', fontSize: '0.72rem' }}>Actual Length (m)</label>
@@ -733,6 +790,20 @@ export default function WashedInspection() {
                   {shortage} m
                 </div>
               </div>
+            </div>
+
+            {/* Width Row */}
+            <div className="input-group" style={{ margin: 0 }}>
+              <label className="input-label" style={{ fontWeight: '700', fontSize: '0.72rem' }}>Width (inches)</label>
+              <input
+                type="number"
+                step="0.1"
+                className="input-field"
+                placeholder="Width in inches"
+                value={width}
+                onChange={e => setWidth(e.target.value)}
+                style={{ fontWeight: '700', fontSize: '0.9rem', height: '40px', width: '100%', boxSizing: 'border-box' }}
+              />
             </div>
 
             {/* Received Place option selector */}
@@ -793,28 +864,35 @@ export default function WashedInspection() {
                 </span>
               </div>
               <div style={defectGridStyle}>
-                <button type="button" onClick={() => setWeaving1pt(c => c + 1)} style={defectBtnStyle(weaving1pt)}>
+                <button type="button" onClick={() => { setWeaving1pt(c => c + 1); setWeavingHistory(prev => [...prev, 1]); }} style={defectBtnStyle(weaving1pt)}>
                   1 Point
                   {weaving1pt > 0 && <span style={btnBadgeStyle}>{weaving1pt}</span>}
                 </button>
-                <button type="button" onClick={() => setWeaving2pt(c => c + 1)} style={defectBtnStyle(weaving2pt)}>
+                <button type="button" onClick={() => { setWeaving2pt(c => c + 1); setWeavingHistory(prev => [...prev, 2]); }} style={defectBtnStyle(weaving2pt)}>
                   2 Point
                   {weaving2pt > 0 && <span style={btnBadgeStyle}>{weaving2pt}</span>}
                 </button>
-                <button type="button" onClick={() => setWeaving3pt(c => c + 1)} style={defectBtnStyle(weaving3pt)}>
+                <button type="button" onClick={() => { setWeaving3pt(c => c + 1); setWeavingHistory(prev => [...prev, 3]); }} style={defectBtnStyle(weaving3pt)}>
                   3 Point
                   {weaving3pt > 0 && <span style={btnBadgeStyle}>{weaving3pt}</span>}
                 </button>
-                <button type="button" onClick={() => setWeaving4pt(c => c + 1)} style={defectBtnStyle(weaving4pt)}>
+                <button type="button" onClick={() => { setWeaving4pt(c => c + 1); setWeavingHistory(prev => [...prev, 4]); }} style={defectBtnStyle(weaving4pt)}>
                   4 Point
                   {weaving4pt > 0 && <span style={btnBadgeStyle}>{weaving4pt}</span>}
                 </button>
               </div>
-              {(weaving1pt > 0 || weaving2pt > 0 || weaving3pt > 0 || weaving4pt > 0) && (
-                <button type="button" onClick={() => { setWeaving1pt(0); setWeaving2pt(0); setWeaving3pt(0); setWeaving4pt(0); }} style={resetBtnStyle}>
-                  Reset Counts
-                </button>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.4rem' }}>
+                {weavingHistory.length > 0 ? (
+                  <button type="button" onClick={undoLastWeaving} style={undoBtnStyle}>
+                    ↩ Undo
+                  </button>
+                ) : <div />}
+                {(weaving1pt > 0 || weaving2pt > 0 || weaving3pt > 0 || weaving4pt > 0) && (
+                  <button type="button" onClick={() => { setWeaving1pt(0); setWeaving2pt(0); setWeaving3pt(0); setWeaving4pt(0); setWeavingHistory([]); }} style={resetBtnStyle}>
+                    Reset Counts
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Yarn Defects Point Logger */}
@@ -826,20 +904,27 @@ export default function WashedInspection() {
                 </span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-                <button type="button" onClick={() => setYarn1pt(c => c + 1)} style={defectBtnStyle(yarn1pt)}>
+                <button type="button" onClick={() => { setYarn1pt(c => c + 1); setYarnHistory(prev => [...prev, 1]); }} style={defectBtnStyle(yarn1pt)}>
                   1 Point
                   {yarn1pt > 0 && <span style={btnBadgeStyle}>{yarn1pt}</span>}
                 </button>
-                <button type="button" onClick={() => setYarn4pt(c => c + 1)} style={defectBtnStyle(yarn4pt)}>
+                <button type="button" onClick={() => { setYarn4pt(c => c + 1); setYarnHistory(prev => [...prev, 4]); }} style={defectBtnStyle(yarn4pt)}>
                   4 Point
                   {yarn4pt > 0 && <span style={btnBadgeStyle}>{yarn4pt}</span>}
                 </button>
               </div>
-              {(yarn1pt > 0 || yarn4pt > 0) && (
-                <button type="button" onClick={() => { setYarn1pt(0); setYarn4pt(0); }} style={resetBtnStyle}>
-                  Reset Counts
-                </button>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.4rem' }}>
+                {yarnHistory.length > 0 ? (
+                  <button type="button" onClick={undoLastYarn} style={undoBtnStyle}>
+                    ↩ Undo
+                  </button>
+                ) : <div />}
+                {(yarn1pt > 0 || yarn4pt > 0) && (
+                  <button type="button" onClick={() => { setYarn1pt(0); setYarn4pt(0); setYarnHistory([]); }} style={resetBtnStyle}>
+                    Reset Counts
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Holes and Stains Point Logger */}
@@ -851,20 +936,27 @@ export default function WashedInspection() {
                 </span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-                <button type="button" onClick={() => setHoles2pt(c => c + 1)} style={defectBtnStyle(holes2pt)}>
+                <button type="button" onClick={() => { setHoles2pt(c => c + 1); setHolesHistory(prev => [...prev, 2]); }} style={defectBtnStyle(holes2pt)}>
                   2 Point
                   {holes2pt > 0 && <span style={btnBadgeStyle}>{holes2pt}</span>}
                 </button>
-                <button type="button" onClick={() => setHoles4pt(c => c + 1)} style={defectBtnStyle(holes4pt)}>
+                <button type="button" onClick={() => { setHoles4pt(c => c + 1); setHolesHistory(prev => [...prev, 4]); }} style={defectBtnStyle(holes4pt)}>
                   4 Point
                   {holes4pt > 0 && <span style={btnBadgeStyle}>{holes4pt}</span>}
                 </button>
               </div>
-              {(holes2pt > 0 || holes4pt > 0) && (
-                <button type="button" onClick={() => { setHoles2pt(0); setHoles4pt(0); }} style={resetBtnStyle}>
-                  Reset Counts
-                </button>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.4rem' }}>
+                {holesHistory.length > 0 ? (
+                  <button type="button" onClick={undoLastHoles} style={undoBtnStyle}>
+                    ↩ Undo
+                  </button>
+                ) : <div />}
+                {(holes2pt > 0 || holes4pt > 0) && (
+                  <button type="button" onClick={() => { setHoles2pt(0); setHoles4pt(0); setHolesHistory([]); }} style={resetBtnStyle}>
+                    Reset Counts
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Total Summary */}

@@ -1323,6 +1323,7 @@ function TabInspection({ order }) {
             <td class="right">${recVal.toFixed(2)}</td>
             <td class="right">${actVal.toFixed(2)}</td>
             <td class="right" style="${parseFloat(shortVal) > 0 ? 'background: #fffbeb; color: #b45309; font-weight: bold;' : ''}">${shortVal}</td>
+            <td class="center">${r.washed_width ? `${r.washed_width}"` : '—'}</td>
             <td class="center" style="border-left: 1px solid #cbd5e1; ${r.washed_weaving_defect_1pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_1pt_count ?? 0}</td>
             <td class="center" style="${r.washed_weaving_defect_2pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_2pt_count ?? 0}</td>
             <td class="center" style="${r.washed_weaving_defect_3pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_3pt_count ?? 0}</td>
@@ -1336,7 +1337,7 @@ function TabInspection({ order }) {
           </tr>
         `;
       });
-
+ 
       groupedHtml += `
         <div style="page-break-inside: avoid; margin-bottom: 20px;">
           <div class="order-title">
@@ -1345,10 +1346,11 @@ function TabInspection({ order }) {
           <table>
             <thead>
               <tr>
-                <th rowspan="2" style="width: 14%">Roll Number</th>
+                <th rowspan="2" style="width: 12%">Roll Number</th>
                 <th rowspan="2" class="right" style="width: 8%">Rec Qty</th>
                 <th rowspan="2" class="right" style="width: 8%">Act Qty</th>
                 <th rowspan="2" class="right" style="width: 8%">Short</th>
+                <th rowspan="2" class="center" style="width: 8%">Width</th>
                 <th colspan="4" class="center" style="border-left: 1px solid #cbd5e1">Weaving Defects</th>
                 <th colspan="2" class="center" style="border-left: 1px solid #cbd5e1">Yarn Defects</th>
                 <th colspan="2" class="center" style="border-left: 1px solid #cbd5e1">Holes & Stains</th>
@@ -1720,6 +1722,7 @@ function TabInspection({ order }) {
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '14%' }}>Processed Roll ID</th>
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '8%', textAlign: 'right' }}>Rec Qty</th>
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '8%', textAlign: 'right' }}>Act Qty</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '8%', textAlign: 'center' }}>Width (in)</th>
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '14%', textAlign: 'center' }}>Weaving Defects</th>
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '10%', textAlign: 'center' }}>Yarn Defects</th>
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '10%', textAlign: 'center' }}>Holes & Stains</th>
@@ -1735,7 +1738,7 @@ function TabInspection({ order }) {
                     const isChecked = !!selectedWashedRolls[rollId];
                     const recQty = parseFloat(r.received_qty ?? r.qty ?? 0);
                     const actQty = parseFloat(r.washed_actual_qty ?? r.actual_qty ?? 0);
-
+ 
                     return (
                       <tr key={rollId} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: 'white' }}>
                         <td style={{ padding: '0.65rem 1rem' }}>
@@ -1747,9 +1750,27 @@ function TabInspection({ order }) {
                           />
                         </td>
                         <td style={{ padding: '0.65rem 0.5rem', color: 'var(--text-muted-current)' }}>{dateStr}</td>
-                        <td style={{ padding: '0.65rem 0.5rem', fontFamily: 'monospace', fontWeight: '750', color: 'var(--color-primary)' }}>{rollId}</td>
+                        <td style={{ padding: '0.65rem 0.5rem', fontFamily: 'monospace', fontWeight: '750', color: 'var(--color-primary)' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            {rollId}
+                            {r.added_to_report && (
+                              <span 
+                                style={{
+                                  display: 'inline-block',
+                                  width: '8px',
+                                  height: '8px',
+                                  backgroundColor: '#22c55e',
+                                  borderRadius: '50%',
+                                  boxShadow: '0 0 4px #22c55e'
+                                }} 
+                                title="Added to an Inspection Report"
+                              />
+                            )}
+                          </div>
+                        </td>
                         <td style={{ padding: '0.65rem 0.5rem', textAlign: 'right', fontWeight: '600' }}>{recQty.toFixed(2)}</td>
                         <td style={{ padding: '0.65rem 0.5rem', textAlign: 'right', fontWeight: '600' }}>{actQty.toFixed(2)}</td>
+                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', fontWeight: '600' }}>{r.washed_width ? `${r.washed_width}"` : '—'}</td>
                         <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
                           <div style={{ display: 'flex', justifyContent: 'center', gap: '2px', fontSize: '0.68rem' }}>
                             <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_weaving_defect_1pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_weaving_defect_1pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>1P: {r.washed_weaving_defect_1pt_count ?? 0}</span>
@@ -6342,8 +6363,8 @@ function PrintPIModal({ pi, onClose }) {
               <div>
                 <h1 style={{ margin: '0 0 0.15rem 0', fontSize: '1.6rem', fontWeight: '950', color: '#000', letterSpacing: '0.5px', lineHeight: '1.1' }}>ASHOK TEXTILES</h1>
                 <p style={{ margin: '0 0 0.1rem 0', fontWeight: '800', fontSize: '0.75rem', color: '#800000', letterSpacing: '0.5px', textTransform: 'uppercase' }}>MANUFACTURERS OF GREIGE FABRIC</p>
-                <p style={{ margin: '0 0 0.1rem 0', fontSize: '0.75rem' }}>12-A, East Car Street, Shevapet, Salem - 636002</p>
-                <p style={{ margin: 0, fontSize: '0.75rem' }}>Tamil Nadu, India | <strong>GSTIN:</strong> 33AAZFA6086D1Z6</p>
+                <p style={{ margin: '0 0 0.1rem 0', fontSize: '0.75rem' }}>6/222, SALEM MAIN ROAD, VEERAPANDI, SALEM, TAMIL NADU - 33</p>
+                <p style={{ margin: 0, fontSize: '0.75rem' }}><strong>GSTIN:</strong> 33AAZFA60686D1Z6</p>
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
