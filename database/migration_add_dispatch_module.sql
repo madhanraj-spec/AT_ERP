@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS dispatch_package_slips (
     total_weight            NUMERIC(14,2) DEFAULT 0,
     remarks                 TEXT,
     items                   JSONB NOT NULL DEFAULT '[]'::jsonb, -- array of {roll_id, qty, weight}
+    status                  TEXT NOT NULL DEFAULT 'created', -- 'created' or 'dispatched'
     created_at              TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -38,12 +39,14 @@ CREATE TABLE IF NOT EXISTS dispatch_bills (
     buyer_id                UUID REFERENCES master_brands(id) ON DELETE SET NULL,
     order_id                UUID REFERENCES orders(id) ON DELETE CASCADE,
     package_slip_ids        JSONB NOT NULL DEFAULT '[]'::jsonb, -- list of slip numbers or IDs linked
+    items                   JSONB NOT NULL DEFAULT '[]'::jsonb, -- detailed items list
     hsn_code                TEXT DEFAULT '5208',
     uom                     TEXT DEFAULT 'Meter',
     qty                     NUMERIC(14,2) NOT NULL DEFAULT 0,
     rate                    NUMERIC(14,2) NOT NULL DEFAULT 0,
     amount                  NUMERIC(14,2) NOT NULL DEFAULT 0, -- qty * rate
     discount_percent        NUMERIC(5,2) DEFAULT 0,
+    discount_amount         NUMERIC(14,2) DEFAULT 0,
     taxable_value           NUMERIC(14,2) NOT NULL DEFAULT 0, -- amount after discount
     cgst_percent            NUMERIC(5,2) DEFAULT 0,
     cgst_amount             NUMERIC(14,2) DEFAULT 0,
@@ -57,6 +60,17 @@ CREATE TABLE IF NOT EXISTS dispatch_bills (
     quality_tolerance       TEXT,
     bank_details            TEXT,
     remarks                 TEXT,
+    billed_from_address     TEXT,
+    billed_to_address       TEXT,
+    shipped_from_address    TEXT,
+    shipped_to_address      TEXT,
+    transport_name          TEXT,
+    transport_mode          TEXT,
+    vehicle_number          TEXT,
+    vehicle_type            TEXT, -- 'ODC', 'R'
+    freight_type            TEXT, -- 'Collection', 'Prepaid', 'To Pay', 'Self Paid', 'Self To Pay'
+    lr_no                   TEXT,
+    lr_date                 DATE,
     created_at              TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

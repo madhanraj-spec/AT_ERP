@@ -327,6 +327,7 @@ export default function MasterDetail() {
                 <option value="Warping Unit">Warping Unit</option>
                 <option value="Sizing Unit">Sizing Unit</option>
                 <option value="Twisting Unit">Twisting Unit</option>
+                <option value="Transportation">Transportation</option>
                 <option value="Vendor">Vendor</option>
               </select>
             </div>
