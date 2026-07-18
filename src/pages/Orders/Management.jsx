@@ -14,6 +14,7 @@ import OrderWarpingTab from './OrderWarpingTab';
 import OrderSizingTab from './OrderSizingTab';
 import OrderYarnUsageTab from './OrderYarnUsageTab';
 import OrderWeavingTab from './OrderWeavingTab';
+import OrderDispatchTab from './OrderDispatchTab';
 import DyedReceiptPrintModal from '../DyedYarn/DyedReceiptPrintModal';
 
 
@@ -417,6 +418,7 @@ function OrderCard({
   orderDydis = [],
   allPofs = [],
   hideDeleteButton = false,
+  orderBills = [],
   onRefresh
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -440,6 +442,13 @@ function OrderCard({
     });
     return sum;
   }, [orderWvofs, order.order_number]);
+
+  const totalDispatchedQty = useMemo(() => {
+    return (orderBills || []).reduce((sum, b) => {
+      const item = b.items?.find(i => i.order_id === order.id);
+      return sum + Number(item?.qty || 0);
+    }, 0);
+  }, [orderBills, order.id]);
 
   const totalWeavedQty = useMemo(() => {
     let sum = 0;
@@ -690,6 +699,18 @@ function OrderCard({
               <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Dispatch</label>
               <div style={{ fontWeight: '600', fontSize: '0.78rem', color: 'var(--text-current)' }}>{order.dispatch_date ? new Date(order.dispatch_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—'}</div>
             </div>
+            <div>
+              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Order Construction</label>
+              <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-current)' }}>
+                {order.technical_specs?.order_reed || '—'} / {order.technical_specs?.order_pick || '—'}
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Production Construction</label>
+              <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-current)' }}>
+                {order.technical_specs?.on_loom_reed || '—'} / {order.technical_specs?.on_loom_pick || '—'}
+              </div>
+            </div>
           </div>
 
           {/* Subtle divider */}
@@ -701,6 +722,12 @@ function OrderCard({
               <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Order Qty</label>
               <div style={{ fontWeight: '800', fontSize: '0.8rem', color: 'var(--text-current)' }}>
                 {Number(order.total_quantity).toLocaleString()} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Mtrs</span>
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Production Qty</label>
+              <div style={{ fontWeight: '800', fontSize: '0.8rem', color: 'var(--text-current)' }}>
+                {order.technical_specs?.production_quantity ? Number(order.technical_specs.production_quantity).toLocaleString() : '—'} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Mtrs</span>
               </div>
             </div>
             <div>
@@ -716,15 +743,9 @@ function OrderCard({
               </div>
             </div>
             <div>
-              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Order Construction</label>
-              <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-current)' }}>
-                {order.technical_specs?.order_reed || '—'} / {order.technical_specs?.order_pick || '—'}
-              </div>
-            </div>
-            <div>
-              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Production Construction</label>
-              <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-current)' }}>
-                {order.technical_specs?.on_loom_reed || '—'} / {order.technical_specs?.on_loom_pick || '—'}
+              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Dispatched Qty</label>
+              <div style={{ fontWeight: '800', fontSize: '0.8rem', color: '#2563eb' }}>
+                {totalDispatchedQty.toLocaleString()} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Mtrs</span>
               </div>
             </div>
           </div>
@@ -745,6 +766,7 @@ function OrderCard({
               { id: 'weaving', label: 'Weaving', icon: <Package size={16} /> },
               { id: 'processing', label: 'Processing', icon: <Truck size={16} /> },
               { id: 'inspection', label: 'Inspection', icon: <Search size={16} /> },
+              { id: 'dispatch', label: 'Dispatch', icon: <FileText size={16} /> },
             ].map(tab => (
               <button 
                 key={tab.id}
@@ -821,6 +843,7 @@ function OrderCard({
               />
             )}
             {activeTab === 'inspection' && <TabInspection order={order} />}
+            {activeTab === 'dispatch' && <OrderDispatchTab order={order} />}
           </div>
         </div>
       )}
@@ -1324,6 +1347,11 @@ function TabInspection({ order }) {
             <td class="right">${actVal.toFixed(2)}</td>
             <td class="right" style="${parseFloat(shortVal) > 0 ? 'background: #fffbeb; color: #b45309; font-weight: bold;' : ''}">${shortVal}</td>
             <td class="center">${r.washed_width ? `${r.washed_width}"` : '—'}</td>
+            <td class="center">${r.washed_lot || r.lot || '—'}</td>
+            <td class="center" style="border-left: 1px solid #cbd5e1; ${r.washed_warp_weft_breakage_1pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_warp_weft_breakage_1pt_count ?? 0}</td>
+            <td class="center" style="${r.washed_warp_weft_breakage_2pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_warp_weft_breakage_2pt_count ?? 0}</td>
+            <td class="center" style="${r.washed_warp_weft_breakage_3pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_warp_weft_breakage_3pt_count ?? 0}</td>
+            <td class="center" style="${r.washed_warp_weft_breakage_4pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_warp_weft_breakage_4pt_count ?? 0}</td>
             <td class="center" style="border-left: 1px solid #cbd5e1; ${r.washed_weaving_defect_1pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_1pt_count ?? 0}</td>
             <td class="center" style="${r.washed_weaving_defect_2pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_2pt_count ?? 0}</td>
             <td class="center" style="${r.washed_weaving_defect_3pt_count > 0 ? 'font-weight: bold; color: #800000;' : 'color: #94a3b8;'}">${r.washed_weaving_defect_3pt_count ?? 0}</td>
@@ -1346,26 +1374,32 @@ function TabInspection({ order }) {
           <table>
             <thead>
               <tr>
-                <th rowspan="2" style="width: 12%">Roll Number</th>
-                <th rowspan="2" class="right" style="width: 8%">Rec Qty</th>
-                <th rowspan="2" class="right" style="width: 8%">Act Qty</th>
-                <th rowspan="2" class="right" style="width: 8%">Short</th>
-                <th rowspan="2" class="center" style="width: 8%">Width</th>
+                <th rowspan="2" style="width: 10%">Roll Number</th>
+                <th rowspan="2" class="right" style="width: 6%">Rec Qty</th>
+                <th rowspan="2" class="right" style="width: 6%">Act Qty</th>
+                <th rowspan="2" class="right" style="width: 6%">Short</th>
+                <th rowspan="2" class="center" style="width: 6%">Width</th>
+                <th rowspan="2" class="center" style="width: 6%">Lot</th>
+                <th colspan="4" class="center" style="border-left: 1px solid #cbd5e1">Warp & Weft Breakages</th>
                 <th colspan="4" class="center" style="border-left: 1px solid #cbd5e1">Weaving Defects</th>
                 <th colspan="2" class="center" style="border-left: 1px solid #cbd5e1">Yarn Defects</th>
                 <th colspan="2" class="center" style="border-left: 1px solid #cbd5e1">Holes & Stains</th>
                 <th rowspan="2" style="width: 8%; border-left: 1px solid #cbd5e1">Place</th>
-                <th rowspan="2" style="width: 12%">Inspectors</th>
+                <th rowspan="2" style="width: 10%">Inspectors</th>
               </tr>
               <tr>
-                <th class="center" style="border-left: 1px solid #cbd5e1; width: 4%">1 Pt</th>
-                <th class="center" style="width: 4%">2 Pt</th>
-                <th class="center" style="width: 4%">3 Pt</th>
-                <th class="center" style="width: 4%">4 Pt</th>
-                <th class="center" style="border-left: 1px solid #cbd5e1; width: 4%">1 Pt</th>
-                <th class="center" style="width: 4%">4 Pt</th>
-                <th class="center" style="border-left: 1px solid #cbd5e1; width: 4%">2 Pt</th>
-                <th class="center" style="width: 4%">4 Pt</th>
+                <th class="center" style="border-left: 1px solid #cbd5e1; width: 3.5%">1 Pt</th>
+                <th class="center" style="width: 3.5%">2 Pt</th>
+                <th class="center" style="width: 3.5%">3 Pt</th>
+                <th class="center" style="width: 3.5%">4 Pt</th>
+                <th class="center" style="border-left: 1px solid #cbd5e1; width: 3.5%">1 Pt</th>
+                <th class="center" style="width: 3.5%">2 Pt</th>
+                <th class="center" style="width: 3.5%">3 Pt</th>
+                <th class="center" style="width: 3.5%">4 Pt</th>
+                <th class="center" style="border-left: 1px solid #cbd5e1; width: 3.5%">1 Pt</th>
+                <th class="center" style="width: 3.5%">4 Pt</th>
+                <th class="center" style="border-left: 1px solid #cbd5e1; width: 3.5%">2 Pt</th>
+                <th class="center" style="width: 3.5%">4 Pt</th>
               </tr>
             </thead>
             <tbody>
@@ -1723,6 +1757,8 @@ function TabInspection({ order }) {
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '8%', textAlign: 'right' }}>Rec Qty</th>
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '8%', textAlign: 'right' }}>Act Qty</th>
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '8%', textAlign: 'center' }}>Width (in)</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '8%', textAlign: 'center' }}>Lot</th>
+                    <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '14%', textAlign: 'center' }}>Warp & Weft Breakages</th>
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '14%', textAlign: 'center' }}>Weaving Defects</th>
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '10%', textAlign: 'center' }}>Yarn Defects</th>
                     <th style={{ padding: '0.75rem 0.5rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted-current)', width: '10%', textAlign: 'center' }}>Holes & Stains</th>
@@ -1771,6 +1807,15 @@ function TabInspection({ order }) {
                         <td style={{ padding: '0.65rem 0.5rem', textAlign: 'right', fontWeight: '600' }}>{recQty.toFixed(2)}</td>
                         <td style={{ padding: '0.65rem 0.5rem', textAlign: 'right', fontWeight: '600' }}>{actQty.toFixed(2)}</td>
                         <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', fontWeight: '600' }}>{r.washed_width ? `${r.washed_width}"` : '—'}</td>
+                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center', fontWeight: '600' }}>{r.washed_lot || r.lot || '—'}</td>
+                        <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '2px', fontSize: '0.68rem' }}>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_warp_weft_breakage_1pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_warp_weft_breakage_1pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>1P: {r.washed_warp_weft_breakage_1pt_count ?? 0}</span>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_warp_weft_breakage_2pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_warp_weft_breakage_2pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>2P: {r.washed_warp_weft_breakage_2pt_count ?? 0}</span>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_warp_weft_breakage_3pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_warp_weft_breakage_3pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>3P: {r.washed_warp_weft_breakage_3pt_count ?? 0}</span>
+                            <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_warp_weft_breakage_4pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_warp_weft_breakage_4pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>4P: {r.washed_warp_weft_breakage_4pt_count ?? 0}</span>
+                          </div>
+                        </td>
                         <td style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>
                           <div style={{ display: 'flex', justifyContent: 'center', gap: '2px', fontSize: '0.68rem' }}>
                             <span style={{ padding: '1px 4px', borderRadius: '3px', background: (r.washed_weaving_defect_1pt_count ?? 0) > 0 ? '#fee2e2' : '#f1f5f9', color: (r.washed_weaving_defect_1pt_count ?? 0) > 0 ? '#b91c1c' : '#64748b' }}>1P: {r.washed_weaving_defect_1pt_count ?? 0}</span>
@@ -3111,6 +3156,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
   const [allWvofs, setAllWvofs] = useState([]);
   const [allDydi, setAllDydi] = useState([]);
   const [allPofs, setAllPofs] = useState([]);
+  const [allBills, setAllBills] = useState([]);
   
   // Collapsible Filters State
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
@@ -3193,8 +3239,8 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      // Fetch Masters for display names and all DOFs/Receipts/WOFs/SOFs/Weaving orders/DYDR deliveries
-      const [yarnRes, brandRes, dofsRes, dyrrsRes, partnersRes, wofsRes, sofsRes, wvofsRes, dydiRes, pofsRes] = await Promise.all([
+      // Fetch Masters for display names and all DOFs/Receipts/WOFs/SOFs/Weaving orders/DYDR deliveries/Bills
+      const [yarnRes, brandRes, dofsRes, dyrrsRes, partnersRes, wofsRes, sofsRes, wvofsRes, dydiRes, pofsRes, billsRes] = await Promise.all([
         supabase.from('master_yarn_counts').select('*'),
         supabase.from('master_brands').select('*'),
         supabase.from('dyeing_order_forms').select('id, dof_number, expected_delivery_date, order_ids, status'),
@@ -3204,7 +3250,8 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
         supabase.from('sizing_order_forms').select('id, sof_number, order_id, status, end_date, process_completed_at, updated_at, sofdc_number'),
         supabase.from('weaving_orders').select('id, weaving_number, order_id, status, start_date, end_date, process_started_at, process_completed_at, updated_at, weft_allotments, fabric_rolls, production_logs'),
         supabase.from('dyed_yarn_delivery_items').select('id, production_form_id, quantity_kg, process_type, order_id'),
-        supabase.from('processing_orders').select('*')
+        supabase.from('processing_orders').select('*'),
+        supabase.from('dispatch_bills').select('id, order_id, items, qty')
       ]);
       setYarnCounts(yarnRes.data || []);
       setBrands(brandRes.data || []);
@@ -3216,6 +3263,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
       setAllWvofs(wvofsRes.data || []);
       setAllDydi(dydiRes.data || []);
       setAllPofs(pofsRes.data || []);
+      setAllBills(billsRes.data || []);
 
       let query = supabase
         .from('orders')
@@ -3673,6 +3721,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
             const orderSofs = allSofs.filter(s => s.order_id === order.id);
             const orderWvofs = allWvofs.filter(wv => wv.order_id === order.id);
             const orderDydis = allDydi.filter(d => d.order_id === order.id);
+            const orderBills = allBills.filter(b => b.order_id === order.id || (Array.isArray(b.items) && b.items.some(item => item.order_id === order.id)));
 
             return (
               <OrderCard 
@@ -3703,6 +3752,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
                 orderWvofs={orderWvofs}
                 orderDydis={orderDydis}
                 allPofs={allPofs}
+                orderBills={orderBills}
                 onRefresh={() => setRefreshTrigger(prev => prev + 1)}
               />
             );
@@ -3813,6 +3863,8 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
               <th>ORDER WIDTH</th>
               <th>FOB</th>
               <th style={{ textAlign: 'right' }}>ORDER QTY</th>
+              <th style={{ textAlign: 'right' }}>WEAVED QTY</th>
+              <th style={{ textAlign: 'right' }}>DISPATCHED QTY</th>
               <th style={{ textAlign: 'center' }}>DYEING</th>
               <th style={{ textAlign: 'center' }}>WARPING</th>
               <th style={{ textAlign: 'center' }}>SIZING</th>
@@ -3823,7 +3875,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
           <tbody>
             {filteredOrders.length === 0 ? (
               <tr>
-                <td colSpan="15" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                <td colSpan="17" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
                   No orders found matching the filter "{filter}"
                 </td>
               </tr>
@@ -3851,6 +3903,12 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
                   const greigeRolls = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
                   totalGreigeInputQty += greigeRolls.reduce((acc, r) => acc + parseFloat(r.qty || 0), 0);
                 });
+
+                const orderBills = allBills.filter(b => b.order_id === order.id || (Array.isArray(b.items) && b.items.some(item => item.order_id === order.id)));
+                const totalDispatchedQty = orderBills.reduce((sum, b) => {
+                  const item = b.items?.find(i => i.order_id === order.id);
+                  return sum + Number(item?.qty || 0);
+                }, 0);
 
                 const allWarpIds = order.technical_specs?.warp_selections?.flat() || [];
                 const allWeftIds = order.technical_specs?.weft_selections?.flat() || [];
@@ -3916,6 +3974,16 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
                         {Number(order.total_quantity).toLocaleString()} Mtrs
                       </td>
 
+                      {/* Weaved Qty */}
+                      <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '8.5pt' }}>
+                        {totalWeavedQty.toLocaleString()} Mtrs
+                      </td>
+
+                      {/* Dispatched Qty */}
+                      <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '8.5pt', color: '#2563eb' }}>
+                        {totalDispatchedQty.toLocaleString()} Mtrs
+                      </td>
+
                       {/* Status columns (rowspan=3) */}
                       <td rowSpan={3} style={{ backgroundColor: dyeingStatus.bg, color: dyeingStatus.text, border: `1px solid ${dyeingStatus.border} !important`, fontWeight: 'bold', fontSize: '7.5pt', textAlign: 'center', verticalAlign: 'middle' }}>
                         {dyeingStatus.label}
@@ -3943,7 +4011,9 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
                       <td style={{ fontWeight: 'bold', fontSize: '7pt', color: '#475569', backgroundColor: '#e2e8f0', textTransform: 'uppercase' }}>ON LOOM CONST</td>
                       <td style={{ fontWeight: 'bold', fontSize: '7pt', color: '#475569', backgroundColor: '#e2e8f0', textTransform: 'uppercase' }}>ON LOOM</td>
                       <td style={{ fontWeight: 'bold', fontSize: '7pt', color: '#475569', backgroundColor: '#e2e8f0', textTransform: 'uppercase' }}>DELIVERY</td>
-                      <td style={{ fontWeight: 'bold', fontSize: '7pt', color: '#475569', backgroundColor: '#e2e8f0', textTransform: 'uppercase' }}>WEAVED QTY</td>
+                      <td style={{ fontWeight: 'bold', fontSize: '7pt', color: '#475569', backgroundColor: '#e2e8f0', textTransform: 'uppercase' }}>PRODUCTION QTY</td>
+                      <td style={{ fontWeight: 'bold', fontSize: '7pt', color: '#475569', backgroundColor: '#e2e8f0', textTransform: 'uppercase' }}>GREIGE QTY</td>
+                      <td style={{ fontWeight: 'bold', fontSize: '7pt', color: '#475569', backgroundColor: '#e2e8f0', textTransform: 'uppercase' }}>STATUS</td>
                     </tr>
 
                     {/* Row 3: Design & Loom Parameters */}
@@ -3975,9 +4045,19 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
                       {/* Delivery Date */}
                       <td style={{ fontSize: '8pt' }}>{order.dispatch_date || '—'}</td>
 
-                      {/* Weaved Qty */}
-                      <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '8.5pt' }}>
-                        {totalWeavedQty.toLocaleString()} Mtrs
+                      {/* Production Qty */}
+                      <td style={{ textAlign: 'right', fontSize: '8.5pt' }}>
+                        {order.technical_specs?.production_quantity ? `${Number(order.technical_specs.production_quantity).toLocaleString()} Mtrs` : '—'}
+                      </td>
+
+                      {/* Greige Qty */}
+                      <td style={{ textAlign: 'right', fontSize: '8.5pt', color: '#0284c7', fontWeight: 'bold' }}>
+                        {totalGreigeInputQty.toLocaleString()} Mtrs
+                      </td>
+
+                      {/* Status */}
+                      <td style={{ fontSize: '8pt', color: '#475569', textTransform: 'capitalize' }}>
+                        {order.status || '—'}
                       </td>
                     </tr>
                   </React.Fragment>

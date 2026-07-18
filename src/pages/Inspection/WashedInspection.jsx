@@ -26,12 +26,19 @@ export default function WashedInspection() {
   // Form states
   const [actualQty, setActualQty] = useState('');
   const [width, setWidth] = useState('');
+  const [lot, setLot] = useState('');
   const [inspector1, setInspector1] = useState('');
   const [inspector2, setInspector2] = useState('');
   const [inspectors, setInspectors] = useState([]);
   const [washedPlace, setWashedPlace] = useState('Factory');
 
   // Point Defect click counts
+  // Warp & Weft Breakages (1pt, 2pt, 3pt, 4pt)
+  const [warpWeft1pt, setWarpWeft1pt] = useState(0);
+  const [warpWeft2pt, setWarpWeft2pt] = useState(0);
+  const [warpWeft3pt, setWarpWeft3pt] = useState(0);
+  const [warpWeft4pt, setWarpWeft4pt] = useState(0);
+
   // Weaving defects (1pt, 2pt, 3pt, 4pt)
   const [weaving1pt, setWeaving1pt] = useState(0);
   const [weaving2pt, setWeaving2pt] = useState(0);
@@ -47,11 +54,22 @@ export default function WashedInspection() {
   const [holes4pt, setHoles4pt] = useState(0);
 
   // Defect Action History stacks for Undo
+  const [warpWeftHistory, setWarpWeftHistory] = useState([]);
   const [weavingHistory, setWeavingHistory] = useState([]);
   const [yarnHistory, setYarnHistory] = useState([]);
   const [holesHistory, setHolesHistory] = useState([]);
 
   // Undo Handlers
+  const undoLastWarpWeft = () => {
+    if (warpWeftHistory.length === 0) return;
+    const last = warpWeftHistory[warpWeftHistory.length - 1];
+    setWarpWeftHistory(prev => prev.slice(0, -1));
+    if (last === 1) setWarpWeft1pt(c => Math.max(0, c - 1));
+    else if (last === 2) setWarpWeft2pt(c => Math.max(0, c - 1));
+    else if (last === 3) setWarpWeft3pt(c => Math.max(0, c - 1));
+    else if (last === 4) setWarpWeft4pt(c => Math.max(0, c - 1));
+  };
+
   const undoLastWeaving = () => {
     if (weavingHistory.length === 0) return;
     const last = weavingHistory[weavingHistory.length - 1];
@@ -228,10 +246,12 @@ export default function WashedInspection() {
       // Pre-fill form fields
       setActualQty(foundRoll.washed_actual_qty ? String(foundRoll.washed_actual_qty) : (foundRoll.received_qty ? String(foundRoll.received_qty) : (foundRoll.actual_qty ? String(foundRoll.actual_qty) : '')));
       setWidth(foundRoll.washed_width ? String(foundRoll.washed_width) : '');
+      setLot(foundRoll.washed_lot || foundRoll.lot || '');
       setInspector1(foundRoll.washed_inspector_1 || foundRoll.inspector_1 || '');
       setInspector2(foundRoll.washed_inspector_2 || foundRoll.inspector_2 || '');
 
       // Reset Undo Histories
+      setWarpWeftHistory([]);
       setWeavingHistory([]);
       setYarnHistory([]);
       setHolesHistory([]);
@@ -265,6 +285,11 @@ export default function WashedInspection() {
       }
 
       // Pre-fill defect points if already inspected
+      setWarpWeft1pt(foundRoll.washed_warp_weft_breakage_1pt_count || 0);
+      setWarpWeft2pt(foundRoll.washed_warp_weft_breakage_2pt_count || 0);
+      setWarpWeft3pt(foundRoll.washed_warp_weft_breakage_3pt_count || 0);
+      setWarpWeft4pt(foundRoll.washed_warp_weft_breakage_4pt_count || 0);
+
       setWeaving1pt(foundRoll.washed_weaving_defect_1pt_count || 0);
       setWeaving2pt(foundRoll.washed_weaving_defect_2pt_count || 0);
       setWeaving3pt(foundRoll.washed_weaving_defect_3pt_count || 0);
@@ -351,10 +376,18 @@ export default function WashedInspection() {
   const shortage = parseFloat((receivedQty - parsedActualQty).toFixed(2));
 
   // Point summaries
+  const warpWeftTotal = (warpWeft1pt * 1) + (warpWeft2pt * 2) + (warpWeft3pt * 3) + (warpWeft4pt * 4);
   const weavingTotal = (weaving1pt * 1) + (weaving2pt * 2) + (weaving3pt * 3) + (weaving4pt * 4);
   const yarnTotal = (yarn1pt * 1) + (yarn4pt * 4);
   const holesStainsTotal = (holes2pt * 2) + (holes4pt * 4);
-  const grandTotal = weavingTotal + yarnTotal + holesStainsTotal;
+  const grandTotal = warpWeftTotal + weavingTotal + yarnTotal + holesStainsTotal;
+
+  // Defect count sums (No. of Tags)
+  const warpWeftTags = warpWeft1pt + warpWeft2pt + warpWeft3pt + warpWeft4pt;
+  const weavingTags = weaving1pt + weaving2pt + weaving3pt + weaving4pt;
+  const yarnTags = yarn1pt + yarn4pt;
+  const holesTags = holes2pt + holes4pt;
+  const totalTags = warpWeftTags + weavingTags + yarnTags + holesTags;
 
   // Submit Handler
   const handleSubmitInspection = async (e) => {
@@ -394,25 +427,38 @@ export default function WashedInspection() {
             washed_actual_qty: parsedActualQty,
             washed_shortage: shortage,
             washed_width: width ? parseFloat(width) : null,
+            washed_lot: lot ? lot.trim() : null,
+            lot: lot ? lot.trim() : null,
             washed_inspector_1: inspector1,
             washed_inspector_2: inspector2,
             washed_place: washedPlace,
+
+            washed_warp_weft_breakage_1pt_count: warpWeft1pt,
+            washed_warp_weft_breakage_2pt_count: warpWeft2pt,
+            washed_warp_weft_breakage_3pt_count: warpWeft3pt,
+            washed_warp_weft_breakage_4pt_count: warpWeft4pt,
+            washed_warp_weft_breakage_total_points: warpWeftTotal,
+            washed_warp_weft_breakage_no_of_tags: warpWeftTags,
 
             washed_weaving_defect_1pt_count: weaving1pt,
             washed_weaving_defect_2pt_count: weaving2pt,
             washed_weaving_defect_3pt_count: weaving3pt,
             washed_weaving_defect_4pt_count: weaving4pt,
             washed_weaving_defect_total_points: weavingTotal,
+            washed_weaving_defect_no_of_tags: weavingTags,
 
             washed_yarn_defect_1pt_count: yarn1pt,
             washed_yarn_defect_4pt_count: yarn4pt,
             washed_yarn_defect_total_points: yarnTotal,
+            washed_yarn_defect_no_of_tags: yarnTags,
 
             washed_holes_stains_2pt_count: holes2pt,
             washed_holes_stains_4pt_count: holes4pt,
             washed_holes_stains_total_points: holesStainsTotal,
+            washed_holes_stains_no_of_tags: holesTags,
 
-            washed_total_defect_points: grandTotal
+            washed_total_defect_points: grandTotal,
+            washed_no_of_tags: totalTags
           };
         }
         return r;
@@ -434,8 +480,13 @@ export default function WashedInspection() {
       setScanInput('');
       setActualQty('');
       setWidth('');
+      setLot('');
       setInspector1('');
       setInspector2('');
+      setWarpWeft1pt(0);
+      setWarpWeft2pt(0);
+      setWarpWeft3pt(0);
+      setWarpWeft4pt(0);
       setWeaving1pt(0);
       setWeaving2pt(0);
       setWeaving3pt(0);
@@ -444,6 +495,7 @@ export default function WashedInspection() {
       setYarn4pt(0);
       setHoles2pt(0);
       setHoles4pt(0);
+      setWarpWeftHistory([]);
       setWeavingHistory([]);
       setYarnHistory([]);
       setHolesHistory([]);
@@ -704,7 +756,7 @@ export default function WashedInspection() {
           
           <button
             type="button"
-            onClick={() => { setMatchedRoll(null); setWeavingOrder(null); setActualQty(''); setWidth(''); setInspector1(''); setInspector2(''); setWeaving1pt(0); setWeaving2pt(0); setWeaving3pt(0); setWeaving4pt(0); setYarn1pt(0); setYarn4pt(0); setHoles2pt(0); setHoles4pt(0); setWeavingHistory([]); setYarnHistory([]); setHolesHistory([]); }}
+            onClick={() => { setMatchedRoll(null); setWeavingOrder(null); setActualQty(''); setWidth(''); setLot(''); setInspector1(''); setInspector2(''); setWarpWeft1pt(0); setWarpWeft2pt(0); setWarpWeft3pt(0); setWarpWeft4pt(0); setWeaving1pt(0); setWeaving2pt(0); setWeaving3pt(0); setWeaving4pt(0); setYarn1pt(0); setYarn4pt(0); setHoles2pt(0); setHoles4pt(0); setWarpWeftHistory([]); setWeavingHistory([]); setYarnHistory([]); setHolesHistory([]); }}
             style={{
               display: 'flex', alignItems: 'center', gap: '0.35rem', border: 'none',
               background: 'none', color: 'var(--text-muted-current)', fontSize: '0.75rem',
@@ -792,18 +844,32 @@ export default function WashedInspection() {
               </div>
             </div>
 
-            {/* Width Row */}
-            <div className="input-group" style={{ margin: 0 }}>
-              <label className="input-label" style={{ fontWeight: '700', fontSize: '0.72rem' }}>Width (inches)</label>
-              <input
-                type="number"
-                step="0.1"
-                className="input-field"
-                placeholder="Width in inches"
-                value={width}
-                onChange={e => setWidth(e.target.value)}
-                style={{ fontWeight: '700', fontSize: '0.9rem', height: '40px', width: '100%', boxSizing: 'border-box' }}
-              />
+            {/* Width and Lot Row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+              <div className="input-group" style={{ margin: 0 }}>
+                <label className="input-label" style={{ fontWeight: '700', fontSize: '0.72rem' }}>Width (inches)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  className="input-field"
+                  placeholder="Width in inches"
+                  value={width}
+                  onChange={e => setWidth(e.target.value)}
+                  style={{ fontWeight: '700', fontSize: '0.9rem', height: '40px', width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div className="input-group" style={{ margin: 0 }}>
+                <label className="input-label" style={{ fontWeight: '700', fontSize: '0.72rem' }}>LOT (Optional)</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="Enter Lot"
+                  value={lot}
+                  onChange={e => setLot(e.target.value)}
+                  style={{ fontWeight: '700', fontSize: '0.9rem', height: '40px', width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
             </div>
 
             {/* Received Place option selector */}
@@ -855,13 +921,63 @@ export default function WashedInspection() {
               </div>
             </div>
 
+            {/* Warp & Weft Breakages Point Logger */}
+            <div style={sectionStyle}>
+              <div style={sectionHeaderStyle}>
+                <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', textTransform: 'uppercase' }}>⚠️ Warp & Weft Breakages</span>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', backgroundColor: 'rgba(128, 0, 0, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                    Total: {warpWeftTotal} Pt
+                  </span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#b45309', backgroundColor: 'rgba(180, 83, 9, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                    Tags: {warpWeftTags}
+                  </span>
+                </div>
+              </div>
+              <div style={defectGridStyle}>
+                <button type="button" onClick={() => { setWarpWeft1pt(c => c + 1); setWarpWeftHistory(prev => [...prev, 1]); }} style={defectBtnStyle(warpWeft1pt)}>
+                  1 Point
+                  {warpWeft1pt > 0 && <span style={btnBadgeStyle}>{warpWeft1pt}</span>}
+                </button>
+                <button type="button" onClick={() => { setWarpWeft2pt(c => c + 1); setWarpWeftHistory(prev => [...prev, 2]); }} style={defectBtnStyle(warpWeft2pt)}>
+                  2 Point
+                  {warpWeft2pt > 0 && <span style={btnBadgeStyle}>{warpWeft2pt}</span>}
+                </button>
+                <button type="button" onClick={() => { setWarpWeft3pt(c => c + 1); setWarpWeftHistory(prev => [...prev, 3]); }} style={defectBtnStyle(warpWeft3pt)}>
+                  3 Point
+                  {warpWeft3pt > 0 && <span style={btnBadgeStyle}>{warpWeft3pt}</span>}
+                </button>
+                <button type="button" onClick={() => { setWarpWeft4pt(c => c + 1); setWarpWeftHistory(prev => [...prev, 4]); }} style={defectBtnStyle(warpWeft4pt)}>
+                  4 Point
+                  {warpWeft4pt > 0 && <span style={btnBadgeStyle}>{warpWeft4pt}</span>}
+                </button>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.4rem' }}>
+                {warpWeftHistory.length > 0 ? (
+                  <button type="button" onClick={undoLastWarpWeft} style={undoBtnStyle}>
+                    ↩ Undo
+                  </button>
+                ) : <div />}
+                {(warpWeft1pt > 0 || warpWeft2pt > 0 || warpWeft3pt > 0 || warpWeft4pt > 0) && (
+                  <button type="button" onClick={() => { setWarpWeft1pt(0); setWarpWeft2pt(0); setWarpWeft3pt(0); setWarpWeft4pt(0); setWarpWeftHistory([]); }} style={resetBtnStyle}>
+                    Reset Counts
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Weaving Defects Point Logger */}
             <div style={sectionStyle}>
               <div style={sectionHeaderStyle}>
                 <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', textTransform: 'uppercase' }}>⚠️ Weaving Defects</span>
-                <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', backgroundColor: 'rgba(128, 0, 0, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
-                  Total: {weavingTotal} Pt
-                </span>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', backgroundColor: 'rgba(128, 0, 0, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                    Total: {weavingTotal} Pt
+                  </span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#b45309', backgroundColor: 'rgba(180, 83, 9, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                    Tags: {weavingTags}
+                  </span>
+                </div>
               </div>
               <div style={defectGridStyle}>
                 <button type="button" onClick={() => { setWeaving1pt(c => c + 1); setWeavingHistory(prev => [...prev, 1]); }} style={defectBtnStyle(weaving1pt)}>
@@ -899,9 +1015,14 @@ export default function WashedInspection() {
             <div style={sectionStyle}>
               <div style={sectionHeaderStyle}>
                 <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', textTransform: 'uppercase' }}>⚠️ Yarn Defects</span>
-                <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', backgroundColor: 'rgba(128, 0, 0, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
-                  Total: {yarnTotal} Pt
-                </span>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', backgroundColor: 'rgba(128, 0, 0, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                    Total: {yarnTotal} Pt
+                  </span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#b45309', backgroundColor: 'rgba(180, 83, 9, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                    Tags: {yarnTags}
+                  </span>
+                </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
                 <button type="button" onClick={() => { setYarn1pt(c => c + 1); setYarnHistory(prev => [...prev, 1]); }} style={defectBtnStyle(yarn1pt)}>
@@ -931,9 +1052,14 @@ export default function WashedInspection() {
             <div style={sectionStyle}>
               <div style={sectionHeaderStyle}>
                 <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', textTransform: 'uppercase' }}>⚠️ Holes & Stains</span>
-                <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', backgroundColor: 'rgba(128, 0, 0, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
-                  Total: {holesStainsTotal} Pt
-                </span>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--color-primary)', backgroundColor: 'rgba(128, 0, 0, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                    Total: {holesStainsTotal} Pt
+                  </span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#b45309', backgroundColor: 'rgba(180, 83, 9, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                    Tags: {holesTags}
+                  </span>
+                </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
                 <button type="button" onClick={() => { setHoles2pt(c => c + 1); setHolesHistory(prev => [...prev, 2]); }} style={defectBtnStyle(holes2pt)}>
@@ -961,17 +1087,28 @@ export default function WashedInspection() {
 
             {/* Total Summary */}
             <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              display: 'flex', flexDirection: 'column', gap: '0.5rem',
               backgroundColor: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px',
               border: '1px solid var(--border-current)'
             }}>
-              <div>
-                <strong style={{ fontSize: '0.8rem', color: 'var(--text-current)', display: 'block' }}>Defect Score Summary</strong>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted-current)' }}>Combined defect points counted</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <strong style={{ fontSize: '0.8rem', color: 'var(--text-current)', display: 'block' }}>Defect Score Summary</strong>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted-current)' }}>Combined defect points counted</span>
+                </div>
+                <span style={{ fontSize: '1rem', fontWeight: '800', color: grandTotal > 0 ? '#be123c' : '#047857' }}>
+                  {grandTotal} Points
+                </span>
               </div>
-              <span style={{ fontSize: '1rem', fontWeight: '800', color: grandTotal > 0 ? '#be123c' : '#047857' }}>
-                {grandTotal} Points
-              </span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--border-current)', paddingTop: '0.5rem' }}>
+                <div>
+                  <strong style={{ fontSize: '0.8rem', color: 'var(--text-current)', display: 'block' }}>No. of Tags</strong>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted-current)' }}>Total count of tags across all sections</span>
+                </div>
+                <span style={{ fontSize: '1rem', fontWeight: '800', color: totalTags > 0 ? '#b45309' : '#047857' }}>
+                  {totalTags} Tags
+                </span>
+              </div>
             </div>
 
             {/* Inspectors Selection */}

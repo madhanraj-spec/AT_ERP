@@ -111,9 +111,10 @@ function HubCard({ icon: Icon, title, subtitle, accent, onClick }) {
 // ─────────────────────────────────────────────
 function PackageSlipForm({ onBack, editSlipId }) {
   const [slipNumber, setSlipNumber] = useState('');
+  const [slipStatus, setSlipStatus] = useState('created');
   const [slipDate, setSlipDate] = useState(new Date().toISOString().slice(0, 10));
   const [remarks, setRemarks] = useState('');
-  
+
   // Scanned/Typed Roll Input
   const [scanInput, setScanInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -191,12 +192,13 @@ function PackageSlipForm({ onBack, editSlipId }) {
           if (slipErr) throw slipErr;
 
           if (slipData) {
+            setSlipStatus(slipData.status || 'created');
             setSlipNumber(slipData.slip_number);
             setSlipDate(slipData.slip_date);
             setRemarks(slipData.remarks || '');
             setLockedOrderId(slipData.order_id);
             setAvgWeightMeter(slipData.avg_weight_meter ? String(slipData.avg_weight_meter) : '0.35');
-            
+
             setOrderMetadata({
               orderNo: slipData.orders?.order_number || '—',
               designName: slipData.design_name || '—',
@@ -286,7 +288,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
     if (!specs) return '-';
     const allWarpIds = specs.warp_selections?.flat() || [];
     const allWeftIds = specs.weft_selections?.flat() || [];
-    
+
     const formatYarnPreview = (y) => {
       if (!y) return '';
       return [y.count_value, y.spec, y.spec1].filter(Boolean).join(' ');
@@ -306,6 +308,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
   };
 
   const startCameraScanner = () => {
+    if (slipStatus === 'dispatched') return;
     setCameraScanError('');
     if (!window.Html5Qrcode) {
       setCameraScanError('Scanner library not loaded yet. Please wait a moment and retry.');
@@ -330,7 +333,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
             stopCameraScanner();
             handleAddRoll(decodedText);
           },
-          () => {}
+          () => { }
         ).catch(err => {
           console.error("Camera start error:", err);
           setCameraScanError("Could not access camera. Ensure permissions are allowed.");
@@ -357,6 +360,10 @@ function PackageSlipForm({ onBack, editSlipId }) {
   };
 
   const handleAddRoll = async (idToUse) => {
+    if (slipStatus === 'dispatched') {
+      setError('This package slip has been dispatched and cannot be edited.');
+      return;
+    }
     const targetId = (idToUse || scanInput).trim();
     if (!targetId) return;
 
@@ -377,7 +384,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
 
       for (const wo of allWeavingOrders) {
         const rolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
-        const match = rolls.find(r => 
+        const match = rolls.find(r =>
           (r.processed_roll_id && r.processed_roll_id.toLowerCase() === targetId.toLowerCase()) ||
           (r.id && r.id.toLowerCase() === targetId.toLowerCase())
         );
@@ -412,12 +419,12 @@ function PackageSlipForm({ onBack, editSlipId }) {
 
       if (!lockedOrderId) {
         setLockedOrderId(currentOrderId);
-        
+
         const { data: piData } = await supabase
           .from('proforma_invoices')
           .select('*')
           .eq('order_id', currentOrderId);
-        
+
         const piNumbers = piData && piData.length > 0 ? piData.map(pi => pi.invoice_number).join(', ') : '—';
         const poNumber = foundOrder.order?.buyer_po_number || '—';
 
@@ -446,7 +453,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
         }
 
         const countStr = getShortCountsString(foundOrder.order?.technical_specs);
-        const constrStr = foundOrder.order?.technical_specs 
+        const constrStr = foundOrder.order?.technical_specs
           ? `${foundOrder.order.technical_specs.order_reed || '—'} / ${foundOrder.order.technical_specs.order_pick || '—'}`
           : '—';
 
@@ -468,7 +475,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
 
         const defaultAvg = parseFloat(foundOrder.order?.avg_weight_meter || 0);
         setAvgWeightMeter(defaultAvg ? defaultAvg.toString() : '0.35');
-        
+
         const calculatedWeight = Math.round(qtyMeters * (defaultAvg || 0.35) * 1000) / 1000;
         setAddedRolls([{
           roll_id: foundRoll.processed_roll_id || foundRoll.id,
@@ -498,6 +505,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
   };
 
   const handleInputChange = (val) => {
+    if (slipStatus === 'dispatched') return;
     setScanInput(val);
     const targetId = val.trim();
     if (!targetId) return;
@@ -506,7 +514,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
     let foundOrder = null;
     for (const wo of allWeavingOrders) {
       const rolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
-      const match = rolls.find(r => 
+      const match = rolls.find(r =>
         (r.processed_roll_id && r.processed_roll_id.toLowerCase() === targetId.toLowerCase()) ||
         (r.id && r.id.toLowerCase() === targetId.toLowerCase())
       );
@@ -523,6 +531,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
   };
 
   const handleRemoveRoll = (rollId) => {
+    if (slipStatus === 'dispatched') return;
     const updated = addedRolls.filter(r => r.roll_id !== rollId);
     setAddedRolls(updated);
 
@@ -547,6 +556,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
   };
 
   const handleAvgWeightChange = (val) => {
+    if (slipStatus === 'dispatched') return;
     setAvgWeightMeter(val);
     const numericAvg = parseFloat(val) || 0;
     setAddedRolls(prev => prev.map(item => {
@@ -559,6 +569,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
   };
 
   const handleItemWeightChange = (rollId, val) => {
+    if (slipStatus === 'dispatched') return;
     const numericVal = parseFloat(val) || 0;
     setAddedRolls(prev => prev.map(item => {
       if (item.roll_id === rollId) {
@@ -573,6 +584,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
   };
 
   const resetManualWeight = (rollId) => {
+    if (slipStatus === 'dispatched') return;
     const numericAvg = parseFloat(avgWeightMeter) || 0;
     setAddedRolls(prev => prev.map(item => {
       if (item.roll_id === rollId) {
@@ -593,6 +605,10 @@ function PackageSlipForm({ onBack, editSlipId }) {
   const totalWeightKg = addedRolls.reduce((sum, item) => sum + item.weight, 0);
 
   const handleSave = async () => {
+    if (slipStatus === 'dispatched') {
+      setError('This package slip has been dispatched and cannot be edited.');
+      return;
+    }
     if (!slipDate) { setError('Please specify Slip Date.'); return; }
     if (addedRolls.length === 0) { setError('Please scan/add at least one roll.'); return; }
 
@@ -645,6 +661,9 @@ function PackageSlipForm({ onBack, editSlipId }) {
       if (result.error) throw result.error;
 
       setSavedSlip(result.data);
+      if (result.data) {
+        setSlipStatus(result.data.status || 'created');
+      }
       setSuccess(`Package Slip ${editSlipId ? 'updated' : 'saved'} successfully!`);
     } catch (err) {
       if (err.message?.includes('does not exist') || err.code === '42P01') {
@@ -669,7 +688,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
     if (!specs) return '—';
     const allWarpIds = specs.warp_selections?.flat() || [];
     const allWeftIds = specs.weft_selections?.flat() || [];
-    
+
     const formatYarnPreview = (y) => {
       if (!y) return '';
       return [y.count_value, y.spec, y.spec1].filter(Boolean).join(' ');
@@ -709,15 +728,20 @@ function PackageSlipForm({ onBack, editSlipId }) {
 
       {error && <div className="no-print" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '0.75rem 1rem', color: '#dc2626', fontSize: '0.85rem', marginBottom: '1rem' }}>{error}</div>}
       {success && <div className="no-print" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '0.75rem 1rem', color: '#16a34a', fontSize: '0.85rem', marginBottom: '1rem' }}>{success}</div>}
+      {slipStatus === 'dispatched' && (
+        <div className="no-print" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '0.75rem 1rem', color: '#1e40af', fontSize: '0.85rem', marginBottom: '1rem', fontWeight: '500' }}>
+          ℹ️ This package slip has been dispatched and cannot be edited.
+        </div>
+      )}
 
       {/* Main Grid */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.25rem', marginBottom: '1.25rem' }}>
-        
+
         {/* Left Card: Input details */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-md)' }}>
             <h3 style={{ fontSize: '0.9rem', fontWeight: '800', color: 'var(--color-primary)', margin: '0 0 1.25rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Scan washed inspected rolls</h3>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                 <span style={labelStyle}>Slip Date *</span>
@@ -735,17 +759,19 @@ function PackageSlipForm({ onBack, editSlipId }) {
                     onChange={e => handleInputChange(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleAddRoll()}
                     style={inputStyle}
+                    disabled={slipStatus === 'dispatched'}
                   />
                   <button
                     onClick={() => handleAddRoll()}
-                    disabled={isLoading}
-                    style={{ background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '8px', padding: '0 1rem', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer' }}
+                    disabled={isLoading || slipStatus === 'dispatched'}
+                    style={{ background: slipStatus === 'dispatched' ? '#cbd5e1' : 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '8px', padding: '0 1rem', fontWeight: '700', fontSize: '0.8rem', cursor: (isLoading || slipStatus === 'dispatched') ? 'not-allowed' : 'pointer' }}
                   >
                     Add
                   </button>
                   <button
                     onClick={startCameraScanner}
-                    style={{ background: 'rgba(128,0,0,0.07)', color: 'var(--color-primary)', border: '1.5px solid rgba(128,0,0,0.2)', borderRadius: '8px', padding: '0 0.8rem', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer' }}
+                    disabled={slipStatus === 'dispatched'}
+                    style={{ background: 'rgba(128,0,0,0.07)', color: 'var(--color-primary)', border: '1.5px solid rgba(128,0,0,0.2)', borderRadius: '8px', padding: '0 0.8rem', fontWeight: '700', fontSize: '0.8rem', cursor: slipStatus === 'dispatched' ? 'not-allowed' : 'pointer', opacity: slipStatus === 'dispatched' ? 0.5 : 1 }}
                   >
                     Camera
                   </button>
@@ -767,6 +793,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
                     value={avgWeightMeter}
                     onChange={e => handleAvgWeightChange(e.target.value)}
                     style={inputStyle}
+                    disabled={slipStatus === 'dispatched'}
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -796,7 +823,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
         {/* Right Card: Auto-populated details */}
         <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-md)' }}>
           <h3 style={{ fontSize: '0.9rem', fontWeight: '800', color: 'var(--color-primary)', margin: '0 0 1.25rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Auto-populated Details</h3>
-          
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.85rem' }}>
             <div>
               <span style={{ ...labelStyle, display: 'block', marginBottom: '0.2rem' }}>Vendor Details</span>
@@ -836,7 +863,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
               <span style={labelStyle}>Remarks</span>
-              <input type="text" placeholder="Optional notes/remarks" value={remarks} onChange={e => setRemarks(e.target.value)} style={inputStyle} />
+              <input type="text" placeholder="Optional notes/remarks" value={remarks} onChange={e => setRemarks(e.target.value)} style={inputStyle} disabled={slipStatus === 'dispatched'} />
             </div>
           </div>
         </div>
@@ -875,8 +902,9 @@ function PackageSlipForm({ onBack, editSlipId }) {
                           value={r.weight}
                           onChange={e => handleItemWeightChange(r.roll_id, e.target.value)}
                           style={{ ...inputStyle, width: '100px', textAlign: 'right', padding: '0.35rem' }}
+                          disabled={slipStatus === 'dispatched'}
                         />
-                        {r.isManualWeight && (
+                        {r.isManualWeight && slipStatus !== 'dispatched' && (
                           <button
                             onClick={() => resetManualWeight(r.roll_id)}
                             style={{ border: 'none', background: '#f3f4f6', borderRadius: '4px', padding: '0.2rem 0.4rem', cursor: 'pointer', fontSize: '0.7rem' }}
@@ -886,9 +914,15 @@ function PackageSlipForm({ onBack, editSlipId }) {
                         )}
                       </td>
                       <td style={{ padding: '0.5rem 0.75rem' }}>
-                        <button onClick={() => handleRemoveRoll(r.roll_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', display: 'flex' }}>
-                          <Trash2 size={16} />
-                        </button>
+                        {slipStatus === 'dispatched' ? (
+                          <button disabled style={{ background: 'none', border: 'none', cursor: 'not-allowed', color: '#cbd5e1', display: 'flex' }}>
+                            <Trash2 size={16} />
+                          </button>
+                        ) : (
+                          <button onClick={() => handleRemoveRoll(r.roll_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', display: 'flex' }}>
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -921,7 +955,24 @@ function PackageSlipForm({ onBack, editSlipId }) {
             <Printer size={15} /> Print Slip
           </button>
         )}
-        <button onClick={handleSave} disabled={isLoading} style={{ background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '10px', padding: '0.6rem 1.5rem', cursor: isLoading ? 'not-allowed' : 'pointer', fontWeight: '700', fontSize: '0.87rem', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: isLoading ? 0.7 : 1 }}>
+        <button
+          onClick={handleSave}
+          disabled={isLoading || slipStatus === 'dispatched'}
+          style={{
+            background: slipStatus === 'dispatched' ? '#cbd5e1' : 'var(--color-primary)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '10px',
+            padding: '0.6rem 1.5rem',
+            cursor: (isLoading || slipStatus === 'dispatched') ? 'not-allowed' : 'pointer',
+            fontWeight: '700',
+            fontSize: '0.87rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            opacity: (isLoading || slipStatus === 'dispatched') ? 0.7 : 1
+          }}
+        >
           {isLoading ? <Loader size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={15} />}
           {isLoading ? 'Saving...' : 'Save Slip'}
         </button>
@@ -980,7 +1031,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
               }
             }
           `}</style>
-          
+
           {[1, 2].map((copyNum, cIdx) => (
             <div key={copyNum} style={{
               height: '132mm',
@@ -994,7 +1045,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
               justifyContent: 'space-between',
               position: 'relative'
             }}>
-              
+
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #000', paddingBottom: '3mm', marginBottom: '2mm' }}>
                 <div style={{ display: 'flex', gap: '8mm', alignItems: 'center' }}>
                   <img src="/logo.png" alt="AT Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
@@ -1004,7 +1055,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
                     <p style={{ margin: 0, fontSize: '10px' }}><strong>GSTIN:</strong> 33AAZFA60686D1Z6</p>
                   </div>
                 </div>
-                
+
                 <div style={{ textAlign: 'center', padding: '0 4mm' }}>
                   <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#800000', letterSpacing: '0.5px' }}>PACKAGE SLIP</h2>
                   <div style={{ fontSize: '10px', fontWeight: 'bold', border: '1px solid #000', padding: '1px 3px', borderRadius: '3px', marginTop: '1mm', display: 'inline-block' }}>
@@ -1029,7 +1080,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
                   <p style={{ margin: '0 0 1px 0', lineHeight: '1.2' }}>{vendorDetails.address}</p>
                   <p style={{ margin: 0 }}><strong>GSTIN:</strong> {vendorDetails.gstin}</p>
                 </div>
-                
+
                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid #000', borderRadius: '4px', padding: '2mm' }}>
                   <p style={{ margin: 0 }}><strong>Slip Number:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '13px' }}>{slipNumber}</span></p>
                   <p style={{ margin: 0 }}><strong>Slip Date:</strong> {formatDate(slipDate)}</p>
@@ -1183,13 +1234,38 @@ function PackageSlipList({ onCreateNew, onEdit, onPrint, onBackToDashboard }) {
     setLoading(true);
     setError('');
     try {
-      const { data, error: err } = await supabase
+      const { data: slipsData, error: err } = await supabase
         .from('dispatch_package_slips')
-        .select('*, orders(order_number)')
+        .select('*, orders(order_number, buyer_po_number, proforma_invoices(invoice_number))')
         .order('created_at', { ascending: false });
 
       if (err) throw err;
-      setSlips(data || []);
+
+      // Fetch dispatch bills to resolve linked bill/invoice details in memory
+      const { data: billsData } = await supabase
+        .from('dispatch_bills')
+        .select('id, bill_number, bill_date, transport_name, vehicle_number, lr_no, lr_date, package_slip_ids');
+
+      const enriched = (slipsData || []).map(slip => {
+        const linkedBill = (billsData || []).find(b => {
+          const slipIds = Array.isArray(b.package_slip_ids) ? b.package_slip_ids : [];
+          return slipIds.includes(slip.slip_number);
+        });
+        return {
+          ...slip,
+          linkedBill: linkedBill ? {
+            id: linkedBill.id,
+            bill_number: linkedBill.bill_number,
+            bill_date: linkedBill.bill_date,
+            transport_name: linkedBill.transport_name || null,
+            vehicle_number: linkedBill.vehicle_number || null,
+            lr_no: linkedBill.lr_no || null,
+            lr_date: linkedBill.lr_date || null
+          } : null
+        };
+      });
+
+      setSlips(enriched);
     } catch (err) {
       console.error("Error loading slips list:", err);
       setError("Failed to load generated package slips: " + err.message);
@@ -1438,11 +1514,14 @@ function PackageSlipList({ onCreateNew, onEdit, onPrint, onBackToDashboard }) {
               <tbody>
                 {filteredSlips.map(s => {
                   const isExpanded = !!expandedRows[s.id];
+                  const dynamicPi = s.orders?.proforma_invoices?.map(pi => pi.invoice_number).filter(pi => pi && pi !== '—').join(', ');
+                  const displayPi = dynamicPi || s.pi_numbers || '—';
+                  const displayPo = (s.orders?.buyer_po_number && s.orders.buyer_po_number !== '—') ? s.orders.buyer_po_number : (s.po_number || '—');
                   return (
                     <React.Fragment key={s.id}>
                       <tr style={{ borderBottom: '1px solid #eee', transition: 'background 0.2s' }}
-                          onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       >
                         <td style={{ textAlign: 'center', cursor: 'pointer', color: 'var(--color-primary)' }} onClick={() => toggleRow(s.id)}>
                           {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -1451,8 +1530,8 @@ function PackageSlipList({ onCreateNew, onEdit, onPrint, onBackToDashboard }) {
                         <td style={{ padding: '0.75rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{s.slip_number}</td>
                         <td style={{ padding: '0.75rem', fontWeight: '700' }}>{s.orders?.order_number || '—'}</td>
                         <td style={{ padding: '0.75rem' }}>{s.design_name} / {s.design_no}</td>
-                        <td style={{ padding: '0.75rem', fontFamily: 'monospace' }}>{s.pi_numbers || '—'}</td>
-                        <td style={{ padding: '0.75rem', fontFamily: 'monospace' }}>{s.po_number || '—'}</td>
+                        <td style={{ padding: '0.75rem', fontFamily: 'monospace' }}>{displayPi}</td>
+                        <td style={{ padding: '0.75rem', fontFamily: 'monospace' }}>{displayPo}</td>
                         <td style={{ padding: '0.75rem' }}>{s.vendor_name}</td>
                         <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '700' }}>{s.total_rolls}</td>
                         <td style={{ padding: '0.75rem', textAlign: 'right' }}>{fmtNum(s.total_qty)} m</td>
@@ -1470,17 +1549,27 @@ function PackageSlipList({ onCreateNew, onEdit, onPrint, onBackToDashboard }) {
                         </td>
                         <td style={{ padding: '0.75rem', textAlign: 'center' }}>
                           <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
-                            <button
+                            {s.status === 'dispatched' ? (
+                              <button
+                                disabled
+                                title="Dispatched slip cannot be edited"
+                                style={{ background: 'none', border: 'none', color: '#cbd5e1', cursor: 'not-allowed', display: 'flex', padding: '0.2rem' }}
+                              >
+                                <Edit size={16} />
+                              </button>
+                            ) : (
+                              <button
                                 onClick={() => onEdit(s.id)}
                                 title="Edit Slip"
                                 style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', display: 'flex', padding: '0.2rem' }}
-                            >
-                              <Edit size={16} />
-                            </button>
+                              >
+                                <Edit size={16} />
+                              </button>
+                            )}
                             <button
-                                onClick={() => onPrint(s)}
-                                title="Print Slip"
-                                style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', display: 'flex', padding: '0.2rem' }}
+                              onClick={() => onPrint(s)}
+                              title="Print Slip"
+                              style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', display: 'flex', padding: '0.2rem' }}
                             >
                               <Printer size={16} />
                             </button>
@@ -1492,30 +1581,75 @@ function PackageSlipList({ onCreateNew, onEdit, onPrint, onBackToDashboard }) {
                       {isExpanded && (
                         <tr>
                           <td colSpan={13} style={{ background: '#fcfcfc', padding: '1rem 1.5rem', borderBottom: '1px solid #eee' }}>
-                            <div style={{ borderLeft: '3px solid var(--color-primary)', paddingLeft: '1rem' }}>
-                              <h5 style={{ margin: '0 0 0.5rem 0', color: 'var(--color-primary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Included Rolls ({s.items?.length || 0})
-                              </h5>
-                              <table style={{ width: '100%', maxWidth: '600px', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                                <thead>
-                                  <tr style={{ borderBottom: '1px solid #ddd', color: '#6b7280' }}>
-                                    <th style={{ padding: '0.4rem', textAlign: 'left' }}>S.No</th>
-                                    <th style={{ padding: '0.4rem', textAlign: 'left' }}>Roll ID</th>
-                                    <th style={{ padding: '0.4rem', textAlign: 'right' }}>Quantity (m)</th>
-                                    <th style={{ padding: '0.4rem', textAlign: 'right' }}>Weight (kg)</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(s.items || []).map((item, idx) => (
-                                    <tr key={item.roll_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                      <td style={{ padding: '0.4rem', color: '#9ca3af' }}>{idx + 1}</td>
-                                      <td style={{ padding: '0.4rem', fontFamily: 'monospace', fontWeight: '700' }}>{item.roll_id}</td>
-                                      <td style={{ padding: '0.4rem', textAlign: 'right' }}>{fmtNum(item.qty)} m</td>
-                                      <td style={{ padding: '0.4rem', textAlign: 'right', fontWeight: '700' }}>{fmtNum(item.weight, 3)} kg</td>
+                            <div style={{ display: 'flex', gap: '2.5rem', flexWrap: 'wrap' }}>
+                              <div style={{ borderLeft: '3px solid var(--color-primary)', paddingLeft: '1rem', flex: '1', minWidth: '280px' }}>
+                                <h5 style={{ margin: '0 0 0.5rem 0', color: 'var(--color-primary)', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                  Included Rolls ({s.items?.length || 0})
+                                </h5>
+                                <table style={{ width: '100%', maxWidth: '600px', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                  <thead>
+                                    <tr style={{ borderBottom: '1px solid #ddd', color: '#6b7280' }}>
+                                      <th style={{ padding: '0.4rem', textAlign: 'left' }}>S.No</th>
+                                      <th style={{ padding: '0.4rem', textAlign: 'left' }}>Roll ID</th>
+                                      <th style={{ padding: '0.4rem', textAlign: 'right' }}>Quantity (m)</th>
+                                      <th style={{ padding: '0.4rem', textAlign: 'right' }}>Weight (kg)</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                                  </thead>
+                                  <tbody>
+                                    {(s.items || []).map((item, idx) => (
+                                      <tr key={item.roll_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                        <td style={{ padding: '0.4rem', color: '#9ca3af' }}>{idx + 1}</td>
+                                        <td style={{ padding: '0.4rem', fontFamily: 'monospace', fontWeight: '700' }}>{item.roll_id}</td>
+                                        <td style={{ padding: '0.4rem', textAlign: 'right' }}>{fmtNum(item.qty)} m</td>
+                                        <td style={{ padding: '0.4rem', textAlign: 'right', fontWeight: '700' }}>{fmtNum(item.weight, 3)} kg</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {s.linkedBill && (
+                                <div style={{ borderLeft: '3px solid #10b981', paddingLeft: '1rem', flex: '1', minWidth: '280px' }}>
+                                  <h5 style={{ margin: '0 0 0.5rem 0', color: '#10b981', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                    Linked Bill / Invoice Details
+                                  </h5>
+                                  <div style={{ fontSize: '0.8rem', display: 'grid', gridTemplateColumns: '120px 1fr', gap: '0.45rem', color: 'var(--text-current)' }}>
+                                    <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Bill Number:</span>
+                                    <span style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>{s.linkedBill.bill_number}</span>
+                                    
+                                    <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Bill Date:</span>
+                                    <span>{formatDate(s.linkedBill.bill_date)}</span>
+                                    
+                                    {s.linkedBill.transport_name && (
+                                      <>
+                                        <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Transport Name:</span>
+                                        <span>{s.linkedBill.transport_name}</span>
+                                      </>
+                                    )}
+                                    
+                                    {s.linkedBill.vehicle_number && (
+                                      <>
+                                        <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>Vehicle Number:</span>
+                                        <span>{s.linkedBill.vehicle_number}</span>
+                                      </>
+                                    )}
+                                    
+                                    {s.linkedBill.lr_no && (
+                                      <>
+                                        <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>LR No:</span>
+                                        <span style={{ fontFamily: 'monospace' }}>{s.linkedBill.lr_no}</span>
+                                      </>
+                                    )}
+                                    
+                                    {s.linkedBill.lr_date && (
+                                      <>
+                                        <span style={{ color: 'var(--text-muted-current)', fontWeight: '600' }}>LR Date:</span>
+                                        <span>{formatDate(s.linkedBill.lr_date)}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1566,7 +1700,7 @@ const numberToWords = (num) => {
   const convertIndian = (n) => {
     if (n === 0) return 'Zero';
     let str = '';
-    
+
     if (n >= 10000000) {
       str += convertGroup(Math.floor(n / 10000000)) + ' Crore ';
       n %= 10000000;
@@ -1599,11 +1733,6 @@ const getConstruction = (specs) => {
   return `${specs.order_reed || specs.reed || '—'} / ${specs.order_pick || specs.pick || '—'}`;
 };
 
-const getShortCountsString = (specs) => {
-  if (!specs) return '—';
-  // Attempt to build preview warp/weft selection counts
-  return specs.yarn_type || '—';
-};
 
 // ─────────────────────────────────────────────
 // Bill List (List of created Invoices/Bills)
@@ -1621,65 +1750,99 @@ function BillList({ onCreateNew, onPrintInvoice, onPrintPackingList, onEdit, onB
   const [filterDesign, setFilterDesign] = useState([]);
   const [filterBilledTo, setFilterBilledTo] = useState([]);
 
+  const fetchBills = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('dispatch_bills')
+        .select(`
+          *,
+          buyer:master_brands(id, brand_name)
+        `)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+
+      // Enrich bills with slips and PO/PI numbers
+      const enriched = await Promise.all((data || []).map(async (b) => {
+        let slipsData = [];
+        if (b.package_slip_ids && b.package_slip_ids.length > 0) {
+          const { data: slips } = await supabase
+            .from('dispatch_package_slips')
+            .select('id, slip_number, order_id, total_rolls, total_qty, total_weight')
+            .in('slip_number', b.package_slip_ids);
+          slipsData = slips || [];
+        }
+        b.slips = slipsData;
+
+        if (!b.items || b.items.length === 0) return b;
+        const orderIds = b.items.map(i => i.order_id).filter(Boolean);
+        if (orderIds.length > 0) {
+          const { data: ords } = await supabase
+            .from('orders')
+            .select(`
+              id,
+              buyer_po_number,
+              proforma_invoices(invoice_number)
+            `)
+            .in('id', orderIds);
+
+          if (ords) {
+            b.items = b.items.map(item => {
+              const match = ords.find(o => o.id === item.order_id);
+              return {
+                ...item,
+                po_number: item.po_number || match?.buyer_po_number || '—',
+                pi_number: item.pi_number || match?.proforma_invoices?.[0]?.invoice_number || '—'
+              };
+            });
+          }
+        }
+        return b;
+      }));
+
+      setBills(enriched);
+    } catch (err) {
+      console.error("Error loading bills:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchBills = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('dispatch_bills')
-          .select(`
-            *,
-            buyer:master_brands(id, brand_name)
-          `)
-          .order('created_at', { ascending: false });
-        if (error) throw error;
-
-        // Enrich bills with slips and PO/PI numbers
-        const enriched = await Promise.all((data || []).map(async (b) => {
-          let slipsData = [];
-          if (b.package_slip_ids && b.package_slip_ids.length > 0) {
-            const { data: slips } = await supabase
-              .from('dispatch_package_slips')
-              .select('id, slip_number, order_id, total_rolls, total_qty, total_weight')
-              .in('slip_number', b.package_slip_ids);
-            slipsData = slips || [];
-          }
-          b.slips = slipsData;
-
-          if (!b.items || b.items.length === 0) return b;
-          const orderIds = b.items.map(i => i.order_id).filter(Boolean);
-          if (orderIds.length > 0) {
-            const { data: ords } = await supabase
-              .from('orders')
-              .select(`
-                id,
-                buyer_po_number,
-                proforma_invoices(invoice_number)
-              `)
-              .in('id', orderIds);
-            
-            if (ords) {
-              b.items = b.items.map(item => {
-                const match = ords.find(o => o.id === item.order_id);
-                return {
-                  ...item,
-                  po_number: item.po_number || match?.buyer_po_number || '—',
-                  pi_number: item.pi_number || match?.proforma_invoices?.[0]?.invoice_number || '—'
-                };
-              });
-            }
-          }
-          return b;
-        }));
-
-        setBills(enriched);
-      } catch (err) {
-        console.error("Error loading bills:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchBills();
   }, []);
+
+  const handleDeleteBill = async (bill) => {
+    const confirmDelete = window.confirm(`Are you sure you want to delete Bill/Invoice ${bill.bill_number}?`);
+    if (!confirmDelete) return;
+
+    try {
+      setLoading(true);
+
+      // 1. Update the status of package slips back to 'created'
+      if (bill.package_slip_ids && bill.package_slip_ids.length > 0) {
+        const { error: slipUpdateErr } = await supabase
+          .from('dispatch_package_slips')
+          .update({ status: 'created' })
+          .in('slip_number', bill.package_slip_ids);
+        if (slipUpdateErr) throw slipUpdateErr;
+      }
+
+      // 2. Delete the bill from dispatch_bills
+      const { error: deleteErr } = await supabase
+        .from('dispatch_bills')
+        .delete()
+        .eq('id', bill.id);
+      if (deleteErr) throw deleteErr;
+
+      alert(`Bill/Invoice ${bill.bill_number} deleted successfully!`);
+      await fetchBills();
+    } catch (err) {
+      console.error("Error deleting bill:", err);
+      alert("Error deleting bill: " + err.message);
+      setLoading(false);
+    }
+  };
 
   const toggleRow = (id) => {
     setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
@@ -1707,7 +1870,7 @@ function BillList({ onCreateNew, onPrintInvoice, onPrintPackingList, onEdit, onB
 
     const filtered = bills.filter(b => {
       const matchBill = tempFilters.billNos.length === 0 || tempFilters.billNos.includes(b.bill_number);
-      const matchOrder = tempFilters.orderNos.length === 0 || tempFilters.orderNos.some(oNo => 
+      const matchOrder = tempFilters.orderNos.length === 0 || tempFilters.orderNos.some(oNo =>
         (b.items || []).some(i => i.order_number === oNo)
       );
       const matchDesign = tempFilters.designs.length === 0 || tempFilters.designs.some(des =>
@@ -1736,7 +1899,7 @@ function BillList({ onCreateNew, onPrintInvoice, onPrintPackingList, onEdit, onB
 
   const filteredBills = bills.filter(b => {
     const matchBill = filterBillNo.length === 0 || filterBillNo.includes(b.bill_number);
-    const matchOrder = filterOrderNo.length === 0 || filterOrderNo.some(oNo => 
+    const matchOrder = filterOrderNo.length === 0 || filterOrderNo.some(oNo =>
       (b.items || []).some(i => i.order_number === oNo)
     );
     const matchDesign = filterDesign.length === 0 || filterDesign.some(des =>
@@ -1886,8 +2049,8 @@ function BillList({ onCreateNew, onPrintInvoice, onPrintPackingList, onEdit, onB
                 return (
                   <React.Fragment key={b.id}>
                     <tr style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.2s' }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <td style={{ textAlign: 'center', cursor: 'pointer', color: 'var(--color-primary)' }} onClick={() => toggleRow(b.id)}>
                         {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -1944,7 +2107,7 @@ function BillList({ onCreateNew, onPrintInvoice, onPrintPackingList, onEdit, onB
                       <tr>
                         <td colSpan={12} style={{ background: '#f8fafc', padding: '1.25rem 2.5rem', borderBottom: '1px solid #e2e8f0' }}>
                           <div style={{ borderLeft: '3.5px solid var(--color-primary)', paddingLeft: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                            
+
                             {/* Address details grid */}
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem', fontSize: '0.8rem' }}>
                               <div>
@@ -2057,6 +2220,38 @@ function BillList({ onCreateNew, onPrintInvoice, onPrintPackingList, onEdit, onB
                               </table>
                             </div>
 
+                            {/* Delete Bill Section */}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
+                              <button
+                                onClick={() => handleDeleteBill(b)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.5rem',
+                                  padding: '0.6rem 1.2rem',
+                                  background: '#fee2e2',
+                                  border: '1px solid #fca5a5',
+                                  borderRadius: '8px',
+                                  color: '#dc2626',
+                                  fontWeight: '600',
+                                  fontSize: '0.8rem',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={e => {
+                                  e.currentTarget.style.background = '#fecaca';
+                                  e.currentTarget.style.boxShadow = '0 2px 4px rgba(220, 38, 38, 0.1)';
+                                }}
+                                onMouseLeave={e => {
+                                  e.currentTarget.style.background = '#fee2e2';
+                                  e.currentTarget.style.boxShadow = 'none';
+                                }}
+                              >
+                                <Trash2 size={16} />
+                                Delete Bill / Invoice
+                              </button>
+                            </div>
+
                           </div>
                         </td>
                       </tr>
@@ -2081,7 +2276,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
   const [billDate, setBillDate] = useState(new Date().toISOString().slice(0, 10));
   const [buyerId, setBuyerId] = useState('');
   const [step, setStep] = useState(1);
-  
+
   // Selection
   const [orders, setOrders] = useState([]);
   const [selectedOrders, setSelectedOrders] = useState([]);
@@ -2104,9 +2299,9 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
   const [shippedTo, setShippedTo] = useState('');
 
   // Dropdown list data
-  const [buyers, setBuyers] = useState([]);
   const [partners, setPartners] = useState([]);
-  
+  const [yarnCounts, setYarnCounts] = useState([]);
+
   // Transporter
   const [transportName, setTransportName] = useState('');
   const [transportMode, setTransportMode] = useState('ROAD');
@@ -2126,8 +2321,8 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
 
   // Load Initial Data
   useEffect(() => {
-    supabase.from('master_brands').select('id, brand_name').order('brand_name').then(({ data }) => setBuyers(data || []));
-    
+    supabase.from('master_yarn_counts').select('*').then(({ data }) => setYarnCounts(data || []));
+
     // Fetch orders with vendor partner data joined and proforma invoice metadata
     supabase
       .from('orders')
@@ -2151,7 +2346,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
       });
 
     // Fetch master partners for shippers dropdowns
-    supabase.from('master_partners').select('id, partner_name, address, gstin').order('partner_name').then(({ data }) => {
+    supabase.from('master_partners').select('id, partner_name, address, gstin, partner_type').order('partner_name').then(({ data }) => {
       setPartners(data || []);
     });
   }, []);
@@ -2550,7 +2745,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
           order_number: item.order.order_number,
           design_name: item.order.design_name,
           design_no: item.order.design_no,
-          count: getCountsString(item.order.technical_specs),
+          count: getShortCountsString(item.order.technical_specs),
           construction: getConstruction(item.order.technical_specs),
           width: item.order.technical_specs?.finished_width || item.order.technical_specs?.order_width || '—',
           hsn_code: item.hsn,
@@ -2625,7 +2820,8 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
             .update({ status: 'created' })
             .in('slip_number', originalBill.package_slip_ids);
         }
-
+      }
+      if (editBillId) {
         res = await supabase.from('dispatch_bills').update(payload).eq('id', editBillId).select().single();
       } else {
         res = await supabase.from('dispatch_bills').insert(payload).select().single();
@@ -2672,255 +2868,372 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
   };
   const labelStyle = { fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.04em' };
 
+  const getShortCountsString = (specs) => {
+    if (!specs) return '—';
+    const allWarpIds = specs.warp_selections?.flat() || [];
+    const allWeftIds = specs.weft_selections?.flat() || [];
+    
+    const formatYarnPreview = (y) => {
+      if (!y) return '';
+      return [y.count_value, y.spec, y.spec1].filter(Boolean).join(' ');
+    };
+
+    const warpStr = allWarpIds.map(id => {
+      const y = yarnCounts.find(yc => yc.id === id);
+      return y ? formatYarnPreview(y) : '';
+    }).filter(Boolean).join(' + ');
+
+    const weftStr = allWeftIds.map(id => {
+      const y = yarnCounts.find(yc => yc.id === id);
+      return y ? formatYarnPreview(y) : '';
+    }).filter(Boolean).join(' + ');
+
+    if (!warpStr && !weftStr) {
+      return specs.yarn_type || '—';
+    }
+
+    return `${warpStr || '—'} x ${weftStr || '—'}`;
+  };
+
   return (
     <div className="fade-in" style={{ width: '100%' }}>
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
         <button onClick={onBack} style={{ background: 'rgba(128,0,0,0.07)', border: 'none', borderRadius: '10px', padding: '0.5rem', cursor: 'pointer', color: 'var(--color-primary)', display: 'flex' }}>
           <ArrowLeft size={20} />
         </button>
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: '900', color: 'var(--color-primary)', margin: 0 }}>{editBillId ? 'Edit Bill/Invoice' : 'Create Bill/Invoice'}</h1>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)', margin: 0 }}>Invoice Number: <strong style={{ fontFamily: 'monospace', color: 'var(--text-current)' }}>{billNumber || 'Generating...'}</strong></p>
+          <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>Invoice Number: <strong style={{ fontFamily: 'monospace', color: 'var(--text-current)' }}>{billNumber || 'Generating...'}</strong></p>
         </div>
       </div>
 
-      {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '0.75rem 1rem', color: '#dc2626', fontSize: '0.85rem', marginBottom: '1rem' }}>{error}</div>}
-      {success && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '0.75rem 1rem', color: '#16a34a', fontSize: '0.85rem', marginBottom: '1rem' }}>{success}</div>}
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-        {/* Left Side: Order & Slips Selection Split Panel */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          
-          {/* Multi-select order search dropdown */}
-          <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.25rem', boxShadow: 'var(--shadow-md)', position: 'relative' }}>
-            <span style={labelStyle}>Select Orders</span>
-            <div style={{ position: 'relative', marginTop: '0.35rem' }}>
-              <button
-                type="button"
-                onClick={() => setShowOrderDrop(!showOrderDrop)}
-                style={{
-                  ...inputStyle,
+      {/* Wizard Progress Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', padding: '1.25rem', background: '#f8fafc', borderRadius: '16px', border: '1px solid var(--border-current)', boxShadow: 'var(--shadow-sm)' }}>
+        {[
+          { num: 1, label: 'Select Orders', desc: 'Choose active orders' },
+          { num: 2, label: 'Select Slips', desc: 'Add package slips' },
+          { num: 3, label: 'Addresses & Transport', desc: 'Vendor & shipping details' },
+          { num: 4, label: 'Review & Pricing', desc: 'HSN, Rate & tax details' }
+        ].map((s, idx) => {
+          const isCompleted = step > s.num;
+          const isActive = step === s.num;
+          return (
+            <React.Fragment key={s.num}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: isCompleted ? '#10b981' : isActive ? 'var(--color-primary)' : '#e2e8f0',
+                  color: isCompleted || isActive ? 'white' : '#64748b',
                   display: 'flex',
-                  justifyContent: 'space-between',
                   alignItems: 'center',
-                  cursor: 'pointer'
-                }}
-              >
-                <span>
-                  {selectedOrders.length > 0 
-                    ? `${selectedOrders.length} order(s) selected` 
-                    : 'Search and select orders...'}
-                </span>
-                <ChevronDown size={16} />
-              </button>
-
-              {showOrderDrop && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid var(--border-current)', borderRadius: '8px', boxShadow: 'var(--shadow-lg)', zIndex: 100, maxHeight: '250px', overflowY: 'auto', marginTop: '4px', padding: '0.5rem' }}>
-                  <input
-                    type="text"
-                    placeholder="Type to filter..."
-                    value={orderSearch}
-                    onChange={e => setOrderSearch(e.target.value)}
-                    style={{ ...inputStyle, marginBottom: '0.5rem' }}
-                  />
-                  {filteredOrders.slice(0, 50).map(o => {
-                    const isSelected = selectedOrders.some(sel => sel.id === o.id);
-                    return (
-                      <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.5rem', cursor: 'pointer', borderRadius: '6px' }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleOrderSelection(o)}
-                        />
-                        <div style={{ fontSize: '0.8rem' }}>
-                          <strong>{o.order_number}</strong> — {o.design_no} {o.design_name}
-                          <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                            PO: {o.buyer_po_number || '—'} | PI: {o.proforma_invoices?.[0]?.invoice_number || itemsDetails[o.id]?.piNumber || '—'}
-                          </div>
-                        </div>
-                      </label>
-                    );
-                  })}
-                  {filteredOrders.length === 0 && <div style={{ padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted-current)', textAlign: 'center' }}>No orders found</div>}
+                  justifyContent: 'center',
+                  fontWeight: 'bold',
+                  fontSize: '0.9rem',
+                  boxShadow: isActive ? '0 0 0 4px rgba(128,0,0,0.15)' : 'none',
+                  transition: 'all 0.3s ease'
+                }}>
+                  {isCompleted ? <Check size={18} /> : s.num}
                 </div>
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: isActive ? '800' : '600', color: isActive ? 'var(--color-primary)' : '#475569' }}>
+                    {s.label}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                    {s.desc}
+                  </div>
+                </div>
+              </div>
+              {idx < 3 && (
+                <div style={{ flex: 0.5, height: '2px', background: step > s.num ? '#10b981' : '#e2e8f0', margin: '0 1rem' }} />
               )}
-            </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
 
-            {/* Selected Orders Grid Table */}
-            {selectedOrders.length > 0 && (
-              <div style={{ overflowX: 'auto', marginTop: '1.25rem' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border-current)' }}>
-                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Order No</th>
-                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Design</th>
-                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Vendor</th>
-                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Qty</th>
-                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Dispatched</th>
-                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Pending</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedOrders.map(o => {
-                      const dispatched = alreadyDispatchedMap[o.id] || 0;
-                      const pending = Math.max(0, parseFloat(o.total_quantity || 0) - dispatched);
-                      const isActive = activeOrderId === o.id;
+      {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '0.75rem 1rem', color: '#dc2626', fontSize: '0.85rem', marginBottom: '1.5rem' }}>{error}</div>}
+      {success && <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '0.75rem 1rem', color: '#16a34a', fontSize: '0.85rem', marginBottom: '1.5rem' }}>{success}</div>}
 
+      {/* Step Contents */}
+      <div style={{ minHeight: '350px' }}>
+
+        {/* STEP 1: Select Orders */}
+        {step === 1 && (
+          <div className="fade-in" style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-md)' }}>
+            <h3 style={{ fontSize: '0.9rem', fontWeight: '850', color: 'var(--color-primary)', margin: '0 0 0.5rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Step 1: Select Orders</h3>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1.25rem' }}>Search and select the orders to be included in this bill/invoice.</p>
+
+            <div style={{ position: 'relative', marginBottom: '1.5rem' }}>
+              <span style={labelStyle}>Search & Choose Orders</span>
+              <div style={{ position: 'relative', marginTop: '0.35rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowOrderDrop(!showOrderDrop)}
+                  style={{
+                    ...inputStyle,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <span>
+                    {selectedOrders.length > 0
+                      ? `${selectedOrders.length} order(s) selected`
+                      : 'Search and select orders...'}
+                  </span>
+                  <ChevronDown size={16} />
+                </button>
+
+                {showOrderDrop && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid var(--border-current)', borderRadius: '8px', boxShadow: 'var(--shadow-lg)', zIndex: 100, maxHeight: '250px', overflowY: 'auto', marginTop: '4px', padding: '0.5rem' }}>
+                    <input
+                      type="text"
+                      placeholder="Type order no, design, PO, PI..."
+                      value={orderSearch}
+                      onChange={e => setOrderSearch(e.target.value)}
+                      style={{ ...inputStyle, marginBottom: '0.5rem' }}
+                    />
+                    {filteredOrders.slice(0, 50).map(o => {
+                      const isSelected = selectedOrders.some(sel => sel.id === o.id);
                       return (
-                        <tr
-                          key={o.id}
-                          onClick={() => setActiveOrderId(o.id)}
-                          style={{
-                            borderBottom: '1px solid #f1f5f9',
-                            cursor: 'pointer',
-                            background: isActive ? '#fef2f2' : 'transparent',
-                            fontWeight: isActive ? '600' : 'normal'
-                          }}
+                        <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.5rem', cursor: 'pointer', borderRadius: '6px' }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
-                          <td style={{ padding: '0.5rem', color: isActive ? 'var(--color-primary)' : 'inherit' }}>{o.order_number}</td>
-                          <td style={{ padding: '0.5rem' }}>{o.design_no}</td>
-                          <td style={{ padding: '0.5rem', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.vendor?.partner_name || '—'}</td>
-                          <td style={{ padding: '0.5rem', textAlign: 'right' }}>{fmtNum(o.total_quantity)}</td>
-                          <td style={{ padding: '0.5rem', textAlign: 'right', color: '#059669' }}>{fmtNum(dispatched)}</td>
-                          <td style={{ padding: '0.5rem', textAlign: 'right', color: 'var(--color-primary)' }}>{fmtNum(pending)}</td>
-                        </tr>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleOrderSelection(o)}
+                          />
+                          <div style={{ fontSize: '0.8rem' }}>
+                            <strong>{o.order_number}</strong> — {o.design_no} {o.design_name}
+                            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                              PO: {o.buyer_po_number || '—'} | PI: {o.proforma_invoices?.[0]?.invoice_number || itemsDetails[o.id]?.piNumber || '—'}
+                            </div>
+                          </div>
+                        </label>
                       );
                     })}
-                  </tbody>
-                </table>
+                    {filteredOrders.length === 0 && <div style={{ padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted-current)', textAlign: 'center' }}>No orders found</div>}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
 
-          {/* Split Pane: Left Panel displaying slips for the active order */}
-          {activeOrderId && (
-            <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '1rem', background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.25rem', boxShadow: 'var(--shadow-md)' }}>
-              {/* Slips Drawer (Left side of split pane) */}
-              <div style={{ borderRight: '1px solid var(--border-current)', paddingRight: '1rem' }}>
-                <h4 style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', color: 'var(--color-primary)', margin: '0 0 0.5rem 0' }}>Package Slips</h4>
-                
-                {/* Manual entry field */}
-                <div style={{ marginBottom: '1rem' }}>
-                  <input
-                    type="text"
-                    placeholder="Scan / Type slip no..."
-                    value={manualSlipInput}
-                    onChange={e => setManualSlipInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleMoveSlip(manualSlipInput);
-                      }
-                    }}
-                    style={{ ...inputStyle, fontSize: '0.75rem', padding: '0.4rem 0.5rem' }}
-                  />
-                  <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '2px' }}>Press Enter to add slip</div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', maxHeight: '200px', overflowY: 'auto' }}>
-                  {availableSlips.filter(s => s.order_id === activeOrderId).length > 0 ? (
-                    <>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', fontWeight: 'bold', fontSize: '0.75rem', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={availableSlips.filter(s => s.order_id === activeOrderId).every(s => selectedSlips.includes(s.id))}
-                          onChange={(e) => {
-                            const orderSlips = availableSlips.filter(s => s.order_id === activeOrderId).map(s => s.id);
-                            if (e.target.checked) {
-                              setSelectedSlips(prev => [...new Set([...prev, ...orderSlips])]);
-                            } else {
-                              setSelectedSlips(prev => prev.filter(id => !orderSlips.includes(id)));
-                            }
-                          }}
-                        />
-                        Select All
-                      </label>
-                      {availableSlips.filter(s => s.order_id === activeOrderId).map(s => {
-                        const isChecked = selectedSlips.includes(s.id);
-                        return (
-                          <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', cursor: 'pointer', fontSize: '0.75rem' }}>
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {
-                                if (isChecked) {
-                                  setSelectedSlips(selectedSlips.filter(id => id !== s.id));
-                                } else {
-                                  setSelectedSlips([...selectedSlips, s.id]);
-                                }
-                              }}
-                            />
-                            <div style={{ overflow: 'hidden' }}>
-                              <div style={{ fontWeight: '600', fontFamily: 'monospace' }}>{s.slip_number}</div>
-                              <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{fmtNum(s.total_qty)} m | {s.total_rolls} roll(s)</div>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </>
-                  ) : (
-                    <div style={{ padding: '0.5rem 0', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>No slips found.</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Slips Details Preview (Right side of split pane) */}
+            {selectedOrders.length > 0 ? (
               <div>
-                <h4 style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', color: '#64748b', margin: '0 0 0.75rem 0' }}>Billed Package Slips Summary</h4>
-                <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                <span style={labelStyle}>Selected Orders summary</span>
+                <div style={{ overflowX: 'auto', marginTop: '0.5rem', border: '1px solid var(--border-current)', borderRadius: '8px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                     <thead>
-                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        <th style={{ padding: '0.35rem', textAlign: 'left' }}>Slip No</th>
-                        <th style={{ padding: '0.35rem', textAlign: 'right' }}>Rolls</th>
-                        <th style={{ padding: '0.35rem', textAlign: 'right' }}>Meters</th>
-                        <th style={{ padding: '0.35rem', textAlign: 'right' }}>Weight (kg)</th>
+                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border-current)' }}>
+                        <th style={{ padding: '0.6rem 0.8rem', textAlign: 'left' }}>Order No</th>
+                        <th style={{ padding: '0.6rem 0.8rem', textAlign: 'left' }}>Design No & Name</th>
+                        <th style={{ padding: '0.6rem 0.8rem', textAlign: 'left' }}>Vendor</th>
+                        <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right' }}>Total Qty</th>
+                        <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right' }}>Already Dispatched</th>
+                        <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right' }}>Pending Qty</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {availableSlips.filter(s => selectedSlips.includes(s.id)).map(s => (
-                        <tr key={s.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '0.35rem', fontFamily: 'monospace', fontWeight: '600' }}>{s.slip_number}</td>
-                          <td style={{ padding: '0.35rem', textAlign: 'right' }}>{s.total_rolls}</td>
-                          <td style={{ padding: '0.35rem', textAlign: 'right' }}>{fmtNum(s.total_qty)}</td>
-                          <td style={{ padding: '0.35rem', textAlign: 'right' }}>{fmtNum(s.total_weight, 3)}</td>
-                        </tr>
-                      ))}
+                      {selectedOrders.map(o => {
+                        const dispatched = alreadyDispatchedMap[o.id] || 0;
+                        const pending = Math.max(0, parseFloat(o.total_quantity || 0) - dispatched);
+                        return (
+                          <tr key={o.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '0.6rem 0.8rem', fontWeight: '700' }}>{o.order_number}</td>
+                            <td style={{ padding: '0.6rem 0.8rem' }}>{o.design_no} ({o.design_name})</td>
+                            <td style={{ padding: '0.6rem 0.8rem' }}>{o.vendor?.partner_name || '—'}</td>
+                            <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right' }}>{fmtNum(o.total_quantity)}</td>
+                            <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', color: '#10b981' }}>{fmtNum(dispatched)}</td>
+                            <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', color: 'var(--color-primary)', fontWeight: '700' }}>{fmtNum(pending)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '2rem', border: '1.5px dashed var(--border-current)', borderRadius: '12px', background: '#f8fafc', color: '#64748b', fontSize: '0.85rem' }}>
+                Please select at least one order from the dropdown above to proceed.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 2: Select Package Slips */}
+        {step === 2 && (
+          <div className="fade-in" style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-md)' }}>
+            <h3 style={{ fontSize: '0.9rem', fontWeight: '850', color: 'var(--color-primary)', margin: '0 0 0.5rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Step 2: Select Package Slips</h3>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1.25rem' }}>Choose package slips for the selected orders to include in this invoice.</p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: '1.5rem' }}>
+              {/* Left Column: Active Order selector + slips list */}
+              <div style={{ borderRight: '1px solid var(--border-current)', paddingRight: '1.5rem' }}>
+                <span style={labelStyle}>Active Order Selection</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem', marginBottom: '1.25rem' }}>
+                  {selectedOrders.map(o => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => setActiveOrderId(o.id)}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem 0.8rem',
+                        borderRadius: '8px',
+                        border: activeOrderId === o.id ? '2px solid var(--color-primary)' : '1px solid var(--border-current)',
+                        background: activeOrderId === o.id ? '#fef2f2' : 'white',
+                        textAlign: 'left',
+                        fontSize: '0.8rem',
+                        fontWeight: activeOrderId === o.id ? '700' : 'normal',
+                        cursor: 'pointer',
+                        color: activeOrderId === o.id ? 'var(--color-primary)' : 'var(--text-current)',
+                        outline: 'none',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {o.order_number} ({o.design_no})
+                    </button>
+                  ))}
+                </div>
+
+                {activeOrderId && (
+                  <div>
+                    <span style={labelStyle}>Slips of Active Order</span>
+
+                    {/* Manual entry field */}
+                    <div style={{ margin: '0.5rem 0 0.8rem 0' }}>
+                      <input
+                        type="text"
+                        placeholder="Scan / Type slip no..."
+                        value={manualSlipInput}
+                        onChange={e => setManualSlipInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleMoveSlip(manualSlipInput);
+                          }
+                        }}
+                        style={{ ...inputStyle, fontSize: '0.75rem', padding: '0.4rem 0.5rem' }}
+                      />
+                      <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '2px' }}>Press Enter to add slip</div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '250px', overflowY: 'auto' }}>
+                      {availableSlips.filter(s => s.order_id === activeOrderId).length > 0 ? (
+                        <>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', fontWeight: 'bold', fontSize: '0.75rem', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={availableSlips.filter(s => s.order_id === activeOrderId).every(s => selectedSlips.includes(s.id))}
+                              onChange={(e) => {
+                                const orderSlips = availableSlips.filter(s => s.order_id === activeOrderId).map(s => s.id);
+                                if (e.target.checked) {
+                                  setSelectedSlips(prev => [...new Set([...prev, ...orderSlips])]);
+                                } else {
+                                  setSelectedSlips(prev => prev.filter(id => !orderSlips.includes(id)));
+                                }
+                              }}
+                            />
+                            Select All
+                          </label>
+                          {availableSlips.filter(s => s.order_id === activeOrderId).map(s => {
+                            const isChecked = selectedSlips.includes(s.id);
+                            return (
+                              <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', cursor: 'pointer', fontSize: '0.75rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    if (isChecked) {
+                                      setSelectedSlips(selectedSlips.filter(id => id !== s.id));
+                                    } else {
+                                      setSelectedSlips([...selectedSlips, s.id]);
+                                    }
+                                  }}
+                                />
+                                <div>
+                                  <span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{s.slip_number}</span>
+                                  <span style={{ fontSize: '0.65rem', color: '#64748b', marginLeft: '5px' }}>({fmtNum(s.total_qty)} m, {s.total_rolls} r)</span>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </>
+                      ) : (
+                        <div style={{ padding: '0.5rem 0', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>No slips found.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Selected Slips Summary table */}
+              <div>
+                <span style={labelStyle}>Billed Slips Summary ({selectedSlips.length} slips)</span>
+                <div style={{ overflowY: 'auto', maxHeight: '350px', marginTop: '0.5rem', border: '1px solid var(--border-current)', borderRadius: '8px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>Slip No</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>Order No</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Rolls</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Meters</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Weight (kg)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {availableSlips.filter(s => selectedSlips.includes(s.id)).map(s => {
+                        const order = selectedOrders.find(o => o.id === s.order_id);
+                        return (
+                          <tr key={s.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontWeight: '600' }}>{s.slip_number}</td>
+                            <td style={{ padding: '0.5rem' }}>{order?.order_number || '—'}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>{s.total_rolls}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>{fmtNum(s.total_qty)}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>{fmtNum(s.total_weight, 3)}</td>
+                          </tr>
+                        );
+                      })}
                       {selectedSlips.length === 0 && (
                         <tr>
-                          <td colSpan={4} style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8' }}>No slips selected. Select slips on the left to add them to the bill.</td>
+                          <td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                            No slips selected. Add slips using the active order list and checkboxes on the left.
+                          </td>
                         </tr>
                       )}
                     </tbody>
                   </table>
                 </div>
+
+                {selectedSlips.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginTop: '1rem', background: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                    <div>Total Rolls: {totalRolls}</div>
+                    <div style={{ textAlign: 'center' }}>Total Qty: {fmtNum(totalQty)} m</div>
+                    <div style={{ textAlign: 'right' }}>Total Weight: {fmtNum(totalWeight, 3)} kg</div>
+                  </div>
+                )}
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-        </div>
+        {/* STEP 3: Address & Transport Info */}
+        {step === 3 && (
+          <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.5rem' }}>
+            {/* Left Column: Dates, Addresses */}
+            <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-md)', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: '850', color: 'var(--color-primary)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Step 3: Dates & Addresses</h3>
 
-        {/* Right Side: Bill Metadata, Addresses & Transporter */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          
-          {/* Metadata & Addresses */}
-          <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.25rem', boxShadow: 'var(--shadow-md)' }}>
-            <h3 style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--color-primary)', margin: '0 0 1rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Bill Details & Addresses</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                   <span style={labelStyle}>Bill Date *</span>
                   <input type="date" value={billDate} onChange={e => setBillDate(e.target.value)} style={inputStyle} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <span style={labelStyle}>Buyer</span>
-                  <select value={buyerId} onChange={e => setBuyerId(e.target.value)} style={inputStyle}>
-                    <option value="">Select buyer...</option>
-                    {buyers.map(b => <option key={b.id} value={b.id}>{b.brand_name}</option>)}
-                  </select>
                 </div>
               </div>
 
@@ -2932,47 +3245,75 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
 
               {/* Billed To */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <span style={labelStyle}>Consignee / Billed To (Vendor Address)</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <span style={labelStyle}>Consignee / Billed To *</span>
+                  <select
+                    onChange={e => {
+                      const part = partners.find(p => p.id === e.target.value);
+                      if (part) {
+                        setBilledTo(`${part.partner_name}\n${part.address || ''}`);
+                      }
+                    }}
+                    style={{ ...inputStyle, width: '220px', padding: '0.35rem', fontSize: '0.75rem' }}
+                  >
+                    <option value="">Prefill from Vendors...</option>
+                    {partners.filter(p => p.partner_type === 'Vendor').map(p => (
+                      <option key={p.id} value={p.id}>{p.partner_name} - {p.address}</option>
+                    ))}
+                  </select>
+                </div>
                 <textarea rows={3} value={billedTo} onChange={e => setBilledTo(e.target.value)} style={{ ...inputStyle, resize: 'vertical' }} />
               </div>
 
-              {/* Shipped From dropdown */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.25fr', gap: '0.5rem', alignItems: 'center' }}>
-                <span style={labelStyle}>Shipped From (Optional)</span>
-                <select onChange={e => {
-                  const part = partners.find(p => p.id === e.target.value);
-                  if (part) {
-                    setShippedFrom(`${part.partner_name}\n${part.address || ''}\nGSTIN: ${part.gstin || '—'}`);
-                  }
-                }} style={{ ...inputStyle, padding: '0.35rem' }}>
-                  <option value="">Prefill from Partners...</option>
-                  {partners.map(p => <option key={p.id} value={p.id}>{p.partner_name}</option>)}
-                </select>
+              {/* Shipped From */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <span style={labelStyle}>Shipped From (Optional)</span>
+                  <select
+                    onChange={e => {
+                      const part = partners.find(p => p.id === e.target.value);
+                      if (part) {
+                        setShippedFrom(`${part.partner_name}\n${part.address || ''}`);
+                      }
+                    }}
+                    style={{ ...inputStyle, width: '220px', padding: '0.35rem', fontSize: '0.75rem' }}
+                  >
+                    <option value="">Prefill from Vendors...</option>
+                    {partners.filter(p => p.partner_type === 'Vendor').map(p => (
+                      <option key={p.id} value={p.id}>{p.partner_name} - {p.address}</option>
+                    ))}
+                  </select>
+                </div>
+                <textarea rows={2} value={shippedFrom} onChange={e => setShippedFrom(e.target.value)} placeholder="Type shipped from address..." style={{ ...inputStyle, resize: 'vertical' }} />
               </div>
-              <textarea rows={2} value={shippedFrom} onChange={e => setShippedFrom(e.target.value)} placeholder="Type custom address..." style={{ ...inputStyle, resize: 'vertical', fontSize: '0.8rem' }} />
 
-              {/* Shipped To dropdown */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.25fr', gap: '0.5rem', alignItems: 'center' }}>
-                <span style={labelStyle}>Shipped To (Optional)</span>
-                <select onChange={e => {
-                  const part = partners.find(p => p.id === e.target.value);
-                  if (part) {
-                    setShippedTo(`${part.partner_name}\n${part.address || ''}\nGSTIN: ${part.gstin || '—'}`);
-                  }
-                }} style={{ ...inputStyle, padding: '0.35rem' }}>
-                  <option value="">Prefill from Partners...</option>
-                  {partners.map(p => <option key={p.id} value={p.id}>{p.partner_name}</option>)}
-                </select>
+              {/* Shipped To */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                  <span style={labelStyle}>Shipped To (Optional)</span>
+                  <select
+                    onChange={e => {
+                      const part = partners.find(p => p.id === e.target.value);
+                      if (part) {
+                        setShippedTo(`${part.partner_name}\n${part.address || ''}`);
+                      }
+                    }}
+                    style={{ ...inputStyle, width: '220px', padding: '0.35rem', fontSize: '0.75rem' }}
+                  >
+                    <option value="">Prefill from Vendors...</option>
+                    {partners.filter(p => p.partner_type === 'Vendor').map(p => (
+                      <option key={p.id} value={p.id}>{p.partner_name} - {p.address}</option>
+                    ))}
+                  </select>
+                </div>
+                <textarea rows={2} value={shippedTo} onChange={e => setShippedTo(e.target.value)} placeholder="Type shipped to address..." style={{ ...inputStyle, resize: 'vertical' }} />
               </div>
-              <textarea rows={2} value={shippedTo} onChange={e => setShippedTo(e.target.value)} placeholder="Type custom address..." style={{ ...inputStyle, resize: 'vertical', fontSize: '0.8rem' }} />
-
             </div>
-          </div>
 
-          {/* Transporter Details */}
-          <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.25rem', boxShadow: 'var(--shadow-md)' }}>
-            <h3 style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--color-primary)', margin: '0 0 1rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transporter Info</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+            {/* Right Column: Transport Info */}
+            <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-md)', display: 'flex', flexDirection: 'column', gap: '1.25rem', height: 'fit-content' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: '850', color: 'var(--color-primary)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transporter Info</h3>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.75rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                   <span style={labelStyle}>Transport Name</span>
@@ -2985,11 +3326,9 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                     style={inputStyle}
                   />
                   <datalist id="transporters">
-                    <option value="RELIABLE EXPRESS COURIER AND CARGO" />
-                    <option value="V-TRANS" />
-                    <option value="TCI FREIGHT" />
-                    <option value="ARC" />
-                    <option value="SELF" />
+                    {partners.filter(p => p.partner_type === 'Transportation').map(p => (
+                      <option key={p.id} value={p.partner_name} />
+                    ))}
                   </datalist>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -2999,7 +3338,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                   </select>
                 </div>
               </div>
-              
+
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.75rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                   <span style={labelStyle}>Vehicle Number</span>
@@ -3037,177 +3376,287 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
               </div>
             </div>
           </div>
+        )}
 
-        </div>
-      </div>
+        {/* STEP 4: Review & Pricing */}
+        {step === 4 && (
+          <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-md)' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: '850', color: 'var(--color-primary)', margin: '0 0 1rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Step 4: Items, Taxes & Review</h3>
 
-      {/* Item pricing calculations table */}
-      {selectedOrders.length > 0 && (
-        <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.25rem', boxShadow: 'var(--shadow-md)', marginBottom: '1.5rem' }}>
-          <h3 style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--color-primary)', margin: '0 0 1rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Items & Taxes Calculations</h3>
-          
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid var(--border-current)' }}>
-                  <th style={{ padding: '0.75rem', textAlign: 'left' }}>Description of Goods (Order/Design/Specs)</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'center', width: '90px' }}>HSN</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'right', width: '80px' }}>Order Qty</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'right', width: '80px' }}>Billed Qty</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'right', width: '100px' }}>Rate (₹/m)</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'right', width: '100px' }}>Gross Amt</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'center', width: '60px' }}>CGST %</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'center', width: '60px' }}>SGST %</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'center', width: '60px' }}>IGST %</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'right', width: '120px' }}>Net Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {finalItemsList.map(item => (
-                  <tr key={item.order.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '0.75rem' }}>
-                      <div style={{ fontWeight: 'bold' }}>Order: {item.order.order_number}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                        Design: {item.order.design_no} - {item.order.design_name} | Count: {getShortCountsString(item.order.technical_specs)} | Width: {item.order.technical_specs?.finished_width || item.order.technical_specs?.order_width || '—'}"
-                      </div>
-                    </td>
-                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                      <input
-                        type="text"
-                        value={item.hsn}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setItemsDetails(prev => ({
-                            ...prev,
-                            [item.order.id]: { ...(prev[item.order.id] || {}), hsn: val }
-                          }));
-                        }}
-                        style={{ ...inputStyle, textAlign: 'center', padding: '0.35rem' }}
-                      />
-                    </td>
-                    <td style={{ padding: '0.75rem', textAlign: 'right' }}>{fmtNum(item.order.total_quantity)}</td>
-                    <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>{fmtNum(item.billedQty)}</td>
-                    <td style={{ padding: '0.5rem', textAlign: 'right' }}>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.rate}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setItemsDetails(prev => ({
-                            ...prev,
-                            [item.order.id]: { ...(prev[item.order.id] || {}), rate: val }
-                          }));
-                        }}
-                        style={{ ...inputStyle, textAlign: 'right', padding: '0.35rem' }}
-                      />
-                    </td>
-                    <td style={{ padding: '0.75rem', textAlign: 'right', fontFamily: 'monospace' }}>₹{fmtNum(item.amount)}</td>
-                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        value={item.cgst}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setItemsDetails(prev => ({
-                            ...prev,
-                            [item.order.id]: { ...(prev[item.order.id] || {}), cgst: val }
-                          }));
-                        }}
-                        style={{ ...inputStyle, textAlign: 'center', padding: '0.35rem' }}
-                      />
-                    </td>
-                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        value={item.sgst}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setItemsDetails(prev => ({
-                            ...prev,
-                            [item.order.id]: { ...(prev[item.order.id] || {}), sgst: val }
-                          }));
-                        }}
-                        style={{ ...inputStyle, textAlign: 'center', padding: '0.35rem' }}
-                      />
-                    </td>
-                    <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        value={item.igst}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setItemsDetails(prev => ({
-                            ...prev,
-                            [item.order.id]: { ...(prev[item.order.id] || {}), igst: val }
-                          }));
-                        }}
-                        style={{ ...inputStyle, textAlign: 'center', padding: '0.35rem' }}
-                      />
-                    </td>
-                    <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace' }}>₹{fmtNum(item.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Discount input and final summary calculations */}
-          <div style={{ borderTop: '1.5px solid var(--border-current)', marginTop: '1rem', paddingTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ width: '300px', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: '700' }}>Gross Amount:</span>
-                <span style={{ fontFamily: 'monospace' }}>₹{fmtNum(totalGross)}</span>
-              </div>
-              
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: '700' }}>Discount Amount:</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={discountAmount}
-                  onChange={e => setDiscountAmount(e.target.value)}
-                  style={{ ...inputStyle, width: '120px', padding: '0.25rem 0.5rem', textAlign: 'right' }}
-                />
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid var(--border-current)' }}>
+                      <th style={{ padding: '0.75rem', textAlign: 'left' }}>Goods Description (Order/Design/Specs)</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'center', width: '100px' }}>HSN</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '90px' }}>Order Qty</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '90px' }}>Billed Qty</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '110px' }}>Rate (₹/m)</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '110px' }}>Gross Amt</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'center', width: '70px' }}>CGST %</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'center', width: '70px' }}>SGST %</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'center', width: '70px' }}>IGST %</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '130px' }}>Net Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {finalItemsList.map(item => (
+                      <tr key={item.order.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '0.75rem' }}>
+                          <div style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>Order: {item.order.order_number}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                            <div><strong>Design:</strong> {item.order.design_name || '—'} ({item.order.design_no || '—'})</div>
+                            <div><strong>Yarn Count:</strong> {getShortCountsString(item.order.technical_specs)}</div>
+                            <div><strong>Construction:</strong> {getConstruction(item.order.technical_specs)}</div>
+                            <div><strong>Width:</strong> {item.order.technical_specs?.finished_width || item.order.technical_specs?.order_width || '—'}"</div>
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                          <input
+                            type="text"
+                            value={item.hsn}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setItemsDetails(prev => ({
+                                ...prev,
+                                [item.order.id]: { ...(prev[item.order.id] || {}), hsn: val }
+                              }));
+                            }}
+                            style={{ ...inputStyle, textAlign: 'center', padding: '0.35rem' }}
+                          />
+                        </td>
+                        <td style={{ padding: '0.75rem', textAlign: 'right' }}>{fmtNum(item.order.total_quantity)}</td>
+                        <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>{fmtNum(item.billedQty)}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.rate}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setItemsDetails(prev => ({
+                                ...prev,
+                                [item.order.id]: { ...(prev[item.order.id] || {}), rate: val }
+                              }));
+                            }}
+                            style={{ ...inputStyle, textAlign: 'right', padding: '0.35rem' }}
+                          />
+                        </td>
+                        <td style={{ padding: '0.75rem', textAlign: 'right', fontFamily: 'monospace' }}>₹{fmtNum(item.amount)}</td>
+                        <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={item.cgst}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setItemsDetails(prev => ({
+                                ...prev,
+                                [item.order.id]: { ...(prev[item.order.id] || {}), cgst: val }
+                              }));
+                            }}
+                            style={{ ...inputStyle, textAlign: 'center', padding: '0.35rem' }}
+                          />
+                        </td>
+                        <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={item.sgst}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setItemsDetails(prev => ({
+                                ...prev,
+                                [item.order.id]: { ...(prev[item.order.id] || {}), sgst: val }
+                              }));
+                            }}
+                            style={{ ...inputStyle, textAlign: 'center', padding: '0.35rem' }}
+                          />
+                        </td>
+                        <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={item.igst}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setItemsDetails(prev => ({
+                                ...prev,
+                                [item.order.id]: { ...(prev[item.order.id] || {}), igst: val }
+                              }));
+                            }}
+                            style={{ ...inputStyle, textAlign: 'center', padding: '0.35rem' }}
+                          />
+                        </td>
+                        <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace' }}>₹{fmtNum(item.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: '700' }}>Taxable Value:</span>
-                <span style={{ fontFamily: 'monospace' }}>₹{fmtNum(totalTaxable)}</span>
-              </div>
+              {/* Discount input and final summary calculations */}
+              <div style={{ borderTop: '1.5px solid var(--border-current)', marginTop: '1.5rem', paddingTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: '700' }}>Gross Amount:</span>
+                    <span style={{ fontFamily: 'monospace' }}>₹{fmtNum(totalGross)}</span>
+                  </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#4b5563' }}>Total Taxes (GST):</span>
-                <span style={{ fontFamily: 'monospace', color: '#4b5563' }}>₹{fmtNum(totalCgst + totalSgst + totalIgst)}</span>
-              </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: '700' }}>Discount Amount:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={discountAmount}
+                      onChange={e => setDiscountAmount(e.target.value)}
+                      style={{ ...inputStyle, width: '120px', padding: '0.25rem 0.5rem', textAlign: 'right' }}
+                    />
+                  </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #ccc', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                <span style={{ fontSize: '1rem', fontWeight: '900', color: 'var(--color-primary)' }}>Total Bill Price:</span>
-                <span style={{ fontSize: '1.2rem', fontWeight: '950', fontFamily: 'monospace', color: 'var(--color-primary)' }}>₹{fmtNum(totalBillPrice)}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: '700' }}>Taxable Value:</span>
+                    <span style={{ fontFamily: 'monospace' }}>₹{fmtNum(totalTaxable)}</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#4b5563' }}>Total Taxes (GST):</span>
+                    <span style={{ fontFamily: 'monospace', color: '#4b5563' }}>₹{fmtNum(totalCgst + totalSgst + totalIgst)}</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #ccc', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                    <span style={{ fontSize: '1rem', fontWeight: '900', color: 'var(--color-primary)' }}>Total Bill Price:</span>
+                    <span style={{ fontSize: '1.25rem', fontWeight: '950', fontFamily: 'monospace', color: 'var(--color-primary)' }}>₹{fmtNum(totalBillPrice)}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+        )}
 
-        </div>
-      )}
+      </div>
 
-      {/* Buttons */}
-      <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-        <button onClick={onBack} style={{ background: 'rgba(128,0,0,0.06)', color: 'var(--color-primary)', border: '1.5px solid rgba(128,0,0,0.2)', borderRadius: '10px', padding: '0.6rem 1.5rem', cursor: 'pointer', fontWeight: '700', fontSize: '0.87rem' }}>
-          Back
-        </button>
-        <button onClick={handleSave} disabled={loading} style={{ background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '10px', padding: '0.6rem 1.5rem', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: '700', fontSize: '0.87rem', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: loading ? 0.7 : 1 }}>
-          {loading ? <Loader size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={15} />}
-          {loading ? 'Saving...' : 'Save & Print Invoice'}
-        </button>
+      {/* Navigation Buttons */}
+      <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '2rem', borderTop: '1.5px solid var(--border-current)', paddingTop: '1.5rem' }}>
+        {step > 1 ? (
+          <button
+            type="button"
+            onClick={() => setStep(step - 1)}
+            style={{
+              background: 'rgba(128,0,0,0.06)',
+              color: 'var(--color-primary)',
+              border: '1.5px solid rgba(128,0,0,0.2)',
+              borderRadius: '10px',
+              padding: '0.6rem 1.5rem',
+              cursor: 'pointer',
+              fontWeight: '700',
+              fontSize: '0.87rem',
+              outline: 'none'
+            }}
+          >
+            Back to Step {step - 1}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onBack}
+            style={{
+              background: 'rgba(128,0,0,0.06)',
+              color: 'var(--color-primary)',
+              border: '1.5px solid rgba(128,0,0,0.2)',
+              borderRadius: '10px',
+              padding: '0.6rem 1.5rem',
+              cursor: 'pointer',
+              fontWeight: '700',
+              fontSize: '0.87rem',
+              outline: 'none'
+            }}
+          >
+            Cancel
+          </button>
+        )}
+
+        {step < 4 ? (
+          <button
+            type="button"
+            onClick={() => {
+              // Validations per step
+              if (step === 1) {
+                if (selectedOrders.length === 0) {
+                  setError('Please select at least one order to proceed.');
+                  setTimeout(() => setError(''), 3000);
+                  return;
+                }
+              } else if (step === 2) {
+                if (selectedSlips.length === 0) {
+                  setError('Please select at least one package slip to proceed.');
+                  setTimeout(() => setError(''), 3000);
+                  return;
+                }
+              } else if (step === 3) {
+                if (!billDate) {
+                  setError('Please specify Bill Date.');
+                  setTimeout(() => setError(''), 3000);
+                  return;
+                }
+                if (!billedTo.trim()) {
+                  setError('Please specify Consignee / Billed To address.');
+                  setTimeout(() => setError(''), 3000);
+                  return;
+                }
+              }
+              setError('');
+              setStep(step + 1);
+            }}
+            style={{
+              background: 'var(--color-primary)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '0.6rem 1.5rem',
+              cursor: 'pointer',
+              fontWeight: '700',
+              fontSize: '0.87rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              outline: 'none'
+            }}
+          >
+            <span>Next Step</span>
+            <ArrowRight size={16} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={loading}
+            style={{
+              background: 'var(--color-primary)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '0.6rem 1.5rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontWeight: '700',
+              fontSize: '0.87rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              opacity: loading ? 0.7 : 1,
+              outline: 'none'
+            }}
+          >
+            {loading ? <Loader size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={15} />}
+            {loading ? 'Saving...' : 'Save & Print Invoice'}
+          </button>
+        )}
       </div>
 
     </div>
@@ -3220,14 +3669,14 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
 export default function DispatchModule() {
   const { profile } = useAuth();
   const location = useLocation();
-  
+
   // 'dashboard' | 'list' | 'bill_create' | 'package_slip_create' | 'package_slip_edit'
   const [view, setView] = useState('dashboard');
   const [activeTab, setActiveTab] = useState('bills'); // 'bills' | 'slips'
 
   const [selectedSlipId, setSelectedSlipId] = useState(null);
   const [selectedBillId, setSelectedBillId] = useState(null);
-  
+
   // Print preview trigger triggers
   const [printType, setPrintType] = useState(null); // 'package_slip' | 'invoice' | 'packing_list'
   const [printData, setPrintData] = useState(null);
@@ -3263,7 +3712,7 @@ export default function DispatchModule() {
             proforma_invoices(invoice_number)
           `)
           .in('id', orderIds);
-        
+
         if (ords) {
           bill.items = bill.items.map(item => {
             const match = ords.find(o => o.id === item.order_id);
@@ -3344,7 +3793,7 @@ export default function DispatchModule() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2rem' }}>
-            
+
             {/* Card 1: Package Slips */}
             <div
               onClick={() => {
@@ -3528,7 +3977,7 @@ export default function DispatchModule() {
               .print-only-container { position: absolute; left: 0; top: 0; width: 100%; display: block !important; background: white; color: black; font-family: Arial, sans-serif; margin: 0; padding: 0; }
             }
           `}</style>
-          
+
           {[1, 2].map((copyNum, cIdx) => (
             <div key={copyNum} style={{
               height: '132mm',
@@ -3542,7 +3991,7 @@ export default function DispatchModule() {
               justifyContent: 'space-between',
               position: 'relative'
             }}>
-              
+
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #000', paddingBottom: '3mm', marginBottom: '2mm' }}>
                 <div style={{ display: 'flex', gap: '8mm', alignItems: 'center' }}>
                   <img src="/logo.png" alt="AT Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
@@ -3552,7 +4001,7 @@ export default function DispatchModule() {
                     <p style={{ margin: 0, fontSize: '10px' }}><strong>GSTIN:</strong> 33AAZFA60686D1Z6</p>
                   </div>
                 </div>
-                
+
                 <div style={{ textAlign: 'center', padding: '0 4mm' }}>
                   <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#800000', letterSpacing: '0.5px' }}>PACKAGE SLIP</h2>
                   <div style={{ fontSize: '10px', fontWeight: 'bold', border: '1px solid #000', padding: '1px 3px', borderRadius: '3px', marginTop: '1mm', display: 'inline-block' }}>
@@ -3577,7 +4026,7 @@ export default function DispatchModule() {
                   <p style={{ margin: '0 0 1px 0', lineHeight: '1.2' }}>{printData.vendor_address}</p>
                   <p style={{ margin: 0 }}><strong>GSTIN:</strong> {printData.vendor_gstin}</p>
                 </div>
-                
+
                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid #000', borderRadius: '4px', padding: '2mm' }}>
                   <p style={{ margin: 0 }}><strong>Slip Number:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '13px' }}>{printData.slip_number}</span></p>
                   <p style={{ margin: 0 }}><strong>Slip Date:</strong> {formatDate(printData.slip_date)}</p>
@@ -3641,11 +4090,11 @@ export default function DispatchModule() {
               .print-only-container { position: absolute; left: 0; top: 0; width: 100%; display: block !important; }
             }
           `}</style>
-          
+
           <div style={{ padding: '4mm', fontFamily: 'Arial, sans-serif', fontSize: '12px' }}>
             <div style={{ border: '1.5px solid black', borderRadius: '4px', padding: '4mm', minHeight: '276mm', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxSizing: 'border-box' }}>
               <div>
-                
+
                 {/* Logo & Company info */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', borderBottom: '2px solid black', paddingBottom: '4mm', marginBottom: '4mm', gap: '6mm' }}>
 
@@ -3771,7 +4220,7 @@ export default function DispatchModule() {
                     <p style={{ margin: '0 0 1px 0' }}><strong>A/C No:</strong> 028700150950232</p>
                     <p style={{ margin: 0 }}><strong>IFSC:</strong> TMBL0000028</p>
                   </div>
-                  
+
                   <div style={{ border: '1px solid black', borderRadius: '4px', padding: '2mm', display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Gross Amount:</span>
@@ -3832,7 +4281,7 @@ export default function DispatchModule() {
               .page-break { page-break-before: always; break-before: page; }
             }
           `}</style>
-          
+
           <div style={{ padding: '2mm', fontFamily: 'Arial, sans-serif', fontSize: '12px' }}>
             {(printData.items || []).map((item, itemIdx) => {
               const slips = item.slips || [];
@@ -3885,7 +4334,7 @@ export default function DispatchModule() {
                           <pre style={{ margin: 0, fontFamily: 'inherit', whiteSpace: 'pre-wrap', lineHeight: '1.2' }}>{printData.shipped_to_address || printData.billed_to_address}</pre>
                         </div>
                       </div>
-                      
+
                       <div style={{ border: '1px solid black', borderRadius: '4px', padding: '3mm', display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'space-between' }}>
                         <div><strong>INVOICE NO:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '13px' }}>{printData.bill_number}</span></div>
                         <div><strong>INVOICE DATE:</strong> {formatDate(printData.bill_date)}</div>
