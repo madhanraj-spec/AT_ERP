@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Save, Loader, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Loader, Trash2, Edit3, X, Check, Filter, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 // Map URL parameters to titles and database tables
@@ -96,6 +96,16 @@ export default function MasterDetail() {
   // Form State
   const [formData, setFormData] = useState({});
 
+  // Edit State
+  const [editingId, setEditingId] = useState(null);
+  const [editFormData, setEditFormData] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Filter State (for Partners)
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterType, setFilterType] = useState('');
+  const [filterName, setFilterName] = useState('');
+
   useEffect(() => {
     if (!config) {
       navigate('/masters');
@@ -105,7 +115,50 @@ export default function MasterDetail() {
     if (type === 'machines' || type === 'workers') {
       fetchDependencies();
     }
+    // Reset filters on type change
+    setFilterType('');
+    setFilterName('');
+    setFilterOpen(false);
   }, [type]);
+
+  // Compute filtered items (interdependent filters for Partners)
+  const filteredItems = useMemo(() => {
+    if (type !== 'partners') return items;
+    return items.filter(item => {
+      if (filterType && item.partner_type !== filterType) return false;
+      if (filterName && item.partner_name !== filterName) return false;
+      return true;
+    });
+  }, [items, filterType, filterName, type]);
+
+  // Get unique partner types and names for filter dropdowns (interdependent)
+  const partnerFilterTypes = useMemo(() => {
+    if (type !== 'partners') return [];
+    const typesSet = new Set();
+    items.forEach(item => {
+      if (filterName) {
+        // Only show types that have the selected name
+        if (item.partner_name === filterName) typesSet.add(item.partner_type);
+      } else {
+        typesSet.add(item.partner_type);
+      }
+    });
+    return [...typesSet].filter(Boolean).sort();
+  }, [items, filterName, type]);
+
+  const partnerFilterNames = useMemo(() => {
+    if (type !== 'partners') return [];
+    const namesSet = new Set();
+    items.forEach(item => {
+      if (filterType) {
+        // Only show names that match the selected type
+        if (item.partner_type === filterType) namesSet.add(item.partner_name);
+      } else {
+        namesSet.add(item.partner_name);
+      }
+    });
+    return [...namesSet].filter(Boolean).sort();
+  }, [items, filterType, type]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -149,6 +202,75 @@ export default function MasterDetail() {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // ── Edit Handlers ──
+  const handleEdit = (item) => {
+    setEditingId(item.id);
+    // Clone the item data for editing, stripping out joined relation objects
+    const editData = { ...item };
+    delete editData.master_departments;
+    delete editData.master_partners;
+    delete editData.id;
+    delete editData.created_at;
+    setEditFormData(editData);
+  };
+
+  const handleEditChange = (e) => {
+    const { name, value } = e.target;
+    setEditFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditFormData({});
+  };
+
+  const handleUpdate = async () => {
+    setEditSaving(true);
+    let payload = { ...editFormData };
+
+    // Set default scope for machines if not set
+    if (type === 'machines' && !payload.scope) {
+      payload.scope = 'in_house';
+    }
+    // Clear partner_id if scope is not job_work
+    if (type === 'machines' && payload.scope !== 'job_work') {
+      payload.partner_id = null;
+    }
+
+    // Duplicate check for yarn-counts (exclude the row being edited)
+    if (type === 'yarn-counts') {
+      const norm = (v) => (v || '').trim().toLowerCase();
+      const isDuplicate = items.some(item =>
+        item.id !== editingId &&
+        norm(item.count_value)   === norm(payload.count_value) &&
+        norm(item.spec1)         === norm(payload.spec1) &&
+        norm(item.spec)          === norm(payload.spec) &&
+        norm(item.material)      === norm(payload.material) &&
+        norm(item.content)       === norm(payload.content) &&
+        norm(item.product_type)  === norm(payload.product_type)
+      );
+      if (isDuplicate) {
+        alert('This yarn count already exists! Duplicates are not allowed.');
+        setEditSaving(false);
+        return;
+      }
+    }
+
+    const { error } = await supabase.from(config.table).update(payload).eq('id', editingId);
+    setEditSaving(false);
+    if (error) {
+      if (error.code === '23505') {
+        alert('This record already exists in the database! No duplicates allowed.');
+      } else {
+        alert('Error updating: ' + error.message);
+      }
+    } else {
+      setEditingId(null);
+      setEditFormData({});
+      fetchData();
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -449,6 +571,219 @@ export default function MasterDetail() {
     }
   };
 
+  // ── Render Inline Edit Fields for each master type ──
+  const renderEditFields = (item) => {
+    const inputStyle = {
+      padding: '0.5rem 0.75rem',
+      border: '1px solid var(--border-current)',
+      borderRadius: 'var(--radius-sm)',
+      fontSize: '0.8125rem',
+      backgroundColor: 'var(--surface-current)',
+      color: 'var(--text-current)',
+      width: '100%',
+      boxSizing: 'border-box',
+    };
+    const labelStyle = {
+      fontSize: '0.6875rem',
+      fontWeight: '600',
+      color: 'var(--text-muted-current)',
+      marginBottom: '0.25rem',
+      display: 'block',
+      textTransform: 'uppercase',
+      letterSpacing: '0.03em',
+    };
+    const fieldWrap = { display: 'flex', flexDirection: 'column', flex: '1', minWidth: '120px' };
+
+    switch (type) {
+      case 'yarn-counts': {
+        const savedMaterials = [...new Set(items.map(i => i.material).filter(Boolean))];
+        const allMaterials = [...new Set([...DEFAULT_MATERIALS, ...savedMaterials])];
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Material</label>
+              <input type="text" name="material" list="edit-material-options" style={inputStyle} value={editFormData.material || ''} onChange={handleEditChange} />
+              <datalist id="edit-material-options">{allMaterials.map(m => <option key={m} value={m} />)}</datalist>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Count</label>
+              <input type="text" name="count_value" list="edit-count-options" style={inputStyle} value={editFormData.count_value || ''} onChange={handleEditChange} />
+              <datalist id="edit-count-options">{[...new Set([...DEFAULT_COUNTS, ...items.map(i => i.count_value).filter(Boolean)])].map(c => <option key={c} value={c} />)}</datalist>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Spec 1</label>
+              <input type="text" name="spec1" list="edit-spec1-options" style={inputStyle} value={editFormData.spec1 || ''} onChange={handleEditChange} />
+              <datalist id="edit-spec1-options">{[...new Set([...DEFAULT_SPEC1S, ...items.map(i => i.spec1).filter(Boolean)])].map(s => <option key={s} value={s} />)}</datalist>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Spec</label>
+              <input type="text" name="spec" list="edit-spec-options" style={inputStyle} value={editFormData.spec || ''} onChange={handleEditChange} />
+              <datalist id="edit-spec-options">{[...new Set([...DEFAULT_SPECS, ...items.map(i => i.spec).filter(Boolean)])].map(s => <option key={s} value={s} />)}</datalist>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Content</label>
+              <input type="text" name="content" list="edit-content-options" style={inputStyle} value={editFormData.content || ''} onChange={handleEditChange} />
+              <datalist id="edit-content-options">{[...new Set([...DEFAULT_CONTENTS, ...items.map(i => i.content).filter(Boolean)])].map(c => <option key={c} value={c} />)}</datalist>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Type</label>
+              <input type="text" name="product_type" list="edit-type-options" style={inputStyle} value={editFormData.product_type || ''} onChange={handleEditChange} />
+              <datalist id="edit-type-options">{[...new Set([...DEFAULT_TYPES, ...items.map(i => i.product_type).filter(Boolean)])].map(t => <option key={t} value={t} />)}</datalist>
+            </div>
+          </div>
+        );
+      }
+      case 'brands':
+        return (
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Brand Name</label>
+              <input type="text" name="brand_name" style={inputStyle} value={editFormData.brand_name || ''} onChange={handleEditChange} />
+            </div>
+          </div>
+        );
+      case 'partners':
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Partner Name</label>
+              <input type="text" name="partner_name" style={inputStyle} value={editFormData.partner_name || ''} onChange={handleEditChange} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Type</label>
+              <select name="partner_type" style={inputStyle} value={editFormData.partner_type || ''} onChange={handleEditChange}>
+                <option value="">Select...</option>
+                <option value="Spinning Mill">Spinning Mill</option>
+                <option value="Weaving Mill">Weaving Mill</option>
+                <option value="Dyeing Unit">Dyeing Unit</option>
+                <option value="Processing Unit">Processing Unit</option>
+                <option value="Warping Unit">Warping Unit</option>
+                <option value="Sizing Unit">Sizing Unit</option>
+                <option value="Twisting Unit">Twisting Unit</option>
+                <option value="Transportation">Transportation</option>
+                <option value="Vendor">Vendor</option>
+              </select>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>GSTIN</label>
+              <input type="text" name="gstin" style={inputStyle} value={editFormData.gstin || ''} onChange={handleEditChange} maxLength={15} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>State</label>
+              <input type="text" name="state" style={inputStyle} value={editFormData.state || ''} onChange={handleEditChange} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>State Code</label>
+              <input type="text" name="state_code" style={inputStyle} value={editFormData.state_code || ''} onChange={handleEditChange} maxLength={2} />
+            </div>
+            <div style={{ ...fieldWrap, width: '100%' }}>
+              <label style={labelStyle}>Address</label>
+              <textarea name="address" style={{ ...inputStyle, resize: 'vertical' }} value={editFormData.address || ''} onChange={handleEditChange} rows={2} />
+            </div>
+          </div>
+        );
+      case 'departments':
+        return (
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Department Name</label>
+              <input type="text" name="department_name" style={inputStyle} value={editFormData.department_name || ''} onChange={handleEditChange} />
+            </div>
+          </div>
+        );
+      case 'machines':
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end' }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Machine Name</label>
+              <input type="text" name="machine_name" style={inputStyle} value={editFormData.machine_name || ''} onChange={handleEditChange} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Department</label>
+              <select name="department_id" style={inputStyle} value={editFormData.department_id || ''} onChange={handleEditChange}>
+                <option value="">Select...</option>
+                {departments
+                  .filter(d => ['WARPING', 'SIZING', 'WEAVING'].includes(d.department_name.toUpperCase()))
+                  .map(d => <option key={d.id} value={d.id}>{d.department_name}</option>)}
+              </select>
+            </div>
+            <div style={{ ...fieldWrap, flexDirection: 'row', gap: '0.75rem', alignItems: 'center', minWidth: 'auto' }}>
+              <label style={{ display: 'flex', gap: '0.35rem', cursor: 'pointer', fontSize: '0.8125rem' }}>
+                <input type="radio" name="scope" value="in_house" checked={editFormData.scope !== 'job_work'} onChange={handleEditChange} />
+                In-House
+              </label>
+              <label style={{ display: 'flex', gap: '0.35rem', cursor: 'pointer', fontSize: '0.8125rem' }}>
+                <input type="radio" name="scope" value="job_work" checked={editFormData.scope === 'job_work'} onChange={handleEditChange} />
+                Job Work
+              </label>
+            </div>
+            {editFormData.scope === 'job_work' && (
+              <div style={fieldWrap}>
+                <label style={labelStyle}>Partner</label>
+                <select name="partner_id" style={inputStyle} value={editFormData.partner_id || ''} onChange={handleEditChange}>
+                  <option value="">Select...</option>
+                  {partners.map(p => <option key={p.id} value={p.id}>{p.partner_name} ({p.partner_type})</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+        );
+      case 'locations':
+        return (
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Warehouse Type</label>
+              <select name="warehouse_type" style={inputStyle} value={editFormData.warehouse_type || ''} onChange={handleEditChange}>
+                <option value="">Select...</option>
+                <option value="Greige Warehouse">Greige Warehouse</option>
+                <option value="Dyed Yarn Warehouse">Dyed Yarn Warehouse</option>
+              </select>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Location Name</label>
+              <input type="text" name="location_name" style={inputStyle} value={editFormData.location_name || ''} onChange={handleEditChange} />
+            </div>
+          </div>
+        );
+      case 'beams':
+        return (
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Beam Name</label>
+              <input type="text" name="beam_name" style={inputStyle} value={editFormData.beam_name || ''} onChange={handleEditChange} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Owner</label>
+              <input type="text" name="owner" style={inputStyle} value={editFormData.owner || ''} onChange={handleEditChange} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Weight (kg)</label>
+              <input type="number" name="weight" style={inputStyle} value={editFormData.weight || ''} onChange={handleEditChange} step="0.01" min="0" />
+            </div>
+          </div>
+        );
+      case 'workers':
+        return (
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Worker Name</label>
+              <input type="text" name="worker_name" style={inputStyle} value={editFormData.worker_name || ''} onChange={handleEditChange} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>Department</label>
+              <select name="department_id" style={inputStyle} value={editFormData.department_id || ''} onChange={handleEditChange}>
+                <option value="">Select...</option>
+                {departments
+                  .filter(d => ['YARN', 'WARPING', 'SIZING', 'WEAVING', 'INSPECTION'].includes(d.department_name.toUpperCase()))
+                  .map(d => <option key={d.id} value={d.id}>{d.department_name}</option>)}
+              </select>
+            </div>
+          </div>
+        );
+      default: return null;
+    }
+  };
+
   // Render Display Rows for existing items
   const renderRow = (item) => {
     switch (type) {
@@ -530,40 +865,298 @@ export default function MasterDetail() {
         {/* EXISTING ITEMS LIST */}
         <div className="glass-panel" style={{ padding: 0 }}>
           <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-current)', backgroundColor: 'var(--bg-current)', borderTopLeftRadius: 'var(--radius-lg)', borderTopRightRadius: 'var(--radius-lg)' }}>
-            <h2 style={{ fontSize: '1.125rem', margin: 0 }}>Existing Database Entries</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ fontSize: '1.125rem', margin: 0 }}>Existing Database Entries</h2>
+              {type === 'partners' && items.length > 0 && (
+                <button
+                  onClick={() => setFilterOpen(prev => !prev)}
+                  style={{
+                    background: (filterType || filterName) ? 'var(--color-primary)' : 'var(--surface-current)',
+                    color: (filterType || filterName) ? '#fff' : 'var(--text-muted-current)',
+                    border: (filterType || filterName) ? 'none' : '1px solid var(--border-current)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.35rem 0.75rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '0.8125rem',
+                    fontWeight: '600',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Filter size={14} />
+                  Filter
+                  {(filterType || filterName) && (
+                    <span style={{
+                      background: '#fff',
+                      color: 'var(--color-primary)',
+                      borderRadius: '50%',
+                      width: '18px',
+                      height: '18px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.6875rem',
+                      fontWeight: '700',
+                      marginLeft: '0.15rem'
+                    }}>
+                      {(filterType ? 1 : 0) + (filterName ? 1 : 0)}
+                    </span>
+                  )}
+                  {filterOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+              )}
+            </div>
+
+            {/* Expandable Filter Panel for Partners */}
+            {type === 'partners' && filterOpen && (
+              <div style={{
+                marginTop: '1rem',
+                padding: '1rem',
+                backgroundColor: 'var(--surface-current)',
+                border: '1px solid var(--border-current)',
+                borderRadius: 'var(--radius-md)',
+                animation: 'fadeIn 0.2s ease'
+              }}>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div style={{ flex: '1', minWidth: '180px' }}>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.6875rem',
+                      fontWeight: '700',
+                      color: 'var(--text-muted-current)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      marginBottom: '0.35rem'
+                    }}>Partner Type</label>
+                    <select
+                      value={filterType}
+                      onChange={(e) => {
+                        setFilterType(e.target.value);
+                        // If a name was selected that doesn't match the new type, clear it
+                        if (filterName && e.target.value) {
+                          const match = items.find(i => i.partner_name === filterName && i.partner_type === e.target.value);
+                          if (!match) setFilterName('');
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem 0.75rem',
+                        border: '1px solid var(--border-current)',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '0.8125rem',
+                        backgroundColor: 'var(--bg-current)',
+                        color: 'var(--text-current)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">All Types</option>
+                      {partnerFilterTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+
+                  <div style={{ flex: '1', minWidth: '180px' }}>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.6875rem',
+                      fontWeight: '700',
+                      color: 'var(--text-muted-current)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      marginBottom: '0.35rem'
+                    }}>Partner Name</label>
+                    <select
+                      value={filterName}
+                      onChange={(e) => {
+                        setFilterName(e.target.value);
+                        // Auto-fill type if a name is selected and only one type matches
+                        if (e.target.value && !filterType) {
+                          const matchingTypes = [...new Set(items.filter(i => i.partner_name === e.target.value).map(i => i.partner_type))];
+                          if (matchingTypes.length === 1) setFilterType(matchingTypes[0]);
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem 0.75rem',
+                        border: '1px solid var(--border-current)',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '0.8125rem',
+                        backgroundColor: 'var(--bg-current)',
+                        color: 'var(--text-current)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">All Names</option>
+                      {partnerFilterNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => { setFilterType(''); setFilterName(''); }}
+                    disabled={!filterType && !filterName}
+                    style={{
+                      background: 'none',
+                      color: (filterType || filterName) ? '#dc2626' : 'var(--text-muted-current)',
+                      border: '1px solid ' + ((filterType || filterName) ? '#fca5a5' : 'var(--border-current)'),
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.5rem 0.75rem',
+                      cursor: (filterType || filterName) ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      fontSize: '0.8125rem',
+                      fontWeight: '600',
+                      opacity: (filterType || filterName) ? 1 : 0.5,
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    <X size={14} /> Clear Filters
+                  </button>
+                </div>
+
+                {/* Filter summary */}
+                {(filterType || filterName) && (
+                  <div style={{
+                    marginTop: '0.75rem',
+                    padding: '0.5rem 0.75rem',
+                    backgroundColor: 'rgba(128, 0, 0, 0.04)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-muted-current)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    Showing <strong style={{ color: 'var(--text-current)' }}>{filteredItems.length}</strong> of <strong style={{ color: 'var(--text-current)' }}>{items.length}</strong> partners
+                    {filterType && <span style={{ background: 'var(--color-primary)', color: '#fff', padding: '0.15rem 0.5rem', borderRadius: '999px', fontSize: '0.6875rem', fontWeight: '600' }}>{filterType}</span>}
+                    {filterName && <span style={{ background: '#2563eb', color: '#fff', padding: '0.15rem 0.5rem', borderRadius: '999px', fontSize: '0.6875rem', fontWeight: '600' }}>{filterName}</span>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div style={{ padding: '1rem' }}>
             {loading ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>
                 <Loader size={24} className="spin" style={{ margin: '0 auto 1rem' }} /> Loading...
               </div>
-            ) : items.length === 0 ? (
+            ) : (type === 'partners' ? filteredItems : items).length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>
-                No {config.title.toLowerCase()} found in the database.
+                {type === 'partners' && (filterType || filterName)
+                  ? `No partners found matching the selected filters.`
+                  : `No ${config.title.toLowerCase()} found in the database.`
+                }
               </div>
             ) : (
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {items.map(item => (
-                  <li key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', backgroundColor: 'var(--bg-current)', border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', fontSize: '0.875rem' }}>
-                    <span style={{ fontWeight: '500' }}>{renderRow(item)}</span>
-                    <button 
-                      onClick={() => handleDelete(item.id)}
-                      className="hover-lift"
-                      style={{ 
-                        background: '#fee2e2', 
-                        color: '#dc2626', 
-                        border: '1px solid #fca5a5', 
-                        borderRadius: 'var(--radius-sm)', 
-                        padding: '0.25rem 0.5rem', 
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                      title="Delete Master Entry"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                {(type === 'partners' ? filteredItems : items).map(item => (
+                  <li key={item.id} style={{ 
+                    padding: '0.75rem 1rem', 
+                    backgroundColor: editingId === item.id ? 'var(--surface-current)' : 'var(--bg-current)', 
+                    border: editingId === item.id ? '2px solid var(--color-primary)' : '1px solid var(--border-current)', 
+                    borderRadius: 'var(--radius-md)', 
+                    fontSize: '0.875rem',
+                    transition: 'all 0.2s ease'
+                  }}>
+                    {editingId === item.id ? (
+                      /* ── Inline Edit Mode ── */
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            ✏️ Editing
+                          </span>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button
+                              onClick={handleUpdate}
+                              disabled={editSaving}
+                              style={{
+                                background: 'var(--color-primary)',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 'var(--radius-sm)',
+                                padding: '0.35rem 0.75rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                fontSize: '0.8125rem',
+                                fontWeight: '600',
+                                opacity: editSaving ? 0.7 : 1
+                              }}
+                              title="Save Changes"
+                            >
+                              {editSaving ? <Loader size={14} className="spin" /> : <Check size={14} />}
+                              {editSaving ? 'Saving...' : 'Save'}
+                            </button>
+                            <button
+                              onClick={handleCancelEdit}
+                              disabled={editSaving}
+                              style={{
+                                background: 'var(--bg-current)',
+                                color: 'var(--text-muted-current)',
+                                border: '1px solid var(--border-current)',
+                                borderRadius: 'var(--radius-sm)',
+                                padding: '0.35rem 0.75rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                fontSize: '0.8125rem',
+                                fontWeight: '600'
+                              }}
+                              title="Cancel Edit"
+                            >
+                              <X size={14} /> Cancel
+                            </button>
+                          </div>
+                        </div>
+                        {renderEditFields(item)}
+                      </div>
+                    ) : (
+                      /* ── Display Mode ── */
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: '500' }}>{renderRow(item)}</span>
+                        <div style={{ display: 'flex', gap: '0.35rem', flexShrink: 0 }}>
+                          <button 
+                            onClick={() => handleEdit(item)}
+                            className="hover-lift"
+                            style={{ 
+                              background: '#eff6ff', 
+                              color: '#2563eb', 
+                              border: '1px solid #93c5fd', 
+                              borderRadius: 'var(--radius-sm)', 
+                              padding: '0.25rem 0.5rem', 
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                            title="Edit Master Entry"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(item.id)}
+                            className="hover-lift"
+                            style={{ 
+                              background: '#fee2e2', 
+                              color: '#dc2626', 
+                              border: '1px solid #fca5a5', 
+                              borderRadius: 'var(--radius-sm)', 
+                              padding: '0.25rem 0.5rem', 
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                            title="Delete Master Entry"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

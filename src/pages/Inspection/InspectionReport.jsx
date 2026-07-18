@@ -1143,6 +1143,7 @@ function WashedEditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
     yarn4pt: roll.washed_yarn_defect_4pt_count ?? 0,
     holes2pt: roll.washed_holes_stains_2pt_count ?? 0,
     holes4pt: roll.washed_holes_stains_4pt_count ?? 0,
+    washed_width: roll.washed_width ?? '',
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -1181,6 +1182,7 @@ function WashedEditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
             washed_inspector_2: form.inspector_2,
             washed_place: form.washed_place || 'Factory',
             washed_inspected_at: new Date().toISOString(),
+            washed_width: form.washed_width ? parseFloat(form.washed_width) : null,
             
             washed_weaving_defect_1pt_count: form.weaving1pt,
             washed_weaving_defect_2pt_count: form.weaving2pt,
@@ -1298,8 +1300,8 @@ function WashedEditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
             </div>
           </div>
 
-          {/* Qty Inputs */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          {/* Qty & Width Inputs */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', marginBottom: '0.3rem' }}>Actual Qty (m)</label>
               <input type="number" step="0.01" className="input-field" value={form.actual_qty}
@@ -1310,6 +1312,11 @@ function WashedEditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
               <div style={{ padding: '0.5rem 0.75rem', border: '1.5px solid #fcd34d', borderRadius: '8px', background: '#fffbeb', fontWeight: '800', color: '#b45309', minHeight: '38px', display: 'flex', alignItems: 'center' }}>
                 {shortage} m
               </div>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', marginBottom: '0.3rem' }}>Width (inches)</label>
+              <input type="number" step="0.1" className="input-field" value={form.washed_width}
+                onChange={e => setForm(f => ({ ...f, washed_width: e.target.value }))} style={{ fontWeight: '700' }} placeholder="Width in inches" />
             </div>
           </div>
 

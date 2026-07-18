@@ -892,7 +892,7 @@ export default function ProcessingModule() {
         }
         foundRoll = {
           ...roll,
-          processed_roll_id: targetId
+          processed_roll_id: /\/P\d+/i.test(targetId) ? targetId : (roll.processed_roll_id || null)
         };
         foundOrder = order;
 
@@ -926,7 +926,7 @@ export default function ProcessingModule() {
       const designNo = foundOrder.order?.design_no || foundOrder.design_no || '—';
       const designName = foundOrder.order?.design_name || '—';
 
-      const isProcessed = (targetId && /\/P\d+/i.test(targetId)) || (foundRoll.processed_roll_id && foundRoll.processed_roll_id.toLowerCase() === targetId.toLowerCase());
+      const isProcessed = !!(targetId && /\/P\d+/i.test(targetId));
       const isRewashMode = viewMode === 'rewash';
 
       if (isRewashMode) {
@@ -1024,8 +1024,8 @@ export default function ProcessingModule() {
 
       const newRollItem = {
         id: scannedId,
-        qty: isProcessed && foundRoll.received_qty !== null ? foundRoll.received_qty : foundRoll.qty,
-        actual_qty: isProcessed && foundRoll.received_qty !== null ? foundRoll.received_qty : foundRoll.actual_qty,
+        qty: (isProcessed && foundRoll.received_qty != null) ? foundRoll.received_qty : (foundRoll.qty || 0),
+        actual_qty: (isProcessed && foundRoll.received_qty != null) ? foundRoll.received_qty : (foundRoll.actual_qty || foundRoll.qty || 0),
         order_number: orderNumber,
         design_no: designNo,
         design_name: designName,

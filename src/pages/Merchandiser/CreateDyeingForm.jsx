@@ -446,7 +446,7 @@ export default function CreateDyeingForm() {
   }
 
   return (
-    <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '1.5rem' }}>
+    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1.5rem' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
         <button
@@ -853,22 +853,53 @@ export default function CreateDyeingForm() {
             })}
 
             {allocations.length > 0 && (
-              <div style={{ marginTop: '1.5rem' }}>
+              <div style={{ 
+                marginTop: '1.5rem',
+                /* Break out of the parent's maxWidth constraint to use full viewport width */
+                marginLeft: 'calc(-1.5rem)',
+                marginRight: 'calc(-1.5rem)',
+                paddingLeft: '1.5rem',
+                paddingRight: '1.5rem',
+                width: 'calc(100% + 3rem)',
+                boxSizing: 'border-box'
+              }}>
                 <h4 style={{ marginBottom: '0.75rem' }}>Yarn Requirement Details</h4>
-                <div className="table-container">
-                  <table className="table">
+                <div style={{ 
+                  width: '100%', 
+                  borderRadius: 'var(--radius-md)', 
+                  border: '1px solid var(--border-current)',
+                  overflowX: 'hidden'
+                }}>
+                  <table style={{ 
+                    width: '100%', 
+                    borderCollapse: 'collapse', 
+                    textAlign: 'left',
+                    tableLayout: 'fixed'
+                  }}>
+                    <colgroup>
+                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '6%' }} />
+                      <col style={{ width: '16%' }} />
+                      <col style={{ width: '9%' }} />
+                      <col style={{ width: '9%' }} />
+                      <col style={{ width: '9%' }} />
+                      <col style={{ width: '10%' }} />
+                      <col style={{ width: '12%' }} />
+                      <col style={{ width: '7%' }} />
+                      <col style={{ width: '8%' }} />
+                    </colgroup>
                     <thead>
                       <tr>
-                        <th>Order No.</th>
-                        <th>Type</th>
-                        <th>Yarn Count</th>
-                        <th>Colour</th>
-                        <th style={{ textAlign: 'right' }}>Req Qty (kg)</th>
-                        <th style={{ textAlign: 'right' }}>Already Allotted (kg)</th>
-                        <th style={{ textAlign: 'right' }}>Remaining (kg)</th>
-                        <th style={{ textAlign: 'center', width: '130px' }}>Allotted Base Qty (kg)</th>
-                        <th style={{ textAlign: 'center' }}>Excess %</th>
-                        <th style={{ textAlign: 'right' }}>Total Qty (kg)</th>
+                        <th style={{ backgroundColor: 'rgba(0,0,0,0.02)', padding: '0.6rem 0.5rem', fontSize: '0.6875rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-current)', color: 'var(--text-muted-current)' }}>Order No.</th>
+                        <th style={{ backgroundColor: 'rgba(0,0,0,0.02)', padding: '0.6rem 0.5rem', fontSize: '0.6875rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-current)', color: 'var(--text-muted-current)' }}>Type</th>
+                        <th style={{ backgroundColor: 'rgba(0,0,0,0.02)', padding: '0.6rem 0.5rem', fontSize: '0.6875rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-current)', color: 'var(--text-muted-current)' }}>Yarn Count</th>
+                        <th style={{ backgroundColor: 'rgba(0,0,0,0.02)', padding: '0.6rem 0.5rem', fontSize: '0.6875rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-current)', color: 'var(--text-muted-current)' }}>Colour</th>
+                        <th style={{ backgroundColor: 'rgba(0,0,0,0.02)', padding: '0.6rem 0.5rem', fontSize: '0.6875rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-current)', color: 'var(--text-muted-current)', textAlign: 'right' }}>Req Qty (kg)</th>
+                        <th style={{ backgroundColor: 'rgba(0,0,0,0.02)', padding: '0.6rem 0.5rem', fontSize: '0.6875rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-current)', color: 'var(--text-muted-current)', textAlign: 'right' }}>Already Allotted (kg)</th>
+                        <th style={{ backgroundColor: 'rgba(0,0,0,0.02)', padding: '0.6rem 0.5rem', fontSize: '0.6875rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-current)', color: 'var(--text-muted-current)', textAlign: 'right' }}>Remaining (kg)</th>
+                        <th style={{ backgroundColor: 'rgba(0,0,0,0.02)', padding: '0.6rem 0.5rem', fontSize: '0.6875rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-current)', color: 'var(--text-muted-current)', textAlign: 'center' }}>Allotted Base Qty (kg)</th>
+                        <th style={{ backgroundColor: 'rgba(0,0,0,0.02)', padding: '0.6rem 0.5rem', fontSize: '0.6875rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-current)', color: 'var(--text-muted-current)', textAlign: 'center' }}>Excess %</th>
+                        <th style={{ backgroundColor: 'rgba(0,0,0,0.02)', padding: '0.6rem 0.5rem', fontSize: '0.6875rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-current)', color: 'var(--text-muted-current)', textAlign: 'right' }}>Total (kg)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -877,57 +908,60 @@ export default function CreateDyeingForm() {
                         const yarn = yarnCounts.find(y => y.id === a.countId);
                         const isExceeded = parseFloat(a.base_kg || 0) > a.remaining_kg;
                         return (
-                          <tr key={idx}>
-                            <td style={{ fontWeight: '600', color: 'var(--color-primary)' }}>{order?.order_number}</td>
-                            <td style={{ textTransform: 'capitalize' }}>{a.type}</td>
-                            <td>{formatYarn(yarn)}</td>
-                            <td>{a.colour}</td>
-                            <td style={{ textAlign: 'right' }}>{a.original_required_kg.toFixed(2)}</td>
-                            <td style={{ textAlign: 'right', color: a.already_allotted > 0 ? '#b45309' : '' }}>
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                            <td style={{ padding: '0.5rem', fontWeight: '600', color: 'var(--color-primary)', fontSize: '0.8125rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.order_number}</td>
+                            <td style={{ padding: '0.5rem', textTransform: 'capitalize', fontSize: '0.8125rem' }}>{a.type}</td>
+                            <td style={{ padding: '0.5rem', fontSize: '0.8125rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatYarn(yarn)}</td>
+                            <td style={{ padding: '0.5rem', fontSize: '0.8125rem' }}>{a.colour}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right', fontSize: '0.8125rem' }}>{a.original_required_kg.toFixed(2)}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right', fontSize: '0.8125rem', color: a.already_allotted > 0 ? '#b45309' : '' }}>
                               {a.already_allotted.toFixed(2)}
                             </td>
-                            <td style={{ textAlign: 'right', fontWeight: '600', color: a.remaining_kg > 0 ? '#1d4ed8' : '#6b7280' }}>
+                            <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600', fontSize: '0.8125rem', color: a.remaining_kg > 0 ? '#1d4ed8' : '#6b7280' }}>
                               {a.remaining_kg.toFixed(2)}
                             </td>
-                            <td style={{ textAlign: 'center' }}>
+                            <td style={{ padding: '0.5rem', textAlign: 'center' }}>
                               <input
                                 type="number" min="0" step="0.01"
                                 value={a.base_kg}
                                 onChange={e => updateBaseQty(idx, e.target.value)}
                                 className="input-field"
                                 style={{
-                                  maxWidth: '110px',
+                                  width: '100%',
+                                  maxWidth: '100%',
                                   textAlign: 'center',
-                                  padding: '0.3rem 0.5rem',
+                                  padding: '0.3rem 0.35rem',
                                   fontWeight: 'bold',
+                                  fontSize: '0.8125rem',
                                   borderColor: isExceeded ? '#dc2626' : '',
-                                  backgroundColor: isExceeded ? '#fef2f2' : ''
+                                  backgroundColor: isExceeded ? '#fef2f2' : '',
+                                  boxSizing: 'border-box'
                                 }}
                               />
                               {isExceeded && (
-                                <div style={{ color: '#dc2626', fontSize: '0.7rem', marginTop: '2px', fontWeight: '600' }}>
-                                  Exceeds remaining ({a.remaining_kg.toFixed(2)} kg)
+                                <div style={{ color: '#dc2626', fontSize: '0.625rem', marginTop: '2px', fontWeight: '600' }}>
+                                  Exceeds ({a.remaining_kg.toFixed(2)})
                                 </div>
                               )}
                             </td>
-                            <td style={{ textAlign: 'center' }}>
+                            <td style={{ padding: '0.5rem', textAlign: 'center' }}>
                               <input
                                 type="number" min="0" max="100" step="0.5"
                                 value={a.excess_pct}
                                 onChange={e => updateExcess(idx, e.target.value)}
                                 className="input-field"
-                                style={{ maxWidth: '80px', textAlign: 'center', padding: '0.3rem 0.5rem' }}
+                                style={{ width: '100%', maxWidth: '100%', textAlign: 'center', padding: '0.3rem 0.35rem', fontSize: '0.8125rem', boxSizing: 'border-box' }}
                               />
                             </td>
-                            <td style={{ textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>
+                            <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)', fontSize: '0.8125rem' }}>
                               {(parseFloat(a.total_kg) || 0).toFixed(2)}
                             </td>
                           </tr>
                         );
                       })}
                       <tr style={{ backgroundColor: 'var(--surface-current)' }}>
-                        <td colSpan={9} style={{ textAlign: 'right', fontWeight: '700' }}>Grand Total:</td>
-                        <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--color-primary)' }}>
+                        <td colSpan={9} style={{ padding: '0.6rem 0.5rem', textAlign: 'right', fontWeight: '700', fontSize: '0.8125rem' }}>Grand Total:</td>
+                        <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', fontWeight: '700', color: 'var(--color-primary)', fontSize: '0.875rem' }}>
                           {allocations.reduce((s, a) => s + (parseFloat(a.total_kg) || 0), 0).toFixed(2)} kg
                         </td>
                       </tr>
