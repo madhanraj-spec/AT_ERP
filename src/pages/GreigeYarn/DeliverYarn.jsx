@@ -6,6 +6,9 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import GYDRPrintModal from './GYDRPrintModal';
+import EwayBillModal from '../../components/EwayBillModal';
+import EwayBillPrintModal from '../../components/EwayBillPrintModal';
 
 // ──────────────────────────────────────────────
 // Helpers
@@ -41,6 +44,113 @@ export default function DeliverYarn() {
   const allocateModal = null; // { countId, colour, required_kg, sent_kg }
   const [logisticsModal, setLogisticsModal] = useState(null); // { items: [{...}] }
   const [viewReceiptModal, setViewReceiptModal] = useState(null);
+  const [activeEwayReceipt, setActiveEwayReceipt] = useState(null);
+  const [greigePartnerDetails, setGreigePartnerDetails] = useState(null);
+  const [ewayPrintRecord, setEwayPrintRecord] = useState(null);
+  const [ewayGoodsItems, setEwayGoodsItems] = useState([]); // Per-yarn goods breakdown for E-Way Bill
+
+  const handlePrintEwayBill = (ewayBillNo) => {
+    navigator.clipboard.writeText(ewayBillNo);
+    alert(`E-Way Bill Number ${ewayBillNo} copied to clipboard!\n\nOpening the official GST Portal print search in a new tab. Just paste the number and print the exact official e-Way Bill.`);
+    window.open('https://ewaybillgst.gov.in/search-ewaybill', '_blank');
+  };
+
+  useEffect(() => {
+    const partnerId = dof?.dyeing_unit_id;
+    if (partnerId && activeEwayReceipt) {
+      const fetchPartner = async () => {
+        const { data } = await supabase
+          .from('master_partners')
+          .select('*')
+          .eq('id', partnerId)
+          .single();
+        if (data) {
+          setGreigePartnerDetails(data);
+        }
+      };
+      fetchPartner();
+    } else {
+      setGreigePartnerDetails(null);
+    }
+  }, [activeEwayReceipt, dof]);
+
+  // Build per-yarn goods items when activeEwayReceipt is set
+  useEffect(() => {
+    if (!activeEwayReceipt) {
+      setEwayGoodsItems([]);
+      return;
+    }
+    const buildGoodsItems = async () => {
+      const deliveryItems = activeEwayReceipt.greige_yarn_delivery_items || [];
+      if (deliveryItems.length === 0) {
+        setEwayGoodsItems([]);
+        return;
+      }
+
+      // Group delivery items by yarn_count_id (aggregate qty)
+      const countMap = {}; // { yarn_count_id: { qty, countObj, millId } }
+      deliveryItems.forEach(di => {
+        const cid = di.yarn_count_id;
+        if (!countMap[cid]) {
+          countMap[cid] = {
+            qty: 0,
+            countObj: di.master_yarn_counts,
+            millId: di.spinning_mill_id
+          };
+        }
+        countMap[cid].qty += parseFloat(di.quantity_kg || 0);
+      });
+
+      // Fetch rate_per_kg and hsn_code from greige_yarn_receipts for each yarn_count_id
+      const countIds = Object.keys(countMap);
+      let rateMap = {}; // { yarn_count_id: { rate_per_kg, hsn_code } }
+      try {
+        const { data: receipts } = await supabase
+          .from('greige_yarn_receipts')
+          .select('yarn_count_id, spinning_mill_id, rate_per_kg, hsn_code')
+          .in('yarn_count_id', countIds)
+          .gt('rate_per_kg', 0)
+          .order('created_at', { ascending: false });
+
+        // Use the most recent receipt with a rate for each yarn_count_id
+        (receipts || []).forEach(rec => {
+          const key = rec.yarn_count_id;
+          if (!rateMap[key]) {
+            rateMap[key] = {
+              rate_per_kg: parseFloat(rec.rate_per_kg || 0),
+              hsn_code: rec.hsn_code || '5205'
+            };
+          }
+        });
+      } catch (err) {
+        console.error('Error fetching yarn receipt rates:', err);
+      }
+
+      // Build the items array
+      const items = Object.entries(countMap).map(([cid, info]) => {
+        const c = info.countObj;
+        const yarnName = c
+          ? [c.count_value, c.spec, c.spec1, c.product_type].filter(Boolean).join(' ')
+          : 'Yarn';
+        const rateInfo = rateMap[cid] || {};
+        const rate = rateInfo.rate_per_kg || 0;
+        const hsn = rateInfo.hsn_code || '5205';
+        const qty = parseFloat(info.qty.toFixed(2));
+        return {
+          productName: yarnName + ' Yarn',
+          hsnCode: hsn,
+          quantity: qty,
+          qtyUnit: 'KGS',
+          ratePerKg: rate,
+          taxableAmount: parseFloat((qty * rate).toFixed(2))
+        };
+      });
+
+      setEwayGoodsItems(items);
+    };
+    buildGoodsItems();
+  }, [activeEwayReceipt]);
+
   const [view, setView] = useState('summary'); // 'summary' | 'allocation'
 
   // Allocate form state (consolidated for all counts)
@@ -1017,6 +1127,7 @@ export default function DeliverYarn() {
                       <th>Date</th>
                       <th>Items</th>
                       <th style={{ textAlign: 'right' }}>Total Weight</th>
+                      <th style={{ textAlign: 'center' }}>Eway Bill</th>
                       <th style={{ textAlign: 'center' }}>Action</th>
                     </tr>
                   </thead>
@@ -1030,6 +1141,36 @@ export default function DeliverYarn() {
                         </td>
                         <td style={{ textAlign: 'right', fontWeight: '700' }}>
                           {(r.greige_yarn_delivery_items || []).reduce((s, i) => s + parseFloat(i.quantity_kg), 0).toFixed(2)} kg
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {r.eway_bill_no ? (
+                            r.eway_bill_status === 'cancelled' ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                <span style={{ color: '#b91c1c', fontSize: '0.75rem', fontWeight: '700' }}>Cancelled</span>
+                                <button onClick={() => setActiveEwayReceipt(r)} style={{ border: 'none', background: 'none', color: '#0284c7', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '0.75rem', fontWeight: '700' }}>Retry</button>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                                <span style={{ color: '#166534', fontSize: '0.75rem', fontWeight: '800', fontFamily: 'monospace' }}>{r.eway_bill_no}</span>
+                                <div style={{ display: 'flex', gap: '0.4rem', fontSize: '0.72rem' }}>
+                                  <button onClick={() => setEwayPrintRecord(r)} style={{ border: 'none', background: 'none', color: '#0284c7', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontWeight: '700' }}>Print</button>
+                                  <span style={{ color: '#cbd5e1' }}>|</span>
+                                  <button onClick={() => setActiveEwayReceipt(r)} style={{ border: 'none', background: 'none', color: '#b91c1c', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontWeight: '700' }}>Cancel</button>
+                                </div>
+                              </div>
+                            )
+                          ) : (
+                            <button 
+                              onClick={() => setActiveEwayReceipt(r)}
+                              style={{ 
+                                display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '4px 10px',
+                                backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '4px',
+                                fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer'
+                              }}
+                            >
+                              <Truck size={12} /> Generate
+                            </button>
+                          )}
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <button onClick={() => setViewReceiptModal(r.id)} style={{ color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600' }}>View</button>
@@ -1435,164 +1576,56 @@ export default function DeliverYarn() {
           VIEW RECEIPT MODAL
       ═══════════════════════════════════════════════════ */}
       {viewReceiptModal && (
-        <GYDRReceiptModal
-          receiptId={viewReceiptModal}
+        <GYDRPrintModal
+          receipt={existingReceipts.find(r => r.id === viewReceiptModal)}
           dof={dof}
           orders={orders}
-          allReceipts={existingReceipts}
           onClose={() => setViewReceiptModal(null)}
+        />
+      )}
+
+      {activeEwayReceipt && (
+        <EwayBillModal
+          isOpen={!!activeEwayReceipt}
+          onClose={() => setActiveEwayReceipt(null)}
+          type="greige"
+          record={activeEwayReceipt}
+          defaultDetails={{
+            docNo: activeEwayReceipt.gydr_number,
+            docDate: activeEwayReceipt.created_at,
+            partnerName: greigePartnerDetails?.partner_name || dof?.dyeing_unit_name || activeEwayReceipt.dyeing_unit_name || 'Processing Partner',
+            partnerGstin: greigePartnerDetails?.gstin,
+            partnerAddress: greigePartnerDetails?.address,
+            partnerPincode: greigePartnerDetails?.pincode,
+            partnerStateCode: greigePartnerDetails?.state_code,
+            vehicleNo: activeEwayReceipt.vehicle_details || activeEwayReceipt.vehicle_no,
+            items: ewayGoodsItems,
+            totalQty: (activeEwayReceipt.greige_yarn_delivery_items || []).reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0),
+            qtyUnit: 'KGS',
+            productName: 'Greige Cotton Yarn'
+          }}
+          onSuccess={(res) => {
+            setExistingReceipts(prev => prev.map(r => r.id === activeEwayReceipt.id ? {
+              ...r,
+              eway_bill_no: res.ewayBillNo || r.eway_bill_no,
+              eway_bill_status: res.eway_bill_status || 'generated',
+              eway_bill_date: res.ewayBillDate || r.eway_bill_date,
+              eway_bill_details: res.details || r.eway_bill_details
+            } : r));
+            setActiveEwayReceipt(null);
+          }}
+        />
+      )}
+      {ewayPrintRecord && (
+        <EwayBillPrintModal
+          isOpen={!!ewayPrintRecord}
+          onClose={() => setEwayPrintRecord(null)}
+          type="greige"
+          record={ewayPrintRecord}
         />
       )}
     </div>
   );
 }
 
-// ──────────────────────────────────────────────
-// Inline GYDR Receipt Modal (Printable)
-// ──────────────────────────────────────────────
-function GYDRReceiptModal({ receiptId, dof, orders, allReceipts, onClose }) {
-  const receipt = allReceipts.find(r => r.id === receiptId);
 
-  if (!receipt) return null;
-
-  const items = receipt.greige_yarn_delivery_items || [];
-  const totalQty = items.reduce((s, i) => s + parseFloat(i.quantity_kg || 0), 0);
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-      <div style={{ backgroundColor: '#fff', borderRadius: '8px', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
-        {/* Screen-only buttons */}
-        <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: '700', color: '#374151' }}>
-            Greige Yarn Delivery Receipt — {receipt.gydr_number}
-          </h3>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button
-              onClick={() => window.print()}
-              style={{ padding: '6px 16px', backgroundColor: '#7f1d1d', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}
-            >
-              🖨 Print Receipt
-            </button>
-            <button onClick={onClose} style={{ padding: '6px 16px', backgroundColor: '#e2e8f0', color: '#374151', border: 'none', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>
-              Close
-            </button>
-          </div>
-        </div>
-
-        {/* Printable Content */}
-        <div className="print-container" style={{ padding: '2rem 2.5rem', fontFamily: "'Helvetica Neue', Arial, sans-serif", fontSize: '13px', color: '#111' }}>
-          {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '3px solid #7f1d1d', paddingBottom: '1.25rem', marginBottom: '1.5rem' }}>
-            <div>
-              <img src="/logo.png" alt="Logo" style={{ maxHeight: '60px', maxWidth: '200px', objectFit: 'contain' }}
-                onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
-              <div style={{ display: 'none' }}>
-                <h2 style={{ margin: 0, color: '#7f1d1d', fontSize: '1.35rem', fontWeight: '900' }}>ASHOK TEXTILES</h2>
-                <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#555' }}>Fabric Manufacturing ERP</p>
-              </div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '800', color: '#7f1d1d' }}>GREIGE YARN DELIVERY RECEIPT</h1>
-              <p style={{ margin: '4px 0 0 0', fontSize: '1.05rem', fontWeight: '700', color: '#111' }}>{receipt.gydr_number}</p>
-              <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#666' }}>
-                Date: {new Date(receipt.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
-              </p>
-            </div>
-          </div>
-
-          {/* Meta Info */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-            <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '1rem' }}>
-              <p style={{ margin: '0 0 0.75rem 0', fontSize: '11px', fontWeight: '700', color: '#888', textTransform: 'uppercase' }}>Delivery Details</p>
-              {[
-                ['DOF Number', dof?.dof_number || receipt.dof_number],
-                ['Dyeing Unit', dof?.dyeing_unit?.partner_name || '-'],
-                ['Delivered By', receipt.delivered_by],
-                ['Vehicle No', receipt.vehicle_no || '-'],
-              ].map(([label, val]) => (
-                <div key={label} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem', fontSize: '12px' }}>
-                  <span style={{ color: '#555', minWidth: '110px', flexShrink: 0 }}>{label}:</span>
-                  <span style={{ fontWeight: '600' }}>{val}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '1rem' }}>
-              <p style={{ margin: '0 0 0.75rem 0', fontSize: '11px', fontWeight: '700', color: '#888', textTransform: 'uppercase' }}>Linked Orders</p>
-              {orders.length > 0 ? orders.map(o => (
-                <div key={o.id} style={{ fontSize: '12px', marginBottom: '0.3rem' }}>
-                  <span style={{ fontWeight: '700', color: '#7f1d1d' }}>{o.order_number}</span>
-                  {o.design_no && <span style={{ color: '#555' }}> — {o.design_no}</span>}
-                </div>
-              )) : <span style={{ fontSize: '12px', color: '#888' }}>No linked orders</span>}
-            </div>
-          </div>
-
-          {/* Delivery Items Table */}
-          <h3 style={{ fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', color: '#7f1d1d', borderBottom: '1px solid #7f1d1d', paddingBottom: '4px', marginBottom: '0.75rem' }}>
-            Yarn Delivery Details
-          </h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1.5rem' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#7f1d1d', color: '#fff' }}>
-                <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: '700' }}>S.No</th>
-                <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: '700' }}>Yarn Count</th>
-                <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: '700' }}>Colour</th>
-                <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: '700' }}>Spinning Mill</th>
-                <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: '11px', fontWeight: '700' }}>Location</th>
-                <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: '11px', fontWeight: '700' }}>Quantity (kg)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, i) => (
-                <tr key={item.id} style={{ backgroundColor: i % 2 === 0 ? '#f9fafb' : '#fff', borderBottom: '1px solid #e5e7eb' }}>
-                  <td style={{ padding: '6px 10px', fontSize: '12px' }}>{i + 1}</td>
-                  <td style={{ padding: '6px 10px', fontSize: '12px', fontWeight: '600' }}>
-                    {item.master_yarn_counts
-                      ? `${item.master_yarn_counts.count_value} - ${item.master_yarn_counts.material} - ${item.master_yarn_counts.product_type}`
-                      : '-'}
-                  </td>
-                  <td style={{ padding: '6px 10px', fontSize: '12px' }}>{item.colour}</td>
-                  <td style={{ padding: '6px 10px', fontSize: '12px' }}>
-                    {item.spinning_mill?.partner_name || (item.spinning_mill_id ? 'Unknown Mill' : 'Production Returns')}
-                  </td>
-                  <td style={{ padding: '6px 10px', fontSize: '12px' }}>{item.master_locations?.location_name || '-'}</td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: '700', fontSize: '12px' }}>{parseFloat(item.quantity_kg).toFixed(2)}</td>
-                </tr>
-              ))}
-              <tr style={{ backgroundColor: '#f3f4f6', borderTop: '2px solid #7f1d1d' }}>
-                <td colSpan={5} style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '800', fontSize: '12px' }}>TOTAL:</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '800', color: '#7f1d1d', fontSize: '13px' }}>{totalQty.toFixed(2)} kg</td>
-              </tr>
-            </tbody>
-          </table>
-
-          {/* Signatures */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3rem', paddingTop: '1rem', borderTop: '1px solid #e5e7eb' }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ width: '180px', borderTop: '1px solid #000', paddingTop: '8px', marginTop: '40px' }}>
-                <p style={{ margin: 0, fontWeight: '600', fontSize: '12px' }}>{receipt.delivered_by}</p>
-                <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#666' }}>Delivered By</p>
-              </div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ width: '180px', borderTop: '1px solid #000', paddingTop: '8px', marginTop: '40px' }}>
-                <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>Received By</p>
-                <p style={{ margin: '2px 0 0 0', fontSize: '10px', color: '#888' }}>Signature</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <style>{`
-          @media print {
-            body * { visibility: hidden; }
-            .print-container, .print-container * { visibility: visible; }
-            .print-container { position: absolute; left: 0; top: 0; width: 100%; padding: 1.5rem 2rem; box-shadow: none; border: none; }
-            .no-print { display: none !important; }
-            @page { margin: 1.5cm; size: A4; }
-          }
-        `}</style>
-      </div>
-    </div>
-  );
-}

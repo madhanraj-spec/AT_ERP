@@ -521,6 +521,7 @@ function WarpingOverseeTab() {
             quantity_kg,
             colour,
             lot_number,
+            process_type,
             yarn_count:master_yarn_counts(count_value, material, product_type),
             delivery:dyed_yarn_deliveries(
               id,
@@ -528,7 +529,8 @@ function WarpingOverseeTab() {
               delivered_date,
               delivered_by,
               vehicle_no,
-              remarks
+              remarks,
+              dyeing_unit_id
             )
           `)
           .in('production_form_id', wofIds);
@@ -881,6 +883,7 @@ function WarpingOverseeTab() {
                                         order_no: w.order?.order_number || '—',
                                         design_no: w.order?.design_no || '—',
                                         design_name: w.order?.design_name || '',
+                                        partner_name: w.partner?.partner_name || w.partner_name,
                                         items: []
                                       };
                                     }
@@ -4623,7 +4626,8 @@ function WeavingFinancesTab() {
               delivered_date,
               delivered_by,
               vehicle_no,
-              remarks
+              remarks,
+              dyeing_unit_id
             )
           `)
           .in('production_form_id', ordersData.map(o => o.id));

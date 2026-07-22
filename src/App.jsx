@@ -45,6 +45,7 @@ import InspectionReport from './pages/Inspection/InspectionReport';
 import ProcessingModule from './pages/Processing/ProcessingModule';
 import DispatchModule from './pages/Dispatch/DispatchModule';
 import { Loader } from 'lucide-react';
+import EwayBillDashboard from './pages/EwayBill/EwayBillDashboard';
 
 function AppRoutes() {
   const { session, profile, loading } = useAuth();
@@ -142,6 +143,7 @@ function AppRoutes() {
             </Route>
             <Route path="/processing" element={<ProcessingModule />} />
             <Route path="/dispatch" element={<DispatchModule />} />
+            <Route path="/eway-bill" element={<EwayBillDashboard />} />
             {/* Masters Routing */}
             <Route path="/masters">
               <Route index element={<MastersDashboard />} />

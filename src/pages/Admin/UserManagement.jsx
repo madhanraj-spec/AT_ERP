@@ -38,6 +38,7 @@ const ALL_SIDEBAR_ITEMS = [
   { group: 'Inspection', name: 'Inspection Report', path: '/inspection/report' },
   { group: 'Processing', name: 'Processing', path: '/processing' },
   { group: 'Dispatch', name: 'Dispatch', path: '/dispatch' },
+  { group: 'Dispatch', name: 'E-Way Bill', path: '/eway-bill' },
   { group: 'System', name: 'Masters', path: '/masters' },
   { group: 'System', name: 'User Management', path: '/admin/users' }
 ];
@@ -117,7 +118,26 @@ export default function UserManagement() {
       .select('*')
       .order('role_name');
     if (error) throw error;
-    setDbRoles(data || []);
+    
+    // Auto-upgrade check: if standard roles are missing "/eway-bill", append it
+    let updatedAny = false;
+    const updatedRoles = await Promise.all((data || []).map(async (role) => {
+      const links = role.sidebar_links || [];
+      if (!links.includes('/eway-bill') && ['admin', 'yarn', 'greige_yarn', 'dyed_yarn'].includes(role.role_name)) {
+        const newLinks = [...links, '/eway-bill'];
+        const { error: updateErr } = await supabase
+          .from('role_permissions')
+          .update({ sidebar_links: newLinks })
+          .eq('id', role.id);
+        if (!updateErr) {
+          updatedAny = true;
+          return { ...role, sidebar_links: newLinks };
+        }
+      }
+      return role;
+    }));
+
+    setDbRoles(updatedRoles);
   };
 
   // User Actions

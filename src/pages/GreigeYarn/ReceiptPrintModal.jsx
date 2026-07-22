@@ -156,9 +156,27 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
                     const detailsStr = [item.yarn_type, item.colour, item.orders?.order_number].filter(Boolean).join(' • ');
                     const yc = item.master_yarn_counts;
                     const countLabel = yc
-                      ? `${[yc.count_value, yc.spec, yc.spec1, yc.product_type].filter(Boolean).join(' • ')}${detailsStr ? ` [ ${detailsStr} ]` : ''}`
+                      ? [yc.count_value, yc.spec, yc.spec1, yc.product_type].filter(Boolean).join(' • ')
                       : 'Unknown Count';
                     const locationLabel = item.master_locations?.location_name || 'Greige Warehouse';
+
+                    const renderDescription = (pkgTypeLabel) => (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#000' }}>
+                          {countLabel}
+                          {detailsStr && <span style={{ fontWeight: 'normal', color: '#555', fontSize: '0.85rem' }}> [ {detailsStr} ]</span>}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: '#333' }}>
+                          HSN Code: {item.hsn_code || '-'}
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: '#333' }}>
+                          Rate per KG: {item.rate_per_kg ? `₹${Number(item.rate_per_kg).toFixed(2)}/kg` : '-'}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '2px' }}>
+                          {pkgTypeLabel} (Stored in: {locationLabel})
+                        </div>
+                      </div>
+                    );
                     
                     return (
                       <React.Fragment key={item.id || index}>
@@ -166,8 +184,7 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
                         {item.bag_count > 0 && (
                           <tr style={{ borderBottom: '1px solid #eee' }}>
                             <td style={{ padding: '0.5rem' }}>
-                              <strong>{countLabel}</strong> {isSpinning && ` @ ₹${Number(item.rate_per_kg || 0).toFixed(2)}/kg`}
-                              <div style={{ fontSize: '0.85rem', color: '#555' }}>Bags Received (Stored in: {locationLabel})</div>
+                              {renderDescription('Bags Received')}
                             </td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>{Number(item.bag_weight || 0).toFixed(2)}</td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>{item.bag_count || 0}</td>
@@ -178,8 +195,11 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
                         {item.cone_count > 0 && (
                           <tr style={{ borderBottom: '1px solid #eee' }}>
                             <td style={{ padding: '0.5rem' }}>
-                              {item.bag_count === 0 && <strong>{countLabel}</strong>}
-                              <div style={{ fontSize: '0.85rem', color: '#555' }}>Cones Received (Stored in: {locationLabel})</div>
+                              {item.bag_count > 0 ? (
+                                <div style={{ fontSize: '0.85rem', color: '#555' }}>Cones Received (Stored in: {locationLabel})</div>
+                              ) : (
+                                renderDescription('Cones Received')
+                              )}
                             </td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>{Number(item.cone_weight || 0).toFixed(2)}</td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>{item.cone_count || 0}</td>
@@ -190,10 +210,7 @@ export default function ReceiptPrintModal({ receipt, onClose }) {
                         {(!item.bag_count || item.bag_count === 0) && (!item.cone_count || item.cone_count === 0) && (
                           <tr style={{ borderBottom: '1px solid #eee' }}>
                             <td style={{ padding: '0.5rem' }}>
-                              <strong>{countLabel}</strong>
-                              <div style={{ fontSize: '0.85rem', color: '#555' }}>
-                                Production Return {item.master_partners?.partner_name ? `[ Mill: ${item.master_partners.partner_name} ]` : ''} (Stored in: {locationLabel})
-                              </div>
+                              {renderDescription(item.master_partners?.partner_name ? `Production Return [ Mill: ${item.master_partners.partner_name} ]` : 'Production Return')}
                             </td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>-</td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>-</td>

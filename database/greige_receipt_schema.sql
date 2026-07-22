@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS greige_yarn_receipts (
     cone_weight NUMERIC(10,2) DEFAULT 0,
     cone_count INTEGER DEFAULT 0,
     rate_per_kg NUMERIC(10,2) DEFAULT 0, -- Added Rate per KG
+    hsn_code TEXT, -- HSN Code for the yarn count item
     total_weight NUMERIC(15,2) NOT NULL, -- Final verified math: (bags * bag_weight) + (cones * cone_weight)
     
     -- Logistics & Storage

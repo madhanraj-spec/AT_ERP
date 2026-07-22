@@ -1179,10 +1179,19 @@ function WashedEditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
     setErr('');
     try {
       const currentRolls = Array.isArray(weavingOrder.fabric_rolls) ? weavingOrder.fabric_rolls : [];
+      let matchedInWo = false;
+      const targetProcId = (roll.processed_roll_id || roll.id).toLowerCase();
+
       const updatedRolls = currentRolls.map(r => {
-        if (r.id.toLowerCase() === roll.id.toLowerCase()) {
+        const isMatch = (r.id && r.id.toLowerCase() === targetProcId) ||
+                        (r.processed_roll_id && r.processed_roll_id.toLowerCase() === targetProcId);
+        if (isMatch) {
+          matchedInWo = true;
           return {
             ...r,
+            processed_roll_id: roll.processed_roll_id || r.processed_roll_id || roll.id,
+            received_qty: receivedQty,
+            qty: receivedQty,
             actual_qty: actualQty,
             actual_length: actualQty,
             shortage: shortage,
@@ -1232,12 +1241,108 @@ function WashedEditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
         return r;
       });
 
+      if (!matchedInWo) {
+        updatedRolls.push({
+          id: roll.processed_roll_id || roll.id,
+          processed_roll_id: roll.processed_roll_id || roll.id,
+          received_qty: receivedQty,
+          qty: receivedQty,
+          actual_qty: actualQty,
+          actual_length: actualQty,
+          shortage: shortage,
+          inspector_1: form.inspector_1,
+          inspector_2: form.inspector_2,
+          inspected_at: new Date().toISOString(),
+          roll_ok: totalPoints === 0,
+          status: 'received_from_processing',
+          received_from_processing_at: new Date().toISOString(),
+          washed_inspected: true,
+          washed_inspected_at: new Date().toISOString(),
+          washed_actual_qty: actualQty,
+          washed_shortage: shortage,
+          washed_width: form.washed_width ? parseFloat(form.washed_width) : null,
+          washed_lot: form.washed_lot ? form.washed_lot.trim() : null,
+          lot: form.washed_lot ? form.washed_lot.trim() : null,
+          washed_inspector_1: form.inspector_1,
+          washed_inspector_2: form.inspector_2,
+          washed_place: form.washed_place || 'Factory',
+          washed_warp_weft_breakage_1pt_count: form.warpWeft1pt,
+          washed_warp_weft_breakage_2pt_count: form.warpWeft2pt,
+          washed_warp_weft_breakage_3pt_count: form.warpWeft3pt,
+          washed_warp_weft_breakage_4pt_count: form.warpWeft4pt,
+          washed_warp_weft_breakage_total_points: warpWeftTotal,
+          washed_warp_weft_breakage_no_of_tags: warpWeftTags,
+          washed_weaving_defect_1pt_count: form.weaving1pt,
+          washed_weaving_defect_2pt_count: form.weaving2pt,
+          washed_weaving_defect_3pt_count: form.weaving3pt,
+          washed_weaving_defect_4pt_count: form.weaving4pt,
+          washed_weaving_defect_total_points: weavingTotal,
+          washed_weaving_defect_no_of_tags: weavingTags,
+          washed_yarn_defect_1pt_count: form.yarn1pt,
+          washed_yarn_defect_4pt_count: form.yarn4pt,
+          washed_yarn_defect_total_points: yarnTotal,
+          washed_yarn_defect_no_of_tags: yarnTags,
+          washed_holes_stains_2pt_count: form.holes2pt,
+          washed_holes_stains_4pt_count: form.holes4pt,
+          washed_holes_stains_total_points: holesStainsTotal,
+          washed_holes_stains_no_of_tags: holesTags,
+          washed_total_defect_points: totalPoints,
+          washed_no_of_tags: totalTags
+        });
+      }
+
       const { error: updateErr } = await supabase
         .from('weaving_orders')
         .update({ fabric_rolls: updatedRolls })
         .eq('id', weavingOrder.id);
 
       if (updateErr) throw updateErr;
+
+      // Sync washed inspection details to processing_orders received_rolls
+      try {
+        const { data: pofsData } = await supabase
+          .from('processing_orders')
+          .select('id, received_rolls');
+
+        if (pofsData) {
+          for (const pof of pofsData) {
+            const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+            const hasMatch = rxRolls.some(rx => 
+              (rx.id && rx.id.toLowerCase() === targetProcId) || 
+              (rx.processed_roll_id && rx.processed_roll_id.toLowerCase() === targetProcId)
+            );
+            if (hasMatch) {
+              const updatedRxRolls = rxRolls.map(rx => {
+                if (
+                  (rx.id && rx.id.toLowerCase() === targetProcId) || 
+                  (rx.processed_roll_id && rx.processed_roll_id.toLowerCase() === targetProcId)
+                ) {
+                  return {
+                    ...rx,
+                    washed_inspected: true,
+                    washed_inspected_at: new Date().toISOString(),
+                    washed_actual_qty: actualQty,
+                    washed_shortage: shortage,
+                    washed_width: form.washed_width ? parseFloat(form.washed_width) : null,
+                    washed_lot: form.washed_lot ? form.washed_lot.trim() : null,
+                    washed_place: form.washed_place || 'Factory',
+                    washed_total_defect_points: totalPoints,
+                    washed_no_of_tags: totalTags
+                  };
+                }
+                return rx;
+              });
+
+              await supabase
+                .from('processing_orders')
+                .update({ received_rolls: updatedRxRolls })
+                .eq('id', pof.id);
+            }
+          }
+        }
+      } catch (pErr) {
+        console.error('Error updating processing orders in WashedEditModal:', pErr);
+      }
 
       onSave();
     } catch (e) {
@@ -1277,7 +1382,7 @@ function WashedEditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
     }}>
       <div style={{
-        background: 'white', borderRadius: '16px', width: '100%', maxWidth: '560px',
+        background: 'white', borderRadius: '16px', width: '95%', maxWidth: '900px',
         maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.25)',
         display: 'flex', flexDirection: 'column'
       }}>
@@ -1357,7 +1462,7 @@ function WashedEditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
           <div style={{ borderTop: '1px dashed var(--border-current)', paddingTop: '1rem' }}>
             <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', color: 'var(--color-primary)' }}>Defect Point Counts</h4>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '0.75rem' }}>
               <div style={{ border: '1px solid var(--border-current)', padding: '0.75rem', borderRadius: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-current)' }}>Warp & Weft Breakages</span>
@@ -1613,13 +1718,18 @@ function WashedReportTab({ onCreateNewReport }) {
         for (const roll of rolls) {
           if (roll.washed_inspected === true) {
             let pofPlace = roll.washed_place || 'Factory';
+            let rxQty = roll.received_qty ?? roll.qty ?? roll.actual_qty;
             if (pofsData) {
               const targetId = (roll.processed_roll_id || roll.id).toLowerCase();
               for (const pof of pofsData) {
                 const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
-                const foundRx = rxRolls.find(rx => rx.id && rx.id.toLowerCase() === targetId);
+                const foundRx = rxRolls.find(rx => 
+                  (rx.id && rx.id.toLowerCase() === targetId) ||
+                  (rx.processed_roll_id && rx.processed_roll_id.toLowerCase() === targetId)
+                );
                 if (foundRx) {
                   pofPlace = foundRx.received_place || pof.received_place || pofPlace;
+                  if (foundRx.qty) rxQty = parseFloat(foundRx.qty);
                   break;
                 }
               }
@@ -1635,6 +1745,8 @@ function WashedReportTab({ onCreateNewReport }) {
             washedRolls.push({ 
               roll: {
                 ...roll,
+                received_qty: rxQty,
+                qty: rxQty,
                 washed_place: pofPlace
               }, 
               weavingOrder: order 
@@ -2845,7 +2957,7 @@ const handlePrintReport = (rolls, metaInfo, qtyUnit, irNumber = '—', printDate
 
       const width = parseFloat(r.washed_width || r.width || 0);
       const pointsPer100Yd = width > 0 && actualQtyMtrs > 0 ? (3600 * totalPoints) / (width * actualQtyMtrs * 1.0914) : 0;
-      const weightVal = item.weight ? parseFloat(item.weight).toFixed(2) : (r.washed_weight_kg ? parseFloat(r.washed_weight_kg).toFixed(2) : '—');
+      const weightVal = item.weight != null && item.weight !== '' ? parseFloat(item.weight).toFixed(2) : (r.washed_weight_kg ? parseFloat(r.washed_weight_kg).toFixed(2) : '—');
 
       rowsHtml += `
         <tr>
@@ -2984,6 +3096,7 @@ const handlePrintReport = (rolls, metaInfo, qtyUnit, irNumber = '—', printDate
             <div class="summary-box">
               <div><strong>Total Rolls:</strong> ${rolls.length}</div>
               <div><strong>Total Quantity:</strong> ${qtyUnit === 'yards' ? (rolls.reduce((sum, item) => sum + parseFloat(item.roll.washed_actual_qty ?? item.roll.actual_qty ?? 0), 0) * 1.09361).toFixed(2) + ' Yards' : rolls.reduce((sum, item) => sum + parseFloat(item.roll.washed_actual_qty ?? item.roll.actual_qty ?? 0), 0).toFixed(2) + ' Meters'}</div>
+              <div><strong>Total Weight:</strong> ${rolls.reduce((sum, item) => sum + parseFloat(item.weight || item.roll.washed_weight_kg || 0), 0).toFixed(2)} Kg</div>
             </div>
             <div class="signatures-box">
               <div class="signature-col">
@@ -3690,22 +3803,24 @@ function NewReportModal({ onClose, onSave }) {
         });
 
         // Set average weight and calculate weight
+        const rollKey = foundRoll.processed_roll_id || foundRoll.id;
         if (foundOrder.order?.avg_weight_meter) {
           const avgW = foundOrder.order.avg_weight_meter;
           setAvgWeightMeter(avgW.toString());
-          setRollWeights(prev => ({ ...prev, [foundRoll.id]: (mQty * avgW).toFixed(2) }));
+          setRollWeights(prev => ({ ...prev, [rollKey]: (mQty * avgW).toFixed(2) }));
         } else {
           setAvgWeightMeter('');
-          setRollWeights(prev => ({ ...prev, [foundRoll.id]: '' }));
+          setRollWeights(prev => ({ ...prev, [rollKey]: '' }));
           alert('Avg Weight / Meter is not set for this order. Please enter it in the input field.');
         }
       } else {
         // Calculate roll weight based on current avgWeightMeter state
+        const rollKey = foundRoll.processed_roll_id || foundRoll.id;
         const numericAvg = parseFloat(avgWeightMeter);
         if (!isNaN(numericAvg)) {
-          setRollWeights(prev => ({ ...prev, [foundRoll.id]: (mQty * numericAvg).toFixed(2) }));
+          setRollWeights(prev => ({ ...prev, [rollKey]: (mQty * numericAvg).toFixed(2) }));
         } else {
-          setRollWeights(prev => ({ ...prev, [foundRoll.id]: '' }));
+          setRollWeights(prev => ({ ...prev, [rollKey]: '' }));
         }
       }
 
@@ -3861,7 +3976,7 @@ function NewReportModal({ onClose, onSave }) {
     setRollWeights(prev => {
       const next = { ...prev };
       addedRolls.forEach(item => {
-        const rId = item.roll.id;
+        const rId = item.roll.processed_roll_id || item.roll.id;
         if (!manualWeightFlags[rId]) {
           if (!isNaN(numericAvg)) {
             const mQty = parseFloat(item.roll.washed_actual_qty ?? item.roll.actual_qty ?? 0);
@@ -3875,19 +3990,19 @@ function NewReportModal({ onClose, onSave }) {
     });
   };
 
-  const handleRemoveRoll = (rollId) => {
-    const updated = addedRolls.filter(item => item.roll.id !== rollId);
+  const handleRemoveRoll = (targetRollId) => {
+    const updated = addedRolls.filter(item => (item.roll.processed_roll_id || item.roll.id) !== targetRollId && item.roll.id !== targetRollId);
     setAddedRolls(updated);
     
     // Clean weights state
     setRollWeights(prev => {
       const next = { ...prev };
-      delete next[rollId];
+      delete next[targetRollId];
       return next;
     });
     setManualWeightFlags(prev => {
       const next = { ...prev };
-      delete next[rollId];
+      delete next[targetRollId];
       return next;
     });
 
@@ -3919,13 +4034,21 @@ function NewReportModal({ onClose, onSave }) {
         .eq('id', meta.lockedOrderId);
       if (orderErr) throw orderErr;
 
+      const addedRollsWithWeights = addedRolls.map(item => {
+        const rId = item.roll.processed_roll_id || item.roll.id;
+        return {
+          ...item,
+          weight: rollWeights[rId] || rollWeights[item.roll.id] || item.roll.washed_weight_kg || null
+        };
+      });
+
       // 2. Group by weavingOrderId to make atomic updates
       const groups = {};
-      addedRolls.forEach(item => {
+      addedRollsWithWeights.forEach(item => {
         if (!groups[item.weavingOrderId]) {
           groups[item.weavingOrderId] = [];
         }
-        groups[item.weavingOrderId].push({ id: item.roll.id, weight: rollWeights[item.roll.id] });
+        groups[item.weavingOrderId].push({ id: item.roll.processed_roll_id || item.roll.id, weight: item.weight });
       });
 
       for (const [woId, itemsList] of Object.entries(groups)) {
@@ -3938,7 +4061,8 @@ function NewReportModal({ onClose, onSave }) {
 
         const currentRolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
         const updatedRolls = currentRolls.map(r => {
-          const matchItem = itemsList.find(i => i.id === r.id);
+          const rId = r.processed_roll_id || r.id;
+          const matchItem = itemsList.find(i => i.id.toLowerCase() === rId.toLowerCase() || (r.processed_roll_id && i.id.toLowerCase() === r.processed_roll_id.toLowerCase()));
           if (matchItem) {
             return {
               ...r,
@@ -3957,9 +4081,9 @@ function NewReportModal({ onClose, onSave }) {
       }
 
       // Let's calculate total rolls, qty, weight for saving
-      const totalMtrs = addedRolls.reduce((sum, item) => sum + parseFloat(item.roll.washed_actual_qty ?? item.roll.actual_qty ?? 0), 0);
+      const totalMtrs = addedRollsWithWeights.reduce((sum, item) => sum + parseFloat(item.roll.washed_actual_qty ?? item.roll.actual_qty ?? 0), 0);
       const calculatedQty = unit === 'yards' ? totalMtrs * 1.09361 : totalMtrs;
-      const calculatedWeight = addedRolls.reduce((sum, item) => sum + parseFloat(rollWeights[item.roll.id] || 0), 0);
+      const calculatedWeight = addedRollsWithWeights.reduce((sum, item) => sum + parseFloat(item.weight || 0), 0);
 
       // Generate report number
       const irNumber = await generateReportNumber();
@@ -3970,11 +4094,11 @@ function NewReportModal({ onClose, onSave }) {
         .insert([{
           report_number: irNumber,
           order_id: meta.lockedOrderId,
-          rolls: addedRolls.map(item => ({
+          rolls: addedRollsWithWeights.map(item => ({
             roll: item.roll,
             weavingOrderId: item.weavingOrderId,
             orderId: item.orderId,
-            weight: rollWeights[item.roll.id] || null
+            weight: item.weight || null
           })),
           meta_info: {
             orderNo: meta.orderNo,
@@ -3988,7 +4112,7 @@ function NewReportModal({ onClose, onSave }) {
           },
           qty_unit: unit,
           avg_weight_meter: avgWeightMeter ? parseFloat(avgWeightMeter) : null,
-          total_rolls: addedRolls.length,
+          total_rolls: addedRollsWithWeights.length,
           total_qty: calculatedQty,
           total_weight: calculatedWeight
         }]);
@@ -3996,7 +4120,7 @@ function NewReportModal({ onClose, onSave }) {
       if (irErr) throw irErr;
 
       // 3. Print Report
-      handlePrintReport(addedRolls, meta, unit, irNumber);
+      handlePrintReport(addedRollsWithWeights, meta, unit, irNumber);
 
       // 4. Trigger onClose and reload
       if (onSave) onSave();
@@ -4277,6 +4401,7 @@ function NewReportModal({ onClose, onSave }) {
                   <tbody>
                     {addedRolls.map((item, index) => {
                       const r = item.roll;
+                      const rollKey = r.processed_roll_id || r.id;
                       const mQty = parseFloat(r.washed_actual_qty ?? r.actual_qty ?? 0);
                       const displayQty = unit === 'yards' ? mQty * 1.09361 : mQty;
                       const width = parseFloat(r.washed_width || r.width || 0);
@@ -4311,20 +4436,20 @@ function NewReportModal({ onClose, onSave }) {
                       const pointsPer100Yd = width > 0 && mQty > 0 ? (3600 * totalPoints) / (width * mQty * 1.0914) : 0;
 
                       return (
-                        <tr key={r.id} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                        <tr key={rollKey} style={{ borderBottom: '1px solid var(--border-current)' }}>
                           <td style={{ padding: '0.4rem', textAlign: 'center' }}>{index + 1}</td>
-                          <td style={{ padding: '0.4rem', fontFamily: 'monospace', fontWeight: '700', color: 'var(--color-primary)' }}>{r.processed_roll_id || r.id}</td>
+                          <td style={{ padding: '0.4rem', fontFamily: 'monospace', fontWeight: '700', color: 'var(--color-primary)' }}>{rollKey}</td>
                           <td style={{ padding: '0.4rem', textAlign: 'right', fontWeight: '650' }}>{displayQty.toFixed(2)}</td>
                           <td style={{ padding: '0.4rem', textAlign: 'center', fontWeight: '600' }}>{r.washed_width ? `${r.washed_width}"` : '—'}</td>
                           <td style={{ padding: '0.4rem', textAlign: 'center' }}>
                             <input
                               type="number"
                               step="0.01"
-                              value={rollWeights[r.id] || ''}
+                              value={rollWeights[rollKey] || ''}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                setRollWeights(prev => ({ ...prev, [r.id]: val }));
-                                setManualWeightFlags(prev => ({ ...prev, [r.id]: true }));
+                                setRollWeights(prev => ({ ...prev, [rollKey]: val }));
+                                setManualWeightFlags(prev => ({ ...prev, [rollKey]: true }));
                               }}
                               className="input-field"
                               style={{ width: '70px', height: '28px', fontSize: '0.75rem', padding: '2px 4px', textAlign: 'center', fontWeight: '700' }}
@@ -4359,7 +4484,7 @@ function NewReportModal({ onClose, onSave }) {
                           <td style={{ padding: '0.4rem', textAlign: 'center' }}>
                             <button
                               type="button"
-                              onClick={() => handleRemoveRoll(r.id)}
+                              onClick={() => handleRemoveRoll(rollKey)}
                               style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#be123c', padding: '2px 4px' }}
                             >
                               <X size={14} />

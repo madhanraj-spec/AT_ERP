@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Printer } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 /**
  * DYDRDetail renders a single Dyed Yarn Delivery Receipt (DYDR) entry.
@@ -9,6 +10,7 @@ import { ChevronDown, ChevronRight, Printer } from 'lucide-react';
  */
 export default function DYDRDetail({ dydr, onPrint, yarnCounts }) {
   const [expanded, setExpanded] = useState(false);
+  const [partnerDetails, setPartnerDetails] = useState(null);
 
   const toggle = () => setExpanded(!expanded);
 
@@ -16,6 +18,80 @@ export default function DYDRDetail({ dydr, onPrint, yarnCounts }) {
     ? new Date(dydr.delivered_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—';
   const deliveredBy = dydr.delivered_by || '—';
+
+  useEffect(() => {
+    async function resolvePartner() {
+      if (dydr.partner) {
+        setPartnerDetails(dydr.partner);
+        return;
+      }
+      
+      let partnerId = dydr.partner_id;
+      const items = dydr.items || [];
+      let formId = null;
+      let processType = null;
+      
+      if (items.length > 0) {
+        formId = items[0].production_form_id;
+        processType = items[0].process_type;
+      } else {
+        try {
+          const { data: dbItems } = await supabase
+            .from('dyed_yarn_delivery_items')
+            .select('production_form_id, process_type')
+            .eq('delivery_id', dydr.id);
+          if (dbItems && dbItems.length > 0) {
+            formId = dbItems[0].production_form_id;
+            processType = dbItems[0].process_type;
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      
+      if (!partnerId && formId && processType) {
+        try {
+          const dbTable = processType === 'warping' 
+            ? 'warping_order_forms' 
+            : processType === 'redyeing' 
+            ? 'dyeing_order_forms' 
+            : 'weaving_orders';
+          const partnerCol = processType === 'redyeing' ? 'dyeing_unit_id' : 'partner_id';
+          const { data: formRecord } = await supabase
+            .from(dbTable)
+            .select(partnerCol)
+            .eq('id', formId)
+            .maybeSingle();
+          if (formRecord?.[partnerCol]) {
+            partnerId = formRecord[partnerCol];
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      
+      if (!partnerId && dydr.dyeing_unit_id) {
+        partnerId = dydr.dyeing_unit_id;
+      }
+
+      if (partnerId) {
+        try {
+          const { data: partnerData } = await supabase
+            .from('master_partners')
+            .select('*')
+            .eq('id', partnerId)
+            .maybeSingle();
+          setPartnerDetails(partnerData);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+    
+    if (expanded) {
+      resolvePartner();
+    }
+  }, [dydr, expanded]);
 
   return (
     <div style={{ marginBottom: '0.75rem', maxWidth: '800px' }}>
@@ -43,7 +119,7 @@ export default function DYDRDetail({ dydr, onPrint, yarnCounts }) {
         <div style={{ minWidth: '150px', color: 'var(--text-current)' }}>{deliveredBy}</div>
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onPrint && onPrint(dydr); }}
+          onClick={(e) => { e.stopPropagation(); onPrint && onPrint({ ...dydr, partner: partnerDetails }); }}
           style={{
             marginLeft: 'auto',
             background: 'transparent',
@@ -66,6 +142,22 @@ export default function DYDRDetail({ dydr, onPrint, yarnCounts }) {
       {/* Expanded details */}
       {expanded && (
         <div style={{ padding: '0.75rem 1rem', borderLeft: '3px solid #800000', backgroundColor: '#fff', borderBottom: '1px solid var(--border-current)', borderRight: '1px solid var(--border-current)', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' }}>
+          {partnerDetails && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', paddingBottom: '0.75rem', marginBottom: '0.75rem', borderBottom: '1px dashed var(--border-current)', fontSize: '0.75rem' }}>
+              <div>
+                <span style={{ color: 'var(--text-muted-current)', fontWeight: 'bold' }}>Delivery To (Partner):</span>
+                <div style={{ fontWeight: '700', marginTop: '2px' }}>{partnerDetails.partner_name}</div>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted-current)', fontWeight: 'bold' }}>Address:</span>
+                <div style={{ marginTop: '2px', whiteSpace: 'pre-wrap' }}>{partnerDetails.address || '—'}</div>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted-current)', fontWeight: 'bold' }}>GSTIN:</span>
+                <div style={{ marginTop: '2px' }}>{partnerDetails.gstin || '—'}</div>
+              </div>
+            </div>
+          )}
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
             <thead>
               <tr style={{ backgroundColor: '#fdf8f8', borderBottom: '1px solid var(--border-current)' }}>
@@ -76,7 +168,7 @@ export default function DYDRDetail({ dydr, onPrint, yarnCounts }) {
               </tr>
             </thead>
             <tbody>
-              {dydr.items.map((item, idx) => {
+              {(dydr.items || []).map((item, idx) => {
                 const countId = item.yarn_count_id || item.yarn_count?.id;
                 const yc = yarnCounts ? yarnCounts.find(y => y.id === countId) : item.yarn_count;
                 const countDisplay = yc ? [yc.count_value, yc.spec, yc.spec1].filter(Boolean).join(' ') : '—';

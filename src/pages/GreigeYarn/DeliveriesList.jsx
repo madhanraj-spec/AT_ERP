@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader, Eye, Truck, CheckCircle, Clock, AlertCircle, Send, ChevronRight, ChevronDown, XCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import EwayBillModal from '../../components/EwayBillModal';
+import GYDRPrintModal from './GYDRPrintModal';
+import EwayBillPrintModal from '../../components/EwayBillPrintModal';
 
 const hasGreigeBalanceToSend = (form, deliveryItemsMap, returnsMap) => {
   if (!form || !Array.isArray(form.summary) || form.summary.length === 0) {
@@ -41,6 +44,125 @@ export default function DeliveriesList() {
   const [expandedGydrs, setExpandedGydrs] = useState({});
   const [dofDetails, setDofDetails] = useState({});
   const [yarnCounts, setYarnCounts] = useState([]);
+  const [activeEwayReceipt, setActiveEwayReceipt] = useState(null);
+  const [partnerDetails, setPartnerDetails] = useState(null);
+  const [viewReceiptModal, setViewReceiptModal] = useState(null);
+  const [ewayPrintRecord, setEwayPrintRecord] = useState(null);
+  const [ewayGoodsItems, setEwayGoodsItems] = useState([]); // Per-yarn goods breakdown for E-Way Bill
+
+  const handlePrintEwayBill = (ewayBillNo) => {
+    navigator.clipboard.writeText(ewayBillNo);
+    alert(`E-Way Bill Number ${ewayBillNo} copied to clipboard!\n\nOpening the official GST Portal print search in a new tab. Just paste the number and print the exact official e-Way Bill.`);
+    window.open('https://ewaybillgst.gov.in/search-ewaybill', '_blank');
+  };
+
+  useEffect(() => {
+    if (activeEwayReceipt) {
+      const fetchPartner = async () => {
+        let partnerId = activeEwayReceipt.dyeing_unit_id || activeEwayReceipt.partner_id;
+        if (!partnerId && activeEwayReceipt.dof_id) {
+          const { data: dofRecord } = await supabase
+            .from('dyeing_order_forms')
+            .select('dyeing_unit_id')
+            .eq('id', activeEwayReceipt.dof_id)
+            .maybeSingle();
+          partnerId = dofRecord?.dyeing_unit_id;
+        }
+        if (partnerId) {
+          const { data } = await supabase
+            .from('master_partners')
+            .select('*')
+            .eq('id', partnerId)
+            .single();
+          if (data) {
+            setPartnerDetails(data);
+          }
+        }
+      };
+      fetchPartner();
+    } else {
+      setPartnerDetails(null);
+    }
+  }, [activeEwayReceipt]);
+
+  // Build per-yarn goods items when activeEwayReceipt is set
+  useEffect(() => {
+    if (!activeEwayReceipt) {
+      setEwayGoodsItems([]);
+      return;
+    }
+    const buildGoodsItems = async () => {
+      // Find delivery items for this GYDR from dofDetails
+      const dofId = activeEwayReceipt.dof_id;
+      const allGydrItems = dofDetails[dofId]?.gydrItems || [];
+      const deliveryItems = allGydrItems.filter(item => item.receipt_id === activeEwayReceipt.id);
+      
+      if (deliveryItems.length === 0) {
+        setEwayGoodsItems([]);
+        return;
+      }
+
+      // Group delivery items by yarn_count_id (aggregate qty)
+      const countMap = {};
+      deliveryItems.forEach(di => {
+        const cid = di.yarn_count_id;
+        if (!countMap[cid]) {
+          countMap[cid] = {
+            qty: 0,
+            countObj: di.master_yarn_counts
+          };
+        }
+        countMap[cid].qty += parseFloat(di.quantity_kg || 0);
+      });
+
+      // Fetch rate_per_kg and hsn_code from greige_yarn_receipts
+      const countIds = Object.keys(countMap);
+      let rateMap = {};
+      try {
+        const { data: receipts } = await supabase
+          .from('greige_yarn_receipts')
+          .select('yarn_count_id, rate_per_kg, hsn_code')
+          .in('yarn_count_id', countIds)
+          .gt('rate_per_kg', 0)
+          .order('created_at', { ascending: false });
+
+        (receipts || []).forEach(rec => {
+          const key = rec.yarn_count_id;
+          if (!rateMap[key]) {
+            rateMap[key] = {
+              rate_per_kg: parseFloat(rec.rate_per_kg || 0),
+              hsn_code: rec.hsn_code || '5205'
+            };
+          }
+        });
+      } catch (err) {
+        console.error('Error fetching yarn receipt rates:', err);
+      }
+
+      // Build items array
+      const items = Object.entries(countMap).map(([cid, info]) => {
+        const c = info.countObj;
+        const yarnName = c
+          ? [c.count_value, c.spec, c.spec1, c.product_type].filter(Boolean).join(' ')
+          : 'Yarn';
+        const rateInfo = rateMap[cid] || {};
+        const rate = rateInfo.rate_per_kg || 0;
+        const hsn = rateInfo.hsn_code || '5205';
+        const qty = parseFloat(info.qty.toFixed(2));
+        return {
+          productName: yarnName + ' Yarn',
+          hsnCode: hsn,
+          quantity: qty,
+          qtyUnit: 'KGS',
+          ratePerKg: rate,
+          taxableAmount: parseFloat((qty * rate).toFixed(2))
+        };
+      });
+
+      setEwayGoodsItems(items);
+    };
+    buildGoodsItems();
+  }, [activeEwayReceipt, dofDetails]);
 
   useEffect(() => {
     fetchDyeingForms();
@@ -310,7 +432,7 @@ export default function DeliveriesList() {
   ];
 
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1rem' }} className="fade-in">
+    <div style={{ width: '100%', maxWidth: '100%', margin: '0', padding: '0 0.25rem' }} className="fade-in">
       {/* Header */}
       <div style={{ marginBottom: '1.5rem' }}>
         <button
@@ -546,13 +668,55 @@ export default function DeliveriesList() {
                                                 </div>
                                               )}
                                             </div>
-                                            <button
-                                              onClick={() => toggleGydrExpand(gydr.id)}
-                                              className="btn btn-secondary"
-                                              style={{ padding: '2px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                                            >
-                                              {isGydrExpanded ? 'Hide Items' : 'View Items'}
-                                            </button>
+                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                              {/* Eway Bill Actions */}
+                                              {gydr.eway_bill_no ? (
+                                                gydr.eway_bill_status === 'cancelled' ? (
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: '#fee2e2', border: '1px solid #fca5a5', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', color: '#991b1b', fontWeight: '700' }}>
+                                                    Cancelled
+                                                    <button
+                                                      onClick={() => setActiveEwayReceipt(gydr)}
+                                                      style={{ border: 'none', background: 'none', color: '#0284c7', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '0.75rem', fontWeight: '700' }}
+                                                    >
+                                                      Retry
+                                                    </button>
+                                                  </div>
+                                                ) : (
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: '#dcfce7', border: '1px solid #bbf7d0', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', color: '#166534', fontWeight: '700' }}>
+                                                    <CheckCircle size={12} style={{ color: '#15803d' }} /> Eway: {gydr.eway_bill_no}
+                                                    <button
+                                                      onClick={() => setEwayPrintRecord(gydr)}
+                                                      style={{ border: 'none', background: 'none', color: '#0284c7', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '0.75rem', fontWeight: '700', marginLeft: '0.5rem' }}
+                                                    >
+                                                      Print
+                                                    </button>
+                                                    <span style={{ color: '#cbd5e1' }}>|</span>
+                                                    <button
+                                                      onClick={() => setActiveEwayReceipt(gydr)}
+                                                      style={{ border: 'none', background: 'none', color: '#b91c1c', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '0.75rem', fontWeight: '700' }}
+                                                    >
+                                                      Cancel
+                                                    </button>
+                                                  </div>
+                                                )
+                                              ) : (
+                                                <button
+                                                  onClick={() => setActiveEwayReceipt(gydr)}
+                                                  className="btn"
+                                                  style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem', backgroundColor: '#0284c7', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontWeight: '600' }}
+                                                >
+                                                  <Truck size={12} /> Eway Bill
+                                                </button>
+                                              )}
+
+                                              <button
+                                                onClick={() => toggleGydrExpand(gydr.id)}
+                                                className="btn btn-secondary"
+                                                style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                                              >
+                                                {isGydrExpanded ? 'Hide Items' : 'View Items'}
+                                              </button>
+                                            </div>
                                           </div>
                                           
                                           {isGydrExpanded && (
@@ -797,6 +961,67 @@ export default function DeliveriesList() {
         )}
 
       </div>
+      {activeEwayReceipt && (
+        <EwayBillModal
+          isOpen={!!activeEwayReceipt}
+          onClose={() => setActiveEwayReceipt(null)}
+          type="greige"
+          record={activeEwayReceipt}
+          defaultDetails={{
+            docNo: activeEwayReceipt.gydr_number,
+            docDate: activeEwayReceipt.created_at,
+            partnerName: partnerDetails?.partner_name || activeEwayReceipt.dyeing_unit_name || 'Processing Partner',
+            partnerGstin: partnerDetails?.gstin,
+            partnerAddress: partnerDetails?.address,
+            partnerPincode: partnerDetails?.pincode,
+            partnerStateCode: partnerDetails?.state_code,
+            vehicleNo: activeEwayReceipt.vehicle_no,
+            items: ewayGoodsItems,
+            totalQty: (dofDetails[activeEwayReceipt.dof_id || activeEwayReceipt.dof_number]?.gydrItems || dofDetails[activeEwayReceipt.dof_id]?.gydrItems || [])
+              .filter(item => item.receipt_id === activeEwayReceipt.id)
+              .reduce((sum, item) => sum + parseFloat(item.quantity_kg || 0), 0),
+            qtyUnit: 'KGS',
+            productName: 'Greige Cotton Yarn'
+          }}
+          onSuccess={(res) => {
+            // Update dofDetails to reflect the new e-way bill
+            setDofDetails(prev => {
+              const dofId = activeEwayReceipt.dof_id || activeEwayReceipt.dof_number;
+              // Try finding correct key
+              const matchKey = prev[dofId] ? dofId : Object.keys(prev).find(key => prev[key]?.gydrs?.some(r => r.id === activeEwayReceipt.id));
+              if (!matchKey || !prev[matchKey]) return prev;
+              return {
+                ...prev,
+                [matchKey]: {
+                  ...prev[matchKey],
+                  gydrs: (prev[matchKey].gydrs || []).map(r => r.id === activeEwayReceipt.id ? {
+                    ...r,
+                    eway_bill_no: res.ewayBillNo || r.eway_bill_no,
+                    eway_bill_status: res.eway_bill_status || 'generated',
+                    eway_bill_date: res.ewayBillDate || r.eway_bill_date,
+                    eway_bill_details: res.details || r.eway_bill_details
+                  } : r)
+                }
+              };
+            });
+            setActiveEwayReceipt(null);
+          }}
+        />
+      )}
+      {viewReceiptModal && (
+        <GYDRPrintModal
+          receipt={viewReceiptModal}
+          onClose={() => setViewReceiptModal(null)}
+        />
+      )}
+      {ewayPrintRecord && (
+        <EwayBillPrintModal
+          isOpen={!!ewayPrintRecord}
+          onClose={() => setEwayPrintRecord(null)}
+          type="greige"
+          record={ewayPrintRecord}
+        />
+      )}
     </div>
   );
 }

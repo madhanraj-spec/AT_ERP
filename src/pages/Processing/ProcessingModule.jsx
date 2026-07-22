@@ -359,6 +359,7 @@ export default function ProcessingModule() {
   const [printFontSize, setPrintFontSize] = useState('small'); // 'small' | 'medium' | 'large'
   const [printShowLogo, setPrintShowLogo] = useState(true);
   const [printShowQr, setPrintShowQr] = useState(true);
+  const [selectedProcessedRollIds, setSelectedProcessedRollIds] = useState([]);
 
   // ---------------------------------------------------------------------------
   // RECEIVE FABRIC STATE VARIABLES
@@ -6687,57 +6688,139 @@ export default function ProcessingModule() {
                                     
                                     {/* Processed Fabric Details */}
                                     <div style={{ backgroundColor: 'white', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-current)', boxShadow: 'var(--shadow-sm)' }}>
-                                      <h4 style={{ margin: '0 0 1rem 0', color: '#047857', fontSize: '0.85rem', fontWeight: '800', borderBottom: '1px solid #eee', paddingBottom: '0.4rem' }}>
-                                        📥 Processed Fabric Details
-                                      </h4>
-                                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                                        <thead>
-                                          <tr style={{ borderBottom: '1.5px solid #ddd', textAlign: 'left', fontWeight: '700', color: 'var(--text-muted-current)' }}>
-                                            <th style={{ padding: '0.5rem 0.25rem' }}>Processed Roll ID</th>
-                                            <th style={{ padding: '0.5rem 0.25rem' }}>DC Number</th>
-                                            <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Qty Received</th>
-                                            <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Shrinkage %</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {rolls.map(roll => {
-                                            const rxRolls = receivedRolls.filter(rx => isGreigeRollMatch(rx.greige_roll_id, roll.id));
-                                            
-                                            if (rxRolls.length === 0) {
-                                              return (
-                                                <tr key={roll.id} style={{ borderBottom: '1px solid #eee' }}>
-                                                  <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af', fontFamily: 'monospace' }}>Pending</td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af' }}>—</td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}>—</td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}></td>
+                                      {(() => {
+                                        const selectedRollsForThisPof = receivedRolls.filter(r => selectedProcessedRollIds.includes(r.id));
+                                        return (
+                                          <>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 1rem 0', borderBottom: '1px solid #eee', paddingBottom: '0.4rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                              <h4 style={{ margin: 0, color: '#047857', fontSize: '0.85rem', fontWeight: '800' }}>
+                                                📥 Processed Fabric Details
+                                              </h4>
+                                              {receivedRolls.length > 0 && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const rollsToPrint = selectedRollsForThisPof.length > 0 
+                                                      ? selectedRollsForThisPof 
+                                                      : receivedRolls;
+                                                    handlePrintRollLabels(rollsToPrint, pof);
+                                                  }}
+                                                  style={{
+                                                    display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                                                    backgroundColor: '#047857', border: 'none', color: '#fff',
+                                                    padding: '4px 10px', borderRadius: '6px', fontSize: '0.72rem',
+                                                    fontWeight: '700', cursor: 'pointer'
+                                                  }}
+                                                  className="hover-lift"
+                                                  title="Print QR Code Roll Labels for selected or all processed rolls"
+                                                >
+                                                  <Printer size={12} />
+                                                  {selectedRollsForThisPof.length > 0
+                                                    ? `Print Selected Labels (${selectedRollsForThisPof.length})`
+                                                    : `Print All Labels (${receivedRolls.length})`}
+                                                </button>
+                                              )}
+                                            </div>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                              <thead>
+                                                <tr style={{ borderBottom: '1.5px solid #ddd', textAlign: 'left', fontWeight: '700', color: 'var(--text-muted-current)' }}>
+                                                  <th style={{ padding: '0.5rem 0.25rem', width: '32px', textAlign: 'center' }}>
+                                                    {receivedRolls.length > 0 && (
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={receivedRolls.length > 0 && receivedRolls.every(r => selectedProcessedRollIds.includes(r.id))}
+                                                        onChange={(e) => {
+                                                          const allPofRollIds = receivedRolls.map(r => r.id);
+                                                          if (e.target.checked) {
+                                                            setSelectedProcessedRollIds(prev => Array.from(new Set([...prev, ...allPofRollIds])));
+                                                          } else {
+                                                            setSelectedProcessedRollIds(prev => prev.filter(id => !allPofRollIds.includes(id)));
+                                                          }
+                                                        }}
+                                                        style={{ cursor: 'pointer' }}
+                                                        title="Select / Deselect All Processed Rolls"
+                                                      />
+                                                    )}
+                                                  </th>
+                                                  <th style={{ padding: '0.5rem 0.25rem' }}>Processed Roll ID</th>
+                                                  <th style={{ padding: '0.5rem 0.25rem' }}>DC Number</th>
+                                                  <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Qty Received</th>
+                                                  <th style={{ padding: '0.5rem 0.25rem', textAlign: 'center' }}>Action</th>
                                                 </tr>
-                                              );
-                                            }
+                                              </thead>
+                                              <tbody>
+                                                {rolls.map(roll => {
+                                                  const rxRolls = receivedRolls.filter(rx => isGreigeRollMatch(rx.greige_roll_id, roll.id));
+                                                  
+                                                  if (rxRolls.length === 0) {
+                                                    return (
+                                                      <tr key={roll.id} style={{ borderBottom: '1px solid #eee' }}>
+                                                        <td style={{ padding: '0.5rem 0.25rem', textAlign: 'center' }}></td>
+                                                        <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af', fontFamily: 'monospace' }}>Pending</td>
+                                                        <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af' }}>—</td>
+                                                        <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}>—</td>
+                                                        <td style={{ padding: '0.5rem 0.25rem', textAlign: 'center', color: '#9ca3af' }}>—</td>
+                                                      </tr>
+                                                    );
+                                                  }
 
-                                            return rxRolls.map((rxRoll, idx) => {
-                                              return (
-                                                <tr key={`${roll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
-                                                  <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>{rxRoll.id}</td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', fontWeight: '700', color: '#800000' }}>{rxRoll.processing_dc_no || '—'}</td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{parseFloat(rxRoll.qty || 0).toFixed(2)} m</td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '700' }}></td>
+                                                  return rxRolls.map((rxRoll, idx) => {
+                                                    const isChecked = selectedProcessedRollIds.includes(rxRoll.id);
+                                                    return (
+                                                      <tr key={`${roll.id}-${idx}`} style={{ borderBottom: '1px solid #eee', backgroundColor: isChecked ? '#f0fdf4' : 'transparent' }}>
+                                                        <td style={{ padding: '0.5rem 0.25rem', textAlign: 'center' }}>
+                                                          <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={(e) => {
+                                                              if (e.target.checked) {
+                                                                setSelectedProcessedRollIds(prev => [...prev, rxRoll.id]);
+                                                              } else {
+                                                                setSelectedProcessedRollIds(prev => prev.filter(id => id !== rxRoll.id));
+                                                              }
+                                                            }}
+                                                            style={{ cursor: 'pointer' }}
+                                                          />
+                                                        </td>
+                                                        <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>{rxRoll.id}</td>
+                                                        <td style={{ padding: '0.5rem 0.25rem', fontWeight: '700', color: '#800000' }}>{rxRoll.processing_dc_no || '—'}</td>
+                                                        <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{parseFloat(rxRoll.qty || 0).toFixed(2)} m</td>
+                                                        <td style={{ padding: '0.5rem 0.25rem', textAlign: 'center' }}>
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => handlePrintRollLabels([rxRoll], pof)}
+                                                            style={{
+                                                              display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+                                                              backgroundColor: 'rgba(4, 120, 87, 0.08)', border: '1px solid #a7f3d0',
+                                                              color: '#047857', padding: '2px 7px', borderRadius: '4px',
+                                                              fontSize: '0.68rem', fontWeight: '700', cursor: 'pointer'
+                                                            }}
+                                                            className="hover-lift"
+                                                            title="Print single roll label"
+                                                          >
+                                                            <Printer size={10} /> Label
+                                                          </button>
+                                                        </td>
+                                                      </tr>
+                                                    );
+                                                  });
+                                                })}
+                                              </tbody>
+                                              <tfoot>
+                                                <tr style={{ fontWeight: '800', borderTop: '2px solid #ddd', backgroundColor: '#fafafa' }}>
+                                                  <td colSpan="3" style={{ padding: '0.5rem 0.25rem' }}>Total Received ({receivedRolls.length} rolls)</td>
+                                                  <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#047857' }}>
+                                                    {qtyReceived.toFixed(2)} m
+                                                  </td>
+                                                  <td style={{ padding: '0.5rem 0.25rem', textAlign: 'center', color: 'var(--color-primary)' }}>
+                                                    {shrinkagePct.toFixed(2)}% shrink
+                                                  </td>
                                                 </tr>
-                                              );
-                                            });
-                                          })}
-                                        </tbody>
-                                        <tfoot>
-                                          <tr style={{ fontWeight: '800', borderTop: '2px solid #ddd', backgroundColor: '#fafafa' }}>
-                                            <td colSpan="2" style={{ padding: '0.5rem 0.25rem' }}>Total Received</td>
-                                            <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#047857' }}>
-                                              {qtyReceived.toFixed(2)} m
-                                            </td>
-                                            <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: 'var(--color-primary)' }}>
-                                              {shrinkagePct.toFixed(2)}%
-                                            </td>
-                                          </tr>
-                                        </tfoot>
-                                      </table>
+                                              </tfoot>
+                                            </table>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
 
                                      {/* Receipt Details */}

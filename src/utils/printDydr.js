@@ -1,8 +1,155 @@
+import { supabase } from '../lib/supabase';
+
 /**
  * Reusable utility to trigger printing a Dyed Yarn Delivery Receipt (DYDR)
  * by opening a styled document in a new tab/window and invoking the print dialog.
  */
-export function printDydr(dydr, yarnCounts = []) {
+export async function printDydr(dydr, yarnCounts = []) {
+  const win = window.open('', '_blank');
+  if (!win) {
+    alert('Please allow popups to print receipts.');
+    return;
+  }
+
+  win.document.write('<html><body><div style="font-family: Arial; padding: 20px; color: #555;">Loading print details...</div></body></html>');
+
+  // Resolve partner details dynamically
+  let partner = dydr.partner;
+  if (!partner) {
+    let partnerId = dydr.partner_id || dydr.dyeing_unit_id;
+    const items = dydr.items || [];
+    let formId = null;
+    let processType = null;
+
+    if (items.length > 0) {
+      formId = items[0].production_form_id;
+      processType = items[0].process_type;
+    } else {
+      try {
+        const { data: dbItems } = await supabase
+          .from('dyed_yarn_delivery_items')
+          .select('production_form_id, process_type')
+          .eq('delivery_id', dydr.id);
+        if (dbItems && dbItems.length > 0) {
+          formId = dbItems[0].production_form_id;
+          processType = dbItems[0].process_type;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // Fallback 1: Resolve partner_id/dyeing_unit_id by checking production_form_id (formId) in all forms tables
+    if (!partnerId && formId) {
+      try {
+        const { data: wof } = await supabase
+          .from('warping_order_forms')
+          .select('partner_id')
+          .eq('id', formId)
+          .maybeSingle();
+        if (wof?.partner_id) {
+          partnerId = wof.partner_id;
+        } else {
+          const { data: wev } = await supabase
+            .from('weaving_orders')
+            .select('partner_id')
+            .eq('id', formId)
+            .maybeSingle();
+          if (wev?.partner_id) {
+            partnerId = wev.partner_id;
+          } else {
+            const { data: dof } = await supabase
+              .from('dyeing_order_forms')
+              .select('dyeing_unit_id')
+              .eq('id', formId)
+              .maybeSingle();
+            if (dof?.dyeing_unit_id) {
+              partnerId = dof.dyeing_unit_id;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Fallback 1 error:', e);
+      }
+    }
+
+    // Fallback 2: Resolve partner_id by checking document numbers
+    let docNo = dydr.doc_no || dydr.dof_number;
+    if (!docNo && dydr.remarks) {
+      const match = dydr.remarks.match(/(WOF|DOF|WEV)\S+/);
+      if (match) docNo = match[0];
+    }
+
+    if (!partnerId && docNo) {
+      try {
+        if (docNo.includes('/WOF/')) {
+          const { data: wof } = await supabase
+            .from('warping_order_forms')
+            .select('partner_id')
+            .eq('wof_number', docNo)
+            .maybeSingle();
+          if (wof?.partner_id) partnerId = wof.partner_id;
+        } else if (docNo.includes('/DOF/')) {
+          const { data: dof } = await supabase
+            .from('dyeing_order_forms')
+            .select('dyeing_unit_id')
+            .eq('dof_number', docNo)
+            .maybeSingle();
+          if (dof?.dyeing_unit_id) partnerId = dof.dyeing_unit_id;
+        } else {
+          const { data: wev } = await supabase
+            .from('weaving_orders')
+            .select('partner_id')
+            .eq('weaving_number', docNo)
+            .maybeSingle();
+          if (wev?.partner_id) partnerId = wev.partner_id;
+        }
+      } catch (e) {
+        console.error('Fallback 2 error:', e);
+      }
+    }
+
+    // Fallback 3: Resolve partner_id by parsing partner name from document number or using partner_name directly
+    let partnerName = dydr.partner_name;
+    if (!partnerName && docNo) {
+      const parts = docNo.split('/');
+      if (parts.length > 4 && parts[3] === 'JB') {
+        partnerName = parts[4];
+      }
+    }
+
+    if (!partnerId && partnerName) {
+      try {
+        const { data: partnerData } = await supabase
+          .from('master_partners')
+          .select('id')
+          .ilike('partner_name', partnerName)
+          .maybeSingle();
+        if (partnerData?.id) {
+          partnerId = partnerData.id;
+        }
+      } catch (e) {
+        console.error('Fallback 3 error:', e);
+      }
+    }
+
+    if (!partnerId && dydr.dyeing_unit_id) {
+      partnerId = dydr.dyeing_unit_id;
+    }
+
+    if (partnerId) {
+      try {
+        const { data: partnerData } = await supabase
+          .from('master_partners')
+          .select('*')
+          .eq('id', partnerId)
+          .maybeSingle();
+        partner = partnerData;
+      } catch (e) {
+        console.error('Partner fetch error:', e);
+      }
+    }
+  }
   const items = dydr.items || [];
   const totalQty = items.reduce((s, i) => s + parseFloat(i.quantity_kg || 0), 0);
 
@@ -34,11 +181,7 @@ export function printDydr(dydr, yarnCounts = []) {
     ? new Date(dydr.delivered_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
     : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 
-  const win = window.open('', '_blank');
-  if (!win) {
-    alert('Please allow popups to print receipts.');
-    return;
-  }
+
 
   const html = `
     <!DOCTYPE html>
@@ -54,7 +197,7 @@ export function printDydr(dydr, yarnCounts = []) {
           .title-area { text-align: right; }
           .title { margin: 0; font-size: 1.4rem; font-weight: 800; color: #800000; text-transform: uppercase; }
           .subtitle { margin: 2px 0 0 0; font-size: 1.1rem; font-weight: 700; color: #111; font-family: monospace; }
-          .meta-info { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+          .meta-info { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px; }
           .card { border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; }
           .card-title { margin: 0 0 8px 0; font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
           .info-row { display: flex; gap: 8px; margin-bottom: 4px; }
@@ -94,6 +237,11 @@ export function printDydr(dydr, yarnCounts = []) {
             <h1 class="title">DYED YARN DELIVERY RECEIPT</h1>
             <p class="subtitle">${dydr.dydr_number || '—'}</p>
             <p style="margin-top: 4px; font-size: 11px; color: #666;">Date: ${printDateStr} &nbsp;·&nbsp; Time: ${printTimeStr}</p>
+            ${dydr.eway_bill_no && dydr.eway_bill_status === 'generated' ? `
+              <p style="margin-top: 4px; font-size: 11px; font-weight: 800; color: #166534; font-family: monospace;">
+                E-WAY BILL: ${dydr.eway_bill_no}
+              </p>
+            ` : ''}
           </div>
         </div>
 
@@ -124,6 +272,28 @@ export function printDydr(dydr, yarnCounts = []) {
               <span class="info-label">Vehicle No:</span>
               <span class="info-value">${dydr.vehicle_no || 'In-House Delivery'}</span>
             </div>
+          </div>
+
+          <div class="card">
+            <p class="card-title">Delivery To (Partner)</p>
+            ${partner ? `
+              <div class="info-row">
+                <span class="info-label">Name:</span>
+                <span class="info-value">${partner.partner_name}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Address:</span>
+                <span class="info-value" style="white-space: pre-wrap;">${partner.address || '—'}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">GSTIN:</span>
+                <span class="info-value">${partner.gstin || '—'}</span>
+              </div>
+            ` : `
+              <div class="info-row">
+                <span class="info-value" style="color: #888; font-style: italic;">No partner details resolved</span>
+              </div>
+            `}
           </div>
 
           <div class="card">
@@ -223,6 +393,7 @@ export function printDydr(dydr, yarnCounts = []) {
     </html>
   `;
 
+  win.document.open();
   win.document.write(html);
   win.document.close();
   win.focus();

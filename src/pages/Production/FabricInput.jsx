@@ -6,6 +6,8 @@ import {
 import QRCode from 'qrcode';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import EwayBillModal from '../../components/EwayBillModal';
+import EwayBillPrintModal from '../../components/EwayBillPrintModal';
 
 // --- Styling Constants ---
 const DAY_COL_WIDTH = 44;
@@ -1128,8 +1130,11 @@ export default function FabricInput({ defaultView = 'menu' }) {
   const [fromLocation, setFromLocation] = useState('Factory');
   const [toLocation, setToLocation] = useState('Office');
   const [sentBy, setSentBy] = useState('');
+  const [vehicleNumber, setVehicleNumber] = useState('');
   const [showPrintChallanModal, setShowPrintChallanModal] = useState(false);
   const [activeChallan, setActiveChallan] = useState(null);
+  const [showEwayModal, setShowEwayModal] = useState(false);
+  const [showEwayPrintModal, setShowEwayPrintModal] = useState(false);
   const [fabricMovementTab, setFabricMovementTab] = useState('rolls');
   const [searchMoveRollId, setSearchMoveRollId] = useState('');
 
@@ -1914,16 +1919,17 @@ export default function FabricInput({ defaultView = 'menu' }) {
         console.error('Error fetching fabric movements:', fmErr);
       }
 
-      // 9. Reconcile and self-heal roll locations for already received challans (fixes previous loop race condition bugs)
+      // 9. Reconcile and self-heal roll locations for all fabric movements
       if (fmData.length > 0) {
         let localWeavingOrders = [...loadedOrders];
         let localProcessingOrders = [...poData];
         let wasWeavingUpdated = false;
         let wasProcessingUpdated = false;
 
-        const receivedChallans = fmData.filter(m => m.status?.startsWith('RECEIVED'));
+        // Process from oldest to newest so latest movement wins
+        const sortedMovements = [...fmData].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
 
-        for (const challan of receivedChallans) {
+        for (const challan of sortedMovements) {
           const weavingUpdates = {};
           const processingUpdates = {};
 
@@ -4121,6 +4127,12 @@ export default function FabricInput({ defaultView = 'menu' }) {
   };
 
   const getRollLocation = (roll) => {
+    const latestMovement = (fabricMovements || []).find(m =>
+      Array.isArray(m.rolls) && m.rolls.some(r => r.id === roll.id || r.greige_roll_id === roll.id || r.id === roll.greige_roll_id)
+    );
+    if (latestMovement) {
+      return latestMovement.to_location;
+    }
     let processedLoc = null;
     for (const po of processingOrders) {
       if (Array.isArray(po.received_rolls)) {
@@ -4144,6 +4156,10 @@ export default function FabricInput({ defaultView = 'menu' }) {
       const orderRolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
       orderRolls.forEach(roll => {
         const isSentToProcessing = processingRollIds.has(roll.id);
+        const latestMovement = (fabricMovements || []).find(m =>
+          Array.isArray(m.rolls) && m.rolls.some(r => r.id === roll.id)
+        );
+        const currentLoc = latestMovement ? latestMovement.to_location : (roll.location_name || 'Factory');
         
         rolls.push({
           ...roll,
@@ -4158,7 +4174,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
           design_no: wo.order?.design_no || wo.design_no || '—',
           design_name: wo.order?.design_name || '—',
           movement_qty: Number(roll.actual_qty || roll.actual_length || roll.qty || 0),
-          location_name: roll.location_name || 'Factory'
+          location_name: currentLoc
         });
       });
     });
@@ -4180,6 +4196,11 @@ export default function FabricInput({ defaultView = 'menu' }) {
           }
         }
 
+        const latestMovement = (fabricMovements || []).find(m =>
+          Array.isArray(m.rolls) && m.rolls.some(r => r.id === rx.id || r.greige_roll_id === rx.id || r.id === rx.greige_roll_id)
+        );
+        const currentLoc = latestMovement ? latestMovement.to_location : (rx.location_name || po.received_place || greigeRoll?.location_name || 'Factory');
+
         rolls.push({
           id: rx.id,
           greige_roll_id: rx.greige_roll_id,
@@ -4187,7 +4208,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
           movement_qty: Number(rx.qty || 0),
           isProcessed: true, // it is a processed roll
           isProcessedRoll: true,
-          location_name: rx.location_name || po.received_place || greigeRoll?.location_name || 'Factory',
+          location_name: currentLoc,
           order_number: greigeRoll?.order_number || weavingOrder?.order?.order_number || '—',
           design_name: greigeRoll?.design_name || weavingOrder?.order?.design_name || '—',
           design_no: greigeRoll?.design_no || weavingOrder?.order?.design_no || weavingOrder?.design_no || '—',
@@ -4206,7 +4227,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
       const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
       return dateB - dateA;
     });
-  }, [weavingOrders, processingRollIds, processingOrders]);
+  }, [weavingOrders, processingRollIds, processingOrders, fabricMovements]);
 
   const rollIdOptions = useMemo(() => {
     const filtered = allRolls.filter(r => {
@@ -5042,6 +5063,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
         from_location: fromLoc,
         to_location: toLocation,
         sent_by: sentBy,
+        vehicle_number: vehicleNumber.trim() || null,
         status: 'SENT - YET TO RECEIVE',
         rolls: movingRolls
       };
@@ -5057,11 +5079,72 @@ export default function FabricInput({ defaultView = 'menu' }) {
           return;
         }
 
+        // Immediately update database roll location records to match movement destination
+        const weavingUpdates = {};
+        const processingUpdates = {};
+
+        for (const roll of movingRolls) {
+          if (roll.isProcessed) {
+            const targetPo = processingOrders.find(po =>
+              Array.isArray(po.received_rolls) &&
+              po.received_rolls.some(rx => rx.id === roll.id || rx.greige_roll_id === roll.id)
+            );
+            if (targetPo) {
+              if (!processingUpdates[targetPo.id]) processingUpdates[targetPo.id] = [];
+              processingUpdates[targetPo.id].push(roll.id);
+            }
+          } else {
+            const targetWo = weavingOrders.find(wo =>
+              Array.isArray(wo.fabric_rolls) &&
+              wo.fabric_rolls.some(r => r.id === roll.id)
+            );
+            if (targetWo) {
+              if (!weavingUpdates[targetWo.id]) weavingUpdates[targetWo.id] = [];
+              weavingUpdates[targetWo.id].push(roll.id);
+            }
+          }
+        }
+
+        for (const woId of Object.keys(weavingUpdates)) {
+          const targetWo = weavingOrders.find(wo => wo.id === woId);
+          if (targetWo) {
+            const rollIdsToUpdate = weavingUpdates[woId];
+            const updatedFabricRolls = targetWo.fabric_rolls.map(r => {
+              if (rollIdsToUpdate.includes(r.id)) {
+                return { ...r, location_name: toLocation };
+              }
+              return r;
+            });
+            await supabase
+              .from('weaving_orders')
+              .update({ fabric_rolls: updatedFabricRolls })
+              .eq('id', woId);
+          }
+        }
+
+        for (const poId of Object.keys(processingUpdates)) {
+          const targetPo = processingOrders.find(po => po.id === poId);
+          if (targetPo) {
+            const rollIdsToUpdate = processingUpdates[poId];
+            const updatedReceivedRolls = targetPo.received_rolls.map(rx => {
+              if (rollIdsToUpdate.includes(rx.id) || rollIdsToUpdate.includes(rx.greige_roll_id)) {
+                return { ...rx, location_name: toLocation };
+              }
+              return rx;
+            });
+            await supabase
+              .from('processing_orders')
+              .update({ received_rolls: updatedReceivedRolls })
+              .eq('id', poId);
+          }
+        }
+
         alert(`Challan ${fmdcNumber} created successfully!`);
         setActiveChallan(data?.[0] || newMovement);
         setShowMoveFabricModal(false);
         setMovingRolls([]);
         setSentBy('');
+        setVehicleNumber('');
         setShowPrintChallanModal(true);
         fetchData();
       } catch (err) {
@@ -5465,9 +5548,16 @@ export default function FabricInput({ defaultView = 'menu' }) {
                                   padding: '1rem',
                                   boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
                                 }}>
-                                  <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.78rem', fontWeight: '850', color: '#111827', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                    📦 Challan Fabric Rolls Details ({rollsCount} rolls)
-                                  </h4>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 0.75rem 0' }}>
+                                    <h4 style={{ margin: 0, fontSize: '0.78rem', fontWeight: '850', color: '#111827', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                      📦 Challan Fabric Rolls Details ({rollsCount} rolls)
+                                    </h4>
+                                    {m.vehicle_number && (
+                                      <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#047857', backgroundColor: '#ecfdf5', padding: '2px 8px', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
+                                        🚛 Vehicle No: {m.vehicle_number}
+                                      </span>
+                                    )}
+                                  </div>
                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
                                     <thead>
                                       <tr style={{ borderBottom: '1.5px solid var(--border-current)', textAlign: 'left', fontWeight: '700', color: 'var(--text-muted-current)' }}>
@@ -5708,7 +5798,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-current)' }}>SENT BY (PERSON NAME)</label>
                     <input
@@ -5719,6 +5809,21 @@ export default function FabricInput({ defaultView = 'menu' }) {
                       style={{
                         padding: '0.5rem 0.75rem', borderRadius: '8px',
                         border: '1px solid var(--border-current)', fontSize: '0.85rem', outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-current)' }}>VEHICLE NUMBER</label>
+                    <input
+                      type="text"
+                      placeholder="Enter vehicle number..."
+                      value={vehicleNumber}
+                      onChange={e => setVehicleNumber(e.target.value)}
+                      style={{
+                        padding: '0.5rem 0.75rem', borderRadius: '8px',
+                        border: '1px solid var(--border-current)', fontSize: '0.85rem', outline: 'none',
+                        textTransform: 'uppercase'
                       }}
                     />
                   </div>
@@ -5773,39 +5878,41 @@ export default function FabricInput({ defaultView = 'menu' }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: '1rem', boxSizing: 'border-box'
           }}>
-            <style>{`
-              @media print {
-                @page {
-                  size: landscape;
-                  margin: 10mm;
+            {!showEwayPrintModal && (
+              <style>{`
+                @media print {
+                  @page {
+                    size: landscape;
+                    margin: 10mm;
+                  }
+                  body * {
+                    visibility: hidden !important;
+                  }
+                  #printable-challan-box, #printable-challan-box * {
+                    visibility: visible !important;
+                  }
+                  #printable-challan-box {
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 100% !important;
+                    max-width: none !important;
+                    max-height: none !important;
+                    height: auto !important;
+                    overflow: visible !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    border: none !important;
+                    box-shadow: none !important;
+                    background: white !important;
+                    color: black !important;
+                  }
+                  .no-print-btn {
+                    display: none !important;
+                  }
                 }
-                body * {
-                  visibility: hidden !important;
-                }
-                #printable-challan-box, #printable-challan-box * {
-                  visibility: visible !important;
-                }
-                #printable-challan-box {
-                  position: absolute !important;
-                  left: 0 !important;
-                  top: 0 !important;
-                  width: 100% !important;
-                  max-width: none !important;
-                  max-height: none !important;
-                  height: auto !important;
-                  overflow: visible !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  border: none !important;
-                  box-shadow: none !important;
-                  background: white !important;
-                  color: black !important;
-                }
-                .no-print-btn {
-                  display: none !important;
-                }
-              }
-            `}</style>
+              `}</style>
+            )}
             
             <div id="printable-challan-box" style={{
               width: '100%', maxWidth: '1050px', maxHeight: '95vh', overflowY: 'auto',
@@ -5881,7 +5988,11 @@ export default function FabricInput({ defaultView = 'menu' }) {
                   <span style={{ color: '#4b5563', display: 'block', fontSize: '0.72rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.5px' }}>Total Rolls</span>
                   <strong style={{ fontSize: '0.95rem', color: '#111827' }}>{(activeChallan.rolls || []).length} Rolls</strong>
                 </div>
-                <div style={{ gridColumn: 'span 2' }}>
+                <div>
+                  <span style={{ color: '#4b5563', display: 'block', fontSize: '0.72rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.5px' }}>Vehicle Number</span>
+                  <strong style={{ fontSize: '0.95rem', color: '#111827' }}>{activeChallan.vehicle_number || '—'}</strong>
+                </div>
+                <div>
                   <span style={{ color: '#4b5563', display: 'block', fontSize: '0.72rem', fontWeight: '800', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.5px' }}>Total Outbound Qty</span>
                   <strong style={{ fontSize: '1.1rem', color: '#800000' }}>
                     {((activeChallan.rolls || []).reduce((sum, r) => sum + Number(r.qty || 0), 0)).toFixed(2)} m
@@ -5956,6 +6067,29 @@ export default function FabricInput({ defaultView = 'menu' }) {
                 >
                   Close
                 </button>
+                {activeChallan.eway_bill_no ? (
+                  <button
+                    onClick={() => setShowEwayPrintModal(true)}
+                    style={{
+                      padding: '0.5rem 1.25rem', borderRadius: '8px', border: 'none',
+                      background: '#0284c7', color: 'white', fontSize: '0.85rem', fontWeight: '800', cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: '0.4rem'
+                    }}
+                  >
+                    <Printer size={16} /> Print E-Way Bill
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowEwayModal(true)}
+                    style={{
+                      padding: '0.5rem 1.25rem', borderRadius: '8px', border: 'none',
+                      background: '#800000', color: 'white', fontSize: '0.85rem', fontWeight: '800', cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: '0.4rem'
+                    }}
+                  >
+                    Generate E-Way Bill
+                  </button>
+                )}
                 <button
                   onClick={() => window.print()}
                   style={{
@@ -5970,6 +6104,74 @@ export default function FabricInput({ defaultView = 'menu' }) {
 
             </div>
           </div>
+        )}
+
+        {/* Eway Bill Generation Modal */}
+        {showEwayModal && activeChallan && (() => {
+          const totalQty = (activeChallan.rolls || []).reduce((sum, r) => sum + Number(r.qty || 0), 0);
+          const items = [{
+            productName: 'Processed Fabric',
+            hsnCode: '5208',
+            quantity: totalQty,
+            qtyUnit: 'MTR',
+            ratePerKg: 120,
+            taxableAmount: Math.round(totalQty * 120)
+          }];
+          const toLoc = (activeChallan.to_location || '').toLowerCase();
+          const isToOffice = toLoc.includes('office');
+          const isToFactory = toLoc.includes('factory');
+
+          const consigneeAddress = isToOffice
+            ? '12/1 JAGADESN KADU, GUGAI, SALEM, 636006'
+            : (isToFactory ? '6/222, SALEM MAIN ROAD, VEERAPANDI, SALEM, 636308' : '12/1 JAGADESN KADU, GUGAI, SALEM, 636006');
+
+          const consigneePincode = isToOffice ? '636006' : (isToFactory ? '636308' : '636006');
+          const consigneePlace = isToOffice ? 'GUGAI, SALEM' : 'VEERAPANDI, SALEM';
+
+          const defaults = {
+            docNo: activeChallan.fmdc_number,
+            docDate: activeChallan.created_at,
+            partnerName: 'ASHOK TEXTILES',
+            partnerGstin: '33AAZFA6086D1Z6',
+            partnerAddress: consigneeAddress,
+            partnerPlace: consigneePlace,
+            partnerPincode: consigneePincode,
+            partnerStateCode: '33',
+            vehicleNo: activeChallan.vehicle_number || '',
+            items: items,
+            totalQty: totalQty,
+            qtyUnit: 'MTR',
+            productName: 'Processed Fabric'
+          };
+          return (
+            <EwayBillModal
+              isOpen={showEwayModal}
+              onClose={() => setShowEwayModal(false)}
+              type="branch"
+              record={activeChallan}
+              defaultDetails={defaults}
+              onSuccess={(res) => {
+                setActiveChallan(prev => ({
+                  ...prev,
+                  eway_bill_no: res.ewayBillNo || prev.eway_bill_no,
+                  eway_bill_status: res.eway_bill_status || 'generated',
+                  eway_bill_date: res.ewayBillDate || prev.eway_bill_date
+                }));
+                setShowEwayModal(false);
+                if (typeof fetchData === 'function') fetchData();
+              }}
+            />
+          );
+        })()}
+
+        {/* Eway Bill Print Modal */}
+        {showEwayPrintModal && activeChallan && (
+          <EwayBillPrintModal
+            isOpen={showEwayPrintModal}
+            onClose={() => setShowEwayPrintModal(false)}
+            type="branch"
+            record={activeChallan}
+          />
         )}
 
       </div>

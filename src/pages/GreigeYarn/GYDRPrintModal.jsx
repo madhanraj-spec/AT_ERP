@@ -1,12 +1,47 @@
 import React, { useState, useEffect } from 'react';
-import { X, Printer, Loader } from 'lucide-react';
+import { X, Printer, Loader, Truck, CheckCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import EwayBillModal from '../../components/EwayBillModal';
+import EwayBillPrintModal from '../../components/EwayBillPrintModal';
 
 export default function GYDRPrintModal({ receipt, dof, orders, onClose }) {
   const [items, setItems] = useState([]);
   const [dofData, setDofData] = useState(dof || null);
   const [ordersData, setOrdersData] = useState(orders || []);
   const [loading, setLoading] = useState(true);
+  const [localReceipt, setLocalReceipt] = useState(receipt);
+  const [showEwayModal, setShowEwayModal] = useState(false);
+  const [showEwayPrint, setShowEwayPrint] = useState(false);
+  const [partnerDetails, setPartnerDetails] = useState(null);
+
+  const handlePrintEwayBill = (ewayBillNo) => {
+    navigator.clipboard.writeText(ewayBillNo);
+    alert(`E-Way Bill Number ${ewayBillNo} copied to clipboard!\n\nOpening the official GST Portal print search in a new tab. Just paste the number and print the exact official e-Way Bill.`);
+    window.open('https://ewaybillgst.gov.in/search-ewaybill', '_blank');
+  };
+
+  useEffect(() => {
+    setLocalReceipt(receipt);
+  }, [receipt]);
+
+  useEffect(() => {
+    const partnerId = dofData?.dyeing_unit_id || localReceipt?.dyeing_unit_id || localReceipt?.partner_id;
+    if (partnerId) {
+      const fetchPartner = async () => {
+        const { data } = await supabase
+          .from('master_partners')
+          .select('*')
+          .eq('id', partnerId)
+          .single();
+        if (data) {
+          setPartnerDetails(data);
+        }
+      };
+      fetchPartner();
+    } else {
+      setPartnerDetails(null);
+    }
+  }, [dofData, localReceipt]);
 
   useEffect(() => {
     if (receipt?.id) {
@@ -31,6 +66,16 @@ export default function GYDRPrintModal({ receipt, dof, orders, onClose }) {
       
       if (itemsErr) throw itemsErr;
       setItems(itemsData || []);
+
+      // 1.5 Fetch fresh receipt header to get eway details
+      const { data: freshReceipt } = await supabase
+        .from('greige_yarn_delivery_receipts')
+        .select('*')
+        .eq('id', receipt.id)
+        .maybeSingle();
+      if (freshReceipt) {
+        setLocalReceipt(freshReceipt);
+      }
 
       // 2. Fetch DOF & dyeing unit if not passed
       let currentDof = dof;
@@ -84,7 +129,7 @@ export default function GYDRPrintModal({ receipt, dof, orders, onClose }) {
           backgroundColor: '#fff', 
           borderRadius: '12px', 
           width: '100%', 
-          maxWidth: '800px', 
+          maxWidth: '1000px', 
           maxHeight: '95vh', 
           overflowY: 'auto', 
           boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
@@ -106,7 +151,47 @@ export default function GYDRPrintModal({ receipt, dof, orders, onClose }) {
           <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>
             Greige Yarn Delivery Receipt — {receipt.gydr_number}
           </h2>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            {localReceipt.eway_bill_no ? (
+              localReceipt.eway_bill_status === 'cancelled' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#fee2e2', border: '1px solid #fca5a5', padding: '0.6rem 1rem', borderRadius: '6px', fontSize: '0.85rem', color: '#991b1b', fontWeight: '700' }}>
+                  Cancelled
+                  <button
+                    onClick={() => setShowEwayModal(true)}
+                    style={{ border: 'none', background: 'none', color: '#0284c7', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '0.8rem', marginLeft: '6px', fontWeight: '700' }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#dcfce7', border: '1px solid #bbf7d0', padding: '0.6rem 1rem', borderRadius: '6px', fontSize: '0.85rem', color: '#166534', fontWeight: '700' }}>
+                  <CheckCircle size={16} style={{ color: '#15803d' }} /> Eway: {localReceipt.eway_bill_no}
+                  <button
+                    onClick={() => setShowEwayModal(true)}
+                    style={{ border: 'none', background: 'none', color: '#b91c1c', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '0.8rem', marginLeft: '6px', fontWeight: '700' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )
+            ) : (
+              <button
+                onClick={() => setShowEwayModal(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.25rem', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer' }}
+              >
+                <Truck size={18} /> Generate E-Way Bill
+              </button>
+            )}
+
+            {localReceipt.eway_bill_no && localReceipt.eway_bill_status === 'generated' && (
+              <button
+                onClick={() => setShowEwayPrint(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.25rem', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer' }}
+              >
+                <Printer size={18} /> Print E-Way Bill
+              </button>
+            )}
+
             <button
               onClick={handlePrint}
               style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.25rem', backgroundColor: '#7f1d1d', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer' }}
@@ -147,6 +232,11 @@ export default function GYDRPrintModal({ receipt, dof, orders, onClose }) {
                   <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#666' }}>
                     Date: {new Date(receipt.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
                   </p>
+                  {localReceipt.eway_bill_no && localReceipt.eway_bill_status === 'generated' && (
+                    <p style={{ margin: '4px 0 0 0', fontSize: '11px', fontWeight: '800', color: '#166534', fontFamily: 'monospace' }}>
+                      E-WAY BILL: {localReceipt.eway_bill_no}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -199,7 +289,7 @@ export default function GYDRPrintModal({ receipt, dof, orders, onClose }) {
                       <td style={{ padding: '8px 10px', fontSize: '12px' }}>{i + 1}</td>
                       <td style={{ padding: '8px 10px', fontSize: '12px', fontWeight: '600' }}>
                         {item.master_yarn_counts
-                          ? `${item.master_yarn_counts.count_value} - ${item.master_yarn_counts.material} - ${item.master_yarn_counts.product_type}`
+                          ? [item.master_yarn_counts.count_value, item.master_yarn_counts.spec, item.master_yarn_counts.spec1].filter(Boolean).join(' ')
                           : '-'}
                       </td>
                       <td style={{ padding: '8px 10px', fontSize: '12px' }}>{item.colour}</td>
@@ -284,6 +374,42 @@ export default function GYDRPrintModal({ receipt, dof, orders, onClose }) {
           }
         `}</style>
       </div>
+      <EwayBillModal
+        isOpen={showEwayModal}
+        onClose={() => setShowEwayModal(false)}
+        type="greige"
+        record={localReceipt}
+        defaultDetails={{
+          docNo: localReceipt?.gydr_number,
+          docDate: localReceipt?.created_at,
+          partnerName: partnerDetails?.partner_name || dofData?.dyeing_unit_name || localReceipt?.dyeing_unit_name || 'Processing Partner',
+          partnerGstin: partnerDetails?.gstin,
+          partnerAddress: partnerDetails?.address,
+          partnerPincode: partnerDetails?.pincode,
+          partnerStateCode: partnerDetails?.state_code,
+          vehicleNo: localReceipt?.vehicle_details || localReceipt?.vehicle_no,
+          totalQty: items.reduce((sum, item) => sum + parseFloat(item.delivered_qty || 0), 0),
+          qtyUnit: 'KGS',
+          productName: 'Greige Cotton Yarn'
+        }}
+        onSuccess={(res) => {
+          setLocalReceipt(prev => ({
+            ...prev,
+            eway_bill_no: res.ewayBillNo || prev.eway_bill_no,
+            eway_bill_status: res.eway_bill_status || 'generated',
+            eway_bill_date: res.ewayBillDate || prev.eway_bill_date
+          }));
+        }}
+      />
+      <EwayBillPrintModal
+        isOpen={showEwayPrint}
+        onClose={() => setShowEwayPrint(false)}
+        type="greige"
+        record={{
+          ...localReceipt,
+          totalQty: items.reduce((sum, item) => sum + parseFloat(item.delivered_qty || item.quantity_kg || 0), 0)
+        }}
+      />
     </div>
   );
 }

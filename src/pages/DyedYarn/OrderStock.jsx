@@ -2835,7 +2835,50 @@ export default function OrderStock() {
     try {
       const { data: receipt } = await supabase.from('dyed_yarn_deliveries').select('*').eq('id', id).single();
       const { data: items } = await supabase.from('dyed_yarn_delivery_items').select('*, location:master_locations(location_name)').eq('delivery_id', id);
-      setViewDydrData({ receipt, items });
+      
+      let partnerId = receipt.partner_id;
+      let partnerInfo = null;
+
+      if (!partnerId && items && items.length > 0) {
+        const firstItem = items[0];
+        const formId = firstItem?.production_form_id;
+        const processType = firstItem?.process_type;
+
+        if (formId && processType) {
+          const dbTable = processType === 'warping' 
+            ? 'warping_order_forms' 
+            : processType === 'redyeing' 
+            ? 'dyeing_order_forms' 
+            : 'weaving_orders';
+          const partnerCol = processType === 'redyeing' ? 'dyeing_unit_id' : 'partner_id';
+          const { data: formRecord } = await supabase
+            .from(dbTable)
+            .select(partnerCol)
+            .eq('id', formId)
+            .maybeSingle();
+          if (formRecord?.[partnerCol]) {
+            partnerId = formRecord[partnerCol];
+          }
+        }
+      }
+
+      if (!partnerId && receipt.dyeing_unit_id) {
+        partnerId = receipt.dyeing_unit_id;
+      }
+
+      if (partnerId) {
+        const { data: partnerData } = await supabase
+          .from('master_partners')
+          .select('*')
+          .eq('id', partnerId)
+          .maybeSingle();
+        partnerInfo = partnerData;
+      }
+
+      setViewDydrData({
+        receipt: { ...receipt, partner: partnerInfo },
+        items
+      });
     } catch (err) {
       console.error(err);
       alert('Error loading delivery details');
@@ -4120,15 +4163,27 @@ function DYDRModal({ data, yarnCounts, onClose }) {
           </div>
         </div>
 
-        <div className="grid-2-to-1" style={{ marginBottom: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
           <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
             <div style={{ fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', color: '#999', marginBottom: '0.5rem' }}>Logistics</div>
-            <p style={{ margin: '0.2rem 0' }}><strong>Delivered By:</strong> {receipt.delivered_by || '-'}</p>
-            <p style={{ margin: '0.2rem 0' }}><strong>Vehicle No:</strong> {receipt.vehicle_no || '-'}</p>
+            <p style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}><strong>Delivered By:</strong> {receipt.delivered_by || '-'}</p>
+            <p style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}><strong>Vehicle No:</strong> {receipt.vehicle_no || '-'}</p>
+          </div>
+          <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', color: '#999', marginBottom: '0.5rem' }}>Delivery To (Partner)</div>
+            {receipt.partner ? (
+              <>
+                <p style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}><strong>Name:</strong> {receipt.partner.partner_name}</p>
+                <p style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}><strong>Address:</strong> {receipt.partner.address || '-'}</p>
+                <p style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}><strong>GSTIN:</strong> {receipt.partner.gstin || '-'}</p>
+              </>
+            ) : (
+              <p style={{ margin: '0.2rem 0', fontSize: '0.85rem', color: '#999', fontStyle: 'italic' }}>No partner details resolved</p>
+            )}
           </div>
           <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '8px' }}>
             <div style={{ fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', color: '#999', marginBottom: '0.5rem' }}>Reference</div>
-            <p style={{ margin: '0.2rem 0' }}><strong>Remarks:</strong> {receipt.remarks || '-'}</p>
+            <p style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}><strong>Remarks:</strong> {receipt.remarks || '-'}</p>
           </div>
         </div>
 

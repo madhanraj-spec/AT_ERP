@@ -1118,6 +1118,7 @@ export default function WarpingOrderForms() {
             cone_weight,
             colour,
             lot_number,
+            process_type,
             yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
             delivery:dyed_yarn_deliveries(
               id,
@@ -1125,7 +1126,8 @@ export default function WarpingOrderForms() {
               delivered_date,
               delivered_by,
               vehicle_no,
-              remarks
+              remarks,
+              dyeing_unit_id
             )
           `)
           .in('production_form_id', wofIds);
@@ -1172,12 +1174,14 @@ export default function WarpingOrderForms() {
               .from('dyed_yarn_delivery_items')
               .select(`
                 id,
+                production_form_id,
                 yarn_count_id,
                 quantity_kg,
                 no_of_bags,
                 cone_weight,
                 colour,
                 lot_number,
+                process_type,
                 yarn_count:master_yarn_counts(count_value, material, product_type, spec, spec1),
                 delivery:dyed_yarn_deliveries(
                   id,
@@ -1185,7 +1189,8 @@ export default function WarpingOrderForms() {
                   delivered_date,
                   delivered_by,
                   vehicle_no,
-                  remarks
+                  remarks,
+                  dyeing_unit_id
                 )
               `)
               .eq('production_form_id', wofId),
@@ -1710,7 +1715,7 @@ export default function WarpingOrderForms() {
   }, [baseFilteredForCounts]);
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem' }}>
+    <div style={{ width: '100%', padding: '1.25rem 1.5rem', boxSizing: 'border-box' }}>
       {/* Header */}
       <div style={{ marginBottom: '2rem' }}>
         <button
@@ -2495,6 +2500,7 @@ export default function WarpingOrderForms() {
                                             order_no: wof.order?.order_number || '—',
                                             design_no: wof.order?.design_no || '—',
                                             design_name: wof.order?.design_name || '',
+                                            partner_name: wof.partner?.partner_name || wof.partner_name,
                                             items: []
                                           };
                                         }

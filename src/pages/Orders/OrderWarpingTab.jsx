@@ -840,6 +840,7 @@ function OrderWarpingTab({ order }) {
                                             order_no: wof.order?.order_number || order.order_number || '—',
                                             design_no: wof.order?.design_no || order.design_no || '—',
                                             design_name: wof.order?.design_name || order.design_name || '',
+                                            partner_name: wof.partner?.partner_name || wof.partner_name,
                                             items: []
                                           };
                                         }

@@ -756,6 +756,7 @@ function GreigeApprovals() {
                   <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Inv Date</th>
                   <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Mill Name</th>
                   <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Count</th>
+                  <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>HSN Code</th>
                   <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Bags</th>
                   <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Cones</th>
                   <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'right' }}>Wt/Bag</th>
@@ -771,7 +772,7 @@ function GreigeApprovals() {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={16} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
+                    <td colSpan={17} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
                       No {statusFilter !== 'all' ? (statusFilter === 'pending' ? 'pending' : 'approved') : ''} greige receipts found.
                     </td>
                   </tr>
@@ -823,8 +824,9 @@ function GreigeApprovals() {
                                 </>
                               )}
 
-                              {/* Per-item columns (count, bags, cones, weights) */}
+                              {/* Per-item columns (count, HSN Code, bags, cones, weights) */}
                               <td style={{ ...tdPad, minWidth: '100px', whiteSpace: 'normal', borderBottom: itemBorder }}>{getCountLabel(item)}</td>
+                              <td style={{ ...tdPad, minWidth: '70px', whiteSpace: 'normal', borderBottom: itemBorder }}>{item.hsn_code || '-'}</td>
                               <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{item.bag_count || 0}</td>
                               <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{item.cone_count || 0}</td>
                               <td style={{ ...tdPad, textAlign: 'right', borderBottom: itemBorder }}>{Number(item.bag_weight || 0).toFixed(1)}</td>
@@ -972,7 +974,10 @@ function GreigeApprovals() {
                     <div className="mobile-sub-list">
                       {group.items.map(item => (
                         <div key={item.id} className="mobile-sub-item" style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                          <div style={{ fontWeight: 'bold', color: 'var(--text-current)' }}>{getCountLabel(item)}</div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: 'var(--text-current)' }}>
+                            <span>{getCountLabel(item)}</span>
+                            {item.hsn_code && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: 'normal' }}>HSN: {item.hsn_code}</span>}
+                          </div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem', fontSize: '0.7rem', color: 'var(--text-muted-current)' }}>
                             <div>Bags: <strong>{item.bag_count || 0}</strong></div>
                             <div>Cones: <strong>{item.cone_count || 0}</strong></div>

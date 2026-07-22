@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import DYDRDetail from '../../components/DYDRDetail';
 import { printDydr } from '../../utils/printDydr';
+import EwayBillModal from '../../components/EwayBillModal';
 
 function getYarnStatusBadge(allotments, associatedDydrs) {
   const totalAllotted = (allotments || []).reduce((sum, a) => sum + parseFloat(a.allotted_qty || a.kg || a.allottedQty || 0), 0);
@@ -906,8 +907,21 @@ export default function DeliverDyedYarn() {
           .eq('id', docId);
       }
 
+      // Fetch partner details if job work
+      let partnerInfo = null;
+      const partnerId = selectedTarget.partner_id || selectedTarget.partner?.id || selectedTarget.dyeing_unit_id;
+      if (partnerId) {
+        const { data: pData } = await supabase
+          .from('master_partners')
+          .select('*')
+          .eq('id', partnerId)
+          .maybeSingle();
+        partnerInfo = pData;
+      }
+
       // Save delivery details to printDydrData to display receipt modal
       setPrintDydrData({
+        id: delivery.id,
         dydr_number: dydrNumber,
         delivered_date: deliveredDate,
         delivered_by: deliveredBy,
@@ -919,7 +933,10 @@ export default function DeliverDyedYarn() {
         order_no: selectedTarget.order?.order_number || '—',
         design_no: selectedTarget.design_no || selectedTarget.order?.design_no || '—',
         design_name: selectedTarget.order?.design_name || '',
+        partner: partnerInfo,
         items: validItems.map(i => ({
+          production_form_id: selectedTarget.id,
+          process_type: targetProcess,
           yarn_count_id: i.yarn_count_id,
           colour: i.colour,
           quantity_kg: parseFloat(i.quantity_kg),
@@ -1876,8 +1893,68 @@ export default function DeliverDyedYarn() {
 // Inline DYDR Receipt Modal (Printable)
 // ──────────────────────────────────────────────
 function DYDRReceiptModal({ receipt, getFormatCount, onClose }) {
-  const items = receipt.items || [];
+  const [localReceipt, setLocalReceipt] = useState(receipt);
+  const [showEwayModal, setShowEwayModal] = useState(false);
+  const [partnerDetails, setPartnerDetails] = useState(null);
+
+  const items = localReceipt.items || [];
   const totalQty = items.reduce((s, i) => s + parseFloat(i.quantity_kg || 0), 0);
+
+  useEffect(() => {
+    setLocalReceipt(receipt);
+  }, [receipt]);
+
+  useEffect(() => {
+    const fetchPartner = async () => {
+      if (localReceipt?.partner) {
+        setPartnerDetails(localReceipt.partner);
+        return;
+      }
+      let partnerId = localReceipt?.partner_id;
+
+      if (!partnerId) {
+        const firstItem = items[0];
+        const formId = firstItem?.production_form_id || localReceipt?.production_form_id;
+        const processType = firstItem?.process_type || localReceipt?.target_process;
+
+        if (formId && processType) {
+          const dbTable = processType === 'warping' 
+            ? 'warping_order_forms' 
+            : processType === 'redyeing' 
+            ? 'dyeing_order_forms' 
+            : 'weaving_orders';
+          const partnerCol = processType === 'redyeing' ? 'dyeing_unit_id' : 'partner_id';
+          const { data: formRecord } = await supabase
+            .from(dbTable)
+            .select(partnerCol)
+            .eq('id', formId)
+            .maybeSingle();
+          if (formRecord?.[partnerCol]) {
+            partnerId = formRecord[partnerCol];
+          }
+        }
+      }
+
+      if (!partnerId && localReceipt?.dyeing_unit_id) {
+        partnerId = localReceipt.dyeing_unit_id;
+      }
+
+      if (partnerId) {
+        const { data } = await supabase
+          .from('master_partners')
+          .select('*')
+          .eq('id', partnerId)
+          .maybeSingle();
+        if (data) {
+          setPartnerDetails(data);
+        }
+      } else {
+        setPartnerDetails(null);
+      }
+    };
+
+    fetchPartner();
+  }, [localReceipt, items]);
 
   // Grouped by colour and count
   const groupedByColourAndCount = items.reduce((acc, i) => {
@@ -1896,17 +1973,48 @@ function DYDRReceiptModal({ receipt, getFormatCount, onClose }) {
 
   // Get current date/time to show on receipt
   const printTimeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  const printDateStr = new Date(receipt.delivered_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+  const printDateStr = new Date(localReceipt.delivered_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-      <div style={{ backgroundColor: '#fff', borderRadius: '8px', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+      <div style={{ backgroundColor: '#fff', borderRadius: '8px', width: '100%', maxWidth: '1100px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
         {/* Screen-only buttons */}
         <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: '700', color: '#374151' }}>
-            Dyed Yarn Delivery Receipt — {receipt.dydr_number}
+            Dyed Yarn Delivery Receipt — {localReceipt.dydr_number}
           </h3>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            {localReceipt.eway_bill_no ? (
+              localReceipt.eway_bill_status === 'cancelled' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#fee2e2', border: '1px solid #fca5a5', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', color: '#991b1b', fontWeight: '700' }}>
+                  Cancelled
+                  <button
+                    onClick={() => setShowEwayModal(true)}
+                    style={{ border: 'none', background: 'none', color: '#0284c7', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '0.75rem', marginLeft: '6px', fontWeight: '700' }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#dcfce7', border: '1px solid #bbf7d0', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', color: '#166534', fontWeight: '700' }}>
+                  <CheckCircle size={14} style={{ color: '#15803d' }} /> Eway: {localReceipt.eway_bill_no}
+                  <button
+                    onClick={() => setShowEwayModal(true)}
+                    style={{ border: 'none', background: 'none', color: '#b91c1c', cursor: 'pointer', textDecoration: 'underline', padding: 0, fontSize: '0.75rem', marginLeft: '6px', fontWeight: '700' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )
+            ) : (
+              <button
+                onClick={() => setShowEwayModal(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '6px 14px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}
+              >
+                <Truck size={14} /> Generate E-Way Bill
+              </button>
+            )}
+
             <button
               onClick={() => window.print()}
               style={{ padding: '6px 16px', backgroundColor: '#800000', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}
@@ -1933,15 +2041,20 @@ function DYDRReceiptModal({ receipt, getFormatCount, onClose }) {
             </div>
             <div style={{ textAlign: 'right' }}>
               <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '800', color: '#800000' }}>DYED YARN DELIVERY RECEIPT</h1>
-              <p style={{ margin: '4px 0 0 0', fontSize: '1.05rem', fontWeight: '700', color: '#111' }}>{receipt.dydr_number}</p>
+              <p style={{ margin: '4px 0 0 0', fontSize: '1.05rem', fontWeight: '700', color: '#111' }}>{localReceipt.dydr_number}</p>
               <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#666' }}>
                 Date: {printDateStr} &nbsp;·&nbsp; Time: {printTimeStr}
               </p>
+              {localReceipt.eway_bill_no && localReceipt.eway_bill_status === 'generated' && (
+                <p style={{ margin: '4px 0 0 0', fontSize: '11px', fontWeight: '800', color: '#166534', fontFamily: 'monospace' }}>
+                  E-WAY BILL: {localReceipt.eway_bill_no}
+                </p>
+              )}
             </div>
           </div>
 
           {/* Meta Info */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
             <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '1rem' }}>
               <p style={{ margin: '0 0 0.75rem 0', fontSize: '11px', fontWeight: '700', color: '#888', textTransform: 'uppercase' }}>Delivery Details</p>
               {(() => {
@@ -1963,6 +2076,31 @@ function DYDRReceiptModal({ receipt, getFormatCount, onClose }) {
                 ));
               })()}
             </div>
+
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '1rem' }}>
+              <p style={{ margin: '0 0 0.75rem 0', fontSize: '11px', fontWeight: '700', color: '#888', textTransform: 'uppercase' }}>Delivery To (Partner)</p>
+              {partnerDetails ? (
+                <>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem', fontSize: '12px' }}>
+                    <span style={{ color: '#555', minWidth: '80px', flexShrink: 0 }}>Name:</span>
+                    <span style={{ fontWeight: '600' }}>{partnerDetails.partner_name}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.4rem', fontSize: '12px' }}>
+                    <span style={{ color: '#555', minWidth: '80px', flexShrink: 0 }}>Address:</span>
+                    <span style={{ fontWeight: '600', whiteSpace: 'pre-wrap' }}>{partnerDetails.address || '—'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', fontSize: '12px' }}>
+                    <span style={{ color: '#555', minWidth: '80px', flexShrink: 0 }}>GSTIN:</span>
+                    <span style={{ fontWeight: '600' }}>{partnerDetails.gstin || '—'}</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: '12px', color: '#888', fontStyle: 'italic' }}>
+                  No partner details resolved
+                </div>
+              )}
+            </div>
+
             <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '1rem' }}>
               <p style={{ margin: '0 0 0.75rem 0', fontSize: '11px', fontWeight: '700', color: '#888', textTransform: 'uppercase' }}>Linked Order Info</p>
               <div style={{ fontSize: '12px', marginBottom: '0.4rem' }}>
@@ -2072,6 +2210,65 @@ function DYDRReceiptModal({ receipt, getFormatCount, onClose }) {
           }
         `}</style>
       </div>
+      <EwayBillModal
+        isOpen={showEwayModal}
+        onClose={() => setShowEwayModal(false)}
+        type="dyed"
+        record={localReceipt}
+        defaultDetails={{
+          docNo: localReceipt?.dydr_number,
+          docDate: localReceipt?.delivered_date,
+          partnerName: partnerDetails?.partner_name || localReceipt?.partner_name,
+          partnerGstin: partnerDetails?.gstin,
+          partnerAddress: partnerDetails?.address,
+          partnerPincode: partnerDetails?.pincode,
+          partnerStateCode: partnerDetails?.state_code,
+          vehicleNo: localReceipt?.vehicle_no,
+          totalQty: totalQty,
+          qtyUnit: 'KGS',
+          productName: 'Dyed Cotton Yarn',
+          items: (() => {
+            // Group by count to consolidate
+            const countMap = {};
+            (localReceipt.items || []).forEach(di => {
+              const cid = di.yarn_count_id;
+              if (cid) {
+                if (!countMap[cid]) {
+                  countMap[cid] = {
+                    qty: 0,
+                    countObj: di.yarn_count
+                  };
+                }
+                countMap[cid].qty += parseFloat(di.quantity_kg || 0);
+              }
+            });
+            
+            return Object.entries(countMap).map(([cid, info]) => {
+              const c = info.countObj;
+              const yarnName = c ? [c.count_value, c.spec, c.spec1, c.product_type].filter(Boolean).join(' ') : 'Yarn';
+              const rate = 320; // Estimated Rs 320/kg for Dyed Yarn
+              const qty = parseFloat(info.qty.toFixed(2));
+              return {
+                productName: yarnName + ' Dyed Yarn',
+                hsnCode: '5206', // standard dyed yarn HSN
+                quantity: qty,
+                qtyUnit: 'KGS',
+                ratePerKg: rate,
+                taxableAmount: parseFloat((qty * rate).toFixed(2))
+              };
+            });
+          })()
+        }}
+        onSuccess={(res) => {
+          setLocalReceipt(prev => ({
+            ...prev,
+            eway_bill_no: res.ewayBillNo || prev.eway_bill_no,
+            eway_bill_status: res.eway_bill_status || 'generated',
+            eway_bill_date: res.ewayBillDate || prev.eway_bill_date,
+            eway_bill_details: res.details || prev.eway_bill_details
+          }));
+        }}
+      />
     </div>
   );
 }

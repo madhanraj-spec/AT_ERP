@@ -241,6 +241,7 @@ export default function ReceiptForm() {
   const [items, setItems] = useState([
     {
       yarn_count_id: '',
+      hsn_code: '',
       bag_weight: '',
       bag_count: '',
       cone_weight: '',
@@ -580,6 +581,7 @@ export default function ReceiptForm() {
     setItems([
       {
         yarn_count_id: '',
+        hsn_code: '',
         bag_weight: '',
         bag_count: '',
         cone_weight: '',
@@ -735,6 +737,7 @@ export default function ReceiptForm() {
             receipt_no: receiptNo,
             receipt_type: 'spinning_mill',
             yarn_count_id: item.yarn_count_id,
+            hsn_code: item.hsn_code || null,
             total_weight: computedItemWeight,
             bag_weight: parseFloat(item.bag_weight) || 0,
             bag_count: parseInt(item.bag_count) || 0,
@@ -931,6 +934,7 @@ export default function ReceiptForm() {
                 style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
                 onClick={() => setItems(prev => [...prev, {
                   yarn_count_id: '',
+                  hsn_code: '',
                   bag_weight: '',
                   bag_count: '',
                   cone_weight: '',
@@ -981,6 +985,21 @@ export default function ReceiptForm() {
                             setItems(updated);
                           }}
                           required
+                        />
+                      </div>
+
+                      <div className="input-group">
+                        <label className="input-label">HSN Code</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="Enter HSN Code (e.g. 5205, 5206)"
+                          value={item.hsn_code}
+                          onChange={e => {
+                            const updated = [...items];
+                            updated[idx].hsn_code = e.target.value;
+                            setItems(updated);
+                          }}
                         />
                       </div>
 

@@ -509,6 +509,7 @@ export default function ReceiptsList() {
                     <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Inv No</th>
                     <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Mill Name</th>
                     <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Count</th>
+                    <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>HSN Code</th>
                     <th style={{ padding: '0.4rem 0.25rem', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted-current)', borderBottom: '1px solid var(--border-current)', textAlign: 'left' }}>Location</th>
                   </>
                 ) : (
@@ -531,16 +532,16 @@ export default function ReceiptsList() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={activeTab === 'spinning' ? 15 : 11} style={{ textAlign: 'center', padding: '2rem', fontSize: '0.8rem' }}>Loading receipts...</td></tr>
+                <tr><td colSpan={activeTab === 'spinning' ? 16 : 11} style={{ textAlign: 'center', padding: '2rem', fontSize: '0.8rem' }}>Loading receipts...</td></tr>
               ) : receipts.length === 0 ? (
                 <tr>
-                  <td colSpan={activeTab === 'spinning' ? 15 : 11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
+                  <td colSpan={activeTab === 'spinning' ? 16 : 11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>
                     No receipts found for this category.
                   </td>
                 </tr>
               ) : filteredReceipts.length === 0 ? (
                 <tr>
-                  <td colSpan={activeTab === 'spinning' ? 15 : 11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontWeight: '500', fontSize: '0.8rem' }}>
+                  <td colSpan={activeTab === 'spinning' ? 16 : 11} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontWeight: '500', fontSize: '0.8rem' }}>
                     No receipts match the selected filters.
                   </td>
                 </tr>
@@ -593,6 +594,9 @@ export default function ReceiptsList() {
                               <>
                                 <td style={{ ...tdPad, minWidth: '100px', whiteSpace: 'normal', borderBottom: itemBorder }}>
                                   {formatYarnCount(item.master_yarn_counts)}
+                                </td>
+                                <td style={{ ...tdPad, minWidth: '70px', whiteSpace: 'normal', borderBottom: itemBorder }}>
+                                  {item.hsn_code || '-'}
                                 </td>
                                 <td style={{ ...tdPad, minWidth: '85px', whiteSpace: 'normal', borderBottom: itemBorder }}>{item.master_locations?.location_name || '-'}</td>
                               </>
