@@ -10,6 +10,9 @@ const hasGreigeBalanceToSend = (form, deliveryItemsMap, returnsMap) => {
   if (!form || !Array.isArray(form.summary) || form.summary.length === 0) {
     return false;
   }
+  if (form.dyeing_unit?.partner_name?.toUpperCase().includes('AT DYED YARN')) {
+    return false;
+  }
   
   const dofDeliveryItems = deliveryItemsMap[form.id] || [];
   const dofReturns = returnsMap[form.dof_number] || [];

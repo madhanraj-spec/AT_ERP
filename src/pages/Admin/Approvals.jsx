@@ -227,11 +227,53 @@ function DyeingFormApprovals({ adminProfile }) {
     const verb = newStatus === 'approved' ? 'APPROVE' : 'REJECT';
     if (!window.confirm(`Are you sure you want to ${verb} DOF ${form.dof_number}?`)) return;
     try {
+      const isATInventory = form.dyeing_unit?.partner_name?.toUpperCase().includes('AT DYED YARN');
+      const finalStatus = (newStatus === 'approved' && isATInventory) ? 'received' : newStatus;
+
       const { error } = await supabase
         .from('dyeing_order_forms')
-        .update({ status: newStatus, approved_by: adminProfile.id, updated_at: new Date().toISOString() })
+        .update({ status: finalStatus, approved_by: adminProfile.id, updated_at: new Date().toISOString() })
         .eq('id', form.id);
       if (error) throw error;
+
+      if (newStatus === 'approved' && isATInventory) {
+        // Auto-create dyed_yarn_receipts & items
+        const year = new Date().getFullYear();
+        const { data: dyrrNumber } = await supabase.rpc('get_next_dyrr_number', { p_year: year });
+
+        const { data: receipt, error: recErr } = await supabase
+          .from('dyed_yarn_receipts')
+          .insert([{
+            dyrr_number: dyrrNumber || `AT/${year}/DYRR/AUTO-${form.id.slice(0, 5)}`,
+            dof_id: form.id,
+            dof_number: form.dof_number,
+            dyeing_unit_id: form.dyeing_unit_id,
+            received_date: new Date().toISOString().split('T')[0],
+            received_by: adminProfile?.full_name || 'Admin',
+            source_type: 'partner',
+            remarks: 'Auto-credited from AT DYED YARN INVENTORY stock allocation',
+            created_by: adminProfile?.id
+          }])
+          .select()
+          .single();
+
+        if (!recErr && receipt) {
+          const itemsToInsert = (form.yarn_allocations || []).map(alloc => ({
+            receipt_id: receipt.id,
+            order_id: alloc.orderId,
+            yarn_count_id: alloc.countId,
+            colour: alloc.colour,
+            quantity_kg: parseFloat(alloc.total_kg || alloc.base_kg || 0),
+            yarn_type: alloc.type || 'warp',
+            lot_number: form.dof_number
+          }));
+
+          if (itemsToInsert.length > 0) {
+            await supabase.from('dyed_yarn_receipt_items').insert(itemsToInsert);
+          }
+        }
+      }
+
       fetchForms();
     } catch (err) {
       alert('Error: ' + err.message);

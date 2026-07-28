@@ -402,6 +402,125 @@ function EditModal({ roll, weavingOrder, inspectors, onClose, onSave }) {
   );
 }
 
+// ─── Shared Pagination Component ──────────────────────────────────────────────
+function PaginationBar({ currentPage, totalPages, totalItems, itemsPerPage, onPageChange, label = 'rolls' }) {
+  if (totalItems === 0) return null;
+
+  const startItem = (currentPage - 1) * itemsPerPage + 1;
+  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+
+  return (
+    <div style={{
+      display: 'flex',
+      justify: 'space-between',
+      alignItems: 'center',
+      padding: '0.75rem 1rem',
+      backgroundColor: '#f8fafc',
+      borderTop: '1px solid var(--border-current)',
+      borderBottomLeftRadius: '10px',
+      borderBottomRightRadius: '10px',
+      flexWrap: 'wrap',
+      gap: '0.5rem'
+    }}>
+      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>
+        Showing {startItem} - {endItem} of {totalItems} {label} {totalPages > 1 ? `(Page ${currentPage} of ${totalPages})` : ''}
+      </span>
+
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <button
+            type="button"
+            onClick={() => onPageChange(1)}
+            disabled={currentPage === 1}
+            style={{
+              padding: '0.3rem 0.6rem',
+              borderRadius: '6px',
+              border: '1px solid var(--border-current)',
+              backgroundColor: 'white',
+              fontSize: '0.75rem',
+              fontWeight: '700',
+              cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+              opacity: currentPage === 1 ? 0.5 : 1
+            }}
+          >
+            First
+          </button>
+          <button
+            type="button"
+            onClick={() => onPageChange(Math.max(currentPage - 1, 1))}
+            disabled={currentPage === 1}
+            style={{
+              padding: '0.3rem 0.6rem',
+              borderRadius: '6px',
+              border: '1px solid var(--border-current)',
+              backgroundColor: 'white',
+              fontSize: '0.75rem',
+              fontWeight: '700',
+              cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+              opacity: currentPage === 1 ? 0.5 : 1
+            }}
+          >
+            Prev
+          </button>
+
+          <select
+            value={currentPage}
+            onChange={e => onPageChange(Number(e.target.value))}
+            style={{
+              padding: '0.3rem 0.5rem',
+              borderRadius: '6px',
+              border: '1px solid var(--border-current)',
+              backgroundColor: 'white',
+              fontSize: '0.75rem',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+              <option key={p} value={p}>Page {p}</option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={() => onPageChange(Math.min(currentPage + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            style={{
+              padding: '0.3rem 0.6rem',
+              borderRadius: '6px',
+              border: '1px solid var(--border-current)',
+              backgroundColor: 'white',
+              fontSize: '0.75rem',
+              fontWeight: '700',
+              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+              opacity: currentPage === totalPages ? 0.5 : 1
+            }}
+          >
+            Next
+          </button>
+          <button
+            type="button"
+            onClick={() => onPageChange(totalPages)}
+            disabled={currentPage === totalPages}
+            style={{
+              padding: '0.3rem 0.6rem',
+              borderRadius: '6px',
+              border: '1px solid var(--border-current)',
+              backgroundColor: 'white',
+              fontSize: '0.75rem',
+              fontWeight: '700',
+              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+              opacity: currentPage === totalPages ? 0.5 : 1
+            }}
+          >
+            Last
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── 4 Point Report Tab ───────────────────────────────────────────────────────
 function FourPointReportTab() {
   const [rows, setRows] = useState([]);
@@ -411,6 +530,7 @@ function FourPointReportTab() {
   const [editTarget, setEditTarget] = useState(null); // { roll, weavingOrder }
   const [successMsg, setSuccessMsg] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
+  const [page, setPage] = useState(1);
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -445,7 +565,8 @@ function FourPointReportTab() {
       for (const order of data || []) {
         const rolls = Array.isArray(order.fabric_rolls) ? order.fabric_rolls : [];
         for (const roll of rolls) {
-          if (roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing') {
+          const isProcessedRoll = roll.isProcessed || (roll.id && /\/P\d+/i.test(roll.id));
+          if (!isProcessedRoll && (roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing')) {
             inspectedRolls.push({ roll, weavingOrder: order });
           }
         }
@@ -566,6 +687,18 @@ function FourPointReportTab() {
     });
   }, [rows, filters]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [filters]);
+
+  const ITEMS_PER_PAGE = 50;
+  const totalPages = Math.ceil(filteredRows.length / ITEMS_PER_PAGE) || 1;
+  const safePage = Math.min(Math.max(1, page), totalPages);
+
+  const paginatedRows = useMemo(() => {
+    return filteredRows.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+  }, [filteredRows, safePage]);
+
   const activeFilterCount = useMemo(() => {
     return ['rollIds','orderNumbers','wvofs','designNames','designNos','inspector1s','inspector2s','fitters','rollOk','partners','looms']
       .reduce((c, k) => c + (filters[k]?.length || 0), 0) +
@@ -596,7 +729,7 @@ function FourPointReportTab() {
       totalActualQty += parseFloat(r.actual_qty || r.actual_length || 0);
       totalShortage += parseFloat(r.shortage ?? ((r.qty || 0) - (r.actual_qty || r.actual_length || 0)));
       totalMistake += parseFloat(r.mistake || 0);
-      totalOkQty += parseFloat(r.approved_qty ?? ((r.actual_qty || 0) - (r.mistake || 0)));
+      totalOkQty += parseFloat((r.actual_qty || 0) - (r.mistake || 0));
     });
 
     const printWindow = window.open('', '_blank');
@@ -710,7 +843,7 @@ function FourPointReportTab() {
                 const dateStr = inspectedAt ? inspectedAt.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
                 const isOk = r.roll_ok !== false;
                 const shortageVal = parseFloat(r.shortage ?? ((r.qty || 0) - (r.actual_qty || r.actual_length || 0))).toFixed(2);
-                const okQtyVal = parseFloat(r.approved_qty ?? ((r.actual_qty || 0) - (r.mistake || 0))).toFixed(2);
+                const okQtyVal = parseFloat((r.actual_qty || 0) - (r.mistake || 0)).toFixed(2);
                 const warpComments = r.warp_comments || [];
                 const weftComments = r.weft_comments || [];
                 const comments = [...warpComments, ...weftComments];
@@ -823,7 +956,7 @@ function FourPointReportTab() {
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>
-            {filteredRows.length} of {rows.length} records
+            Showing {filteredRows.length > 0 ? (safePage - 1) * ITEMS_PER_PAGE + 1 : 0} - {Math.min(safePage * ITEMS_PER_PAGE, filteredRows.length)} of {filteredRows.length} rolls {activeFilterCount > 0 ? `(Filtered from ${rows.length} total)` : ''}
           </span>
           <button onClick={fetchData} disabled={loading} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted-current)', padding: '4px' }}>
             <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
@@ -924,7 +1057,7 @@ function FourPointReportTab() {
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map(({ roll: r, weavingOrder: w }) => {
+              {paginatedRows.map(({ roll: r, weavingOrder: w }) => {
                 const orderNo = w.order?.order_number || '—';
                 const designName = w.order?.design_name || w.design_name || '—';
                 const designNo = w.order?.design_no || w.design_no || '—';
@@ -932,7 +1065,7 @@ function FourPointReportTab() {
                 const dateStr = inspectedAt ? inspectedAt.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
                 const isOk = r.roll_ok !== false;
                 const shortage = parseFloat(r.shortage ?? ((r.qty || 0) - (r.actual_qty || r.actual_length || 0))).toFixed(2);
-                const okQty = parseFloat(r.approved_qty ?? ((r.actual_qty || 0) - (r.mistake || 0))).toFixed(2);
+                const okQty = parseFloat((r.actual_qty || 0) - (r.mistake || 0)).toFixed(2);
                 const warpComments = r.warp_comments || [];
                 const weftComments = r.weft_comments || [];
                 const allComments = [...warpComments, ...weftComments];
@@ -1107,6 +1240,15 @@ function FourPointReportTab() {
               })}
             </tbody>
           </table>
+
+          <PaginationBar
+            currentPage={safePage}
+            totalPages={totalPages}
+            totalItems={filteredRows.length}
+            itemsPerPage={ITEMS_PER_PAGE}
+            onPageChange={setPage}
+            label="rolls"
+          />
         </div>
       )}
 
@@ -1680,6 +1822,7 @@ function WashedReportTab({ onCreateNewReport }) {
   const [editTarget, setEditTarget] = useState(null); // { roll, weavingOrder }
   const [successMsg, setSuccessMsg] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
+  const [page, setPage] = useState(1);
 
   // Filters
   const [filters, setFilters] = useState({
@@ -1834,6 +1977,18 @@ function WashedReportTab({ onCreateNewReport }) {
       return true;
     });
   }, [rows, filters]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filters]);
+
+  const ITEMS_PER_PAGE = 50;
+  const totalPages = Math.ceil(filteredRows.length / ITEMS_PER_PAGE) || 1;
+  const safePage = Math.min(Math.max(1, page), totalPages);
+
+  const paginatedRows = useMemo(() => {
+    return filteredRows.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+  }, [filteredRows, safePage]);
 
   const handleEditSave = () => {
     setEditTarget(null);
@@ -2060,6 +2215,9 @@ function WashedReportTab({ onCreateNewReport }) {
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted-current)', fontWeight: '600', marginRight: '0.5rem' }}>
+            Showing {filteredRows.length > 0 ? (safePage - 1) * ITEMS_PER_PAGE + 1 : 0} - {Math.min(safePage * ITEMS_PER_PAGE, filteredRows.length)} of {filteredRows.length} rolls
+          </span>
           <button
             onClick={onCreateNewReport}
             style={{
@@ -2184,7 +2342,7 @@ function WashedReportTab({ onCreateNewReport }) {
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map(({ roll: r, weavingOrder: w }) => {
+              {paginatedRows.map(({ roll: r, weavingOrder: w }) => {
                 const orderNo = w.order?.order_number || '—';
                 const designName = w.order?.design_name || w.design_name || '—';
                 const designNo = w.order?.design_no || w.design_no || '—';
@@ -2310,6 +2468,15 @@ function WashedReportTab({ onCreateNewReport }) {
               })}
             </tbody>
           </table>
+
+          <PaginationBar
+            currentPage={safePage}
+            totalPages={totalPages}
+            totalItems={filteredRows.length}
+            itemsPerPage={ITEMS_PER_PAGE}
+            onPageChange={setPage}
+            label="rolls"
+          />
         </div>
       )}
 
@@ -2333,6 +2500,7 @@ function InspectionReportsHistoryTab({ refreshKey }) {
   const [loading, setLoading] = useState(true);
   const [missingTable, setMissingTable] = useState(false);
   const [expandedRows, setExpandedRows] = useState({});
+  const [page, setPage] = useState(1);
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState({
@@ -2401,6 +2569,18 @@ function InspectionReportsHistoryTab({ refreshKey }) {
       );
     });
   }, [reports, filters]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filters]);
+
+  const ITEMS_PER_PAGE = 50;
+  const totalPages = Math.ceil(filteredReports.length / ITEMS_PER_PAGE) || 1;
+  const safePage = Math.min(Math.max(1, page), totalPages);
+
+  const paginatedReports = useMemo(() => {
+    return filteredReports.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+  }, [filteredReports, safePage]);
 
   const activeFilterCount = useMemo(() => {
     return ['irNumbers', 'orderNumbers', 'designNumbers', 'designNames']
@@ -2555,7 +2735,7 @@ function InspectionReportsHistoryTab({ refreshKey }) {
 
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>
-                {filteredReports.length} of {reports.length} reports
+                Showing {filteredReports.length > 0 ? (safePage - 1) * ITEMS_PER_PAGE + 1 : 0} - {Math.min(safePage * ITEMS_PER_PAGE, filteredReports.length)} of {filteredReports.length} reports
               </span>
               <button onClick={fetchReports} disabled={loading} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted-current)', padding: '4px' }}>
                 <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
@@ -2607,7 +2787,7 @@ function InspectionReportsHistoryTab({ refreshKey }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredReports.map((report) => {
+                  {paginatedReports.map((report) => {
                     const isExpanded = !!expandedRows[report.id];
                     const displayQty = parseFloat(report.total_qty || 0);
                     const qtyUnitLabel = report.qty_unit === 'yards' ? 'Yds' : 'Mtr';
@@ -2758,6 +2938,14 @@ function InspectionReportsHistoryTab({ refreshKey }) {
                   })}
                 </tbody>
               </table>
+              <PaginationBar
+                currentPage={safePage}
+                totalPages={totalPages}
+                totalItems={filteredReports.length}
+                itemsPerPage={ITEMS_PER_PAGE}
+                onPageChange={setPage}
+                label="reports"
+              />
             </div>
           )}
         </>

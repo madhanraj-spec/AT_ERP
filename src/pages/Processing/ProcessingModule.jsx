@@ -387,6 +387,7 @@ export default function ProcessingModule() {
   const [createdPofrr, setCreatedPofrr] = useState(null);
   const [receivedRollIds, setReceivedRollIds] = useState([]); // List of roll IDs checked/scanned to receive
   const [receivedRollsData, setReceivedRollsData] = useState({}); // Roll ID -> received quantity input
+  const [receiveMarkComplete, setReceiveMarkComplete] = useState(false); // Explicit toggle for marking POF complete
 
   // ---------------------------------------------------------------------------
   // ALL POFS HISTORICAL STATE VARIABLES
@@ -448,7 +449,13 @@ export default function ProcessingModule() {
   const [processedRolls, setProcessedRolls] = useState([]);
   const [processedRollsLoading, setProcessedRollsLoading] = useState(false);
   const [processedRollsSearch, setProcessedRollsSearch] = useState('');
+  const [processedRollsPage, setProcessedRollsPage] = useState(1);
   const [fabricMovements, setFabricMovements] = useState([]);
+
+  // Reset page to 1 when search query changes
+  useEffect(() => {
+    setProcessedRollsPage(1);
+  }, [processedRollsSearch]);
 
   // Filter states for Processed Rolls
   const [processedRollsShowFilters, setProcessedRollsShowFilters] = useState(false);
@@ -1025,7 +1032,7 @@ export default function ProcessingModule() {
 
       const newRollItem = {
         id: scannedId,
-        qty: (isProcessed && foundRoll.received_qty != null) ? foundRoll.received_qty : (foundRoll.qty || 0),
+        qty: (isProcessed && foundRoll.received_qty != null) ? foundRoll.received_qty : (foundRoll.actual_qty || foundRoll.qty || 0),
         actual_qty: (isProcessed && foundRoll.received_qty != null) ? foundRoll.received_qty : (foundRoll.actual_qty || foundRoll.qty || 0),
         order_number: orderNumber,
         design_no: designNo,
@@ -1326,6 +1333,25 @@ export default function ProcessingModule() {
   // ---------------------------------------------------------------------------
   // RECEIVE FABRIC FUNCTIONS
   // ---------------------------------------------------------------------------
+  const findBestMatchingGreigeRoll = (qtyStr, sentRolls, fallbackIdx = 0) => {
+    if (!sentRolls || sentRolls.length === 0) return '';
+    const numQty = parseFloat(qtyStr);
+    if (isNaN(numQty) || numQty <= 0) {
+      return sentRolls[fallbackIdx % sentRolls.length]?.id || sentRolls[0]?.id || '';
+    }
+    let bestRoll = sentRolls[0];
+    let minDiff = Infinity;
+    sentRolls.forEach(r => {
+      const sentQty = parseFloat(r.actual_qty || r.qty || 0);
+      const diff = Math.abs(sentQty - numQty);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestRoll = r;
+      }
+    });
+    return bestRoll?.id || sentRolls[fallbackIdx % sentRolls.length]?.id || '';
+  };
+
   const fetchPendingPofs = async () => {
     setLoading(true);
     try {
@@ -1424,6 +1450,7 @@ export default function ProcessingModule() {
     setReceiveReceivedBy('');
     setReceiveVehicleNo('');
     setReceiveReceivedPlace('');
+    setReceiveMarkComplete(false);
     
     const sentRolls = pof.fabric_rolls || [];
     const receivedRollsList = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
@@ -1459,7 +1486,7 @@ export default function ProcessingModule() {
       
       const initialProcessedRolls = [];
       for (let i = 0; i < count; i++) {
-        const matchingGreige = remainingRolls[i] || remainingRolls[0] || sentRolls[i] || {};
+        const matchingGreige = remainingRolls[i] || remainingRolls[i % (remainingRolls.length || 1)] || sentRolls[i % (sentRolls.length || 1)] || {};
         initialProcessedRolls.push({
           id: `${orderNo}/P${currentPLevel}/${String(startIndex + i).padStart(5, '0')}`,
           qty: '',
@@ -1499,7 +1526,7 @@ export default function ProcessingModule() {
       if (updated.length < count) {
         // Add more rows
         for (let i = updated.length; i < count; i++) {
-          const matchingGreige = remainingRolls[i] || remainingRolls[0] || sentRolls[i] || {};
+          const matchingGreige = remainingRolls[i] || remainingRolls[i % (remainingRolls.length || 1)] || sentRolls[i % (sentRolls.length || 1)] || {};
           updated.push({
             id: `${orderNo}/P${currentPLevel}/${String(receiveStartIndex + i).padStart(5, '0')}`,
             qty: '',
@@ -3378,10 +3405,9 @@ export default function ProcessingModule() {
       const existingReceived = Array.isArray(selectedPof.received_rolls) ? selectedPof.received_rolls : [];
       const combinedReceivedRolls = [...existingReceived, ...formattedReceivedRolls];
 
-      // Determine status based on cumulative rolls received vs rolls sent
+      // Determine status based on explicit mark complete checkbox or total completion
       const sentRolls = selectedPof.fabric_rolls || [];
-      const totalSentCount = sentRolls.length;
-      const updatedStatus = combinedReceivedRolls.length < totalSentCount ? 'partially_received' : 'received';
+      const updatedStatus = receiveMarkComplete ? 'received' : 'partially_received';
 
       // Calculate overall shrinkage of the POF
       const totalSentQty = sentRolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
@@ -5424,28 +5450,26 @@ export default function ProcessingModule() {
                                 </span>
                               </td>
                               <td style={{ padding: '0.75rem 1rem', textAlign: 'center', display: 'flex', gap: '0.5rem', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
-                                {pof.status !== 'received' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSelectPof(pof)}
-                                    className="btn btn-primary"
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.3rem',
-                                      backgroundColor: 'var(--color-primary)',
-                                      color: 'white',
-                                      border: 'none',
-                                      padding: '4px 10px',
-                                      borderRadius: '6px',
-                                      fontSize: '0.7rem',
-                                      fontWeight: '800',
-                                      cursor: 'pointer'
-                                    }}
-                                  >
-                                    Receive
-                                  </button>
-                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectPof(pof)}
+                                  className="btn btn-primary"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.3rem',
+                                    backgroundColor: pof.status === 'received' ? '#047857' : 'var(--color-primary)',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.7rem',
+                                    fontWeight: '800',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {pof.status === 'received' ? '+ Receive DC' : 'Receive'}
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -5571,63 +5595,50 @@ export default function ProcessingModule() {
                                       {/* Right Side: Inbound Processed details */}
                                       <div style={{ backgroundColor: 'white', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-current)', boxShadow: 'var(--shadow-sm)' }}>
                                         <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-current)', fontSize: '0.8rem', fontWeight: '800', borderBottom: '1px solid #eee', paddingBottom: '0.25rem' }}>
-                                          📥 Inbound Processed & Shrinkage Details
+                                          📥 Inbound Processed Details ({Array.isArray(pof.received_rolls) ? pof.received_rolls.length : 0} Rolls Received)
                                         </h5>
                                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.785rem' }}>
                                           <thead>
                                             <tr style={{ borderBottom: '1px solid #ddd', textAlign: 'left', fontWeight: '700', color: 'var(--text-muted-current)' }}>
                                               <th style={{ padding: '0.5rem 0.25rem' }}>Processed Roll ID</th>
+                                              <th style={{ padding: '0.5rem 0.25rem' }}>Parent Greige Roll</th>
                                               <th style={{ padding: '0.5rem 0.25rem' }}>DC Number</th>
                                               <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Qty Received</th>
-                                              <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Shrinkage %</th>
                                             </tr>
                                           </thead>
                                           <tbody>
-                                            {(pof.fabric_rolls || []).map(roll => {
-                                              const rxRolls = Array.isArray(pof.received_rolls) 
-                                                ? pof.received_rolls.filter(rx => isGreigeRollMatch(rx.greige_roll_id, roll.id)) 
-                                                : [];
-                                              
-                                              if (rxRolls.length === 0) {
-                                                return (
-                                                  <tr key={roll.id} style={{ borderBottom: '1px solid #eee' }}>
-                                                    <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af', fontFamily: 'monospace' }}>Pending</td>
-                                                    <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af' }}>—</td>
-                                                    <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}>—</td>
-                                                    <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}></td>
-                                                  </tr>
-                                                );
-                                              }
-
-                                              return rxRolls.map((rxRoll, idx) => {
-                                                return (
-                                                  <tr key={`${roll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
-                                                    <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>{rxRoll.id}</td>
-                                                    <td style={{ padding: '0.5rem 0.25rem', fontWeight: '700', color: '#800000' }}>{rxRoll.processing_dc_no || '—'}</td>
-                                                    <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{parseFloat(rxRoll.qty || 0).toFixed(2)} m</td>
-                                                    <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '700' }}></td>
-                                                  </tr>
-                                                );
-                                              });
-                                            })}
+                                            {Array.isArray(pof.received_rolls) && pof.received_rolls.length > 0 ? (
+                                              pof.received_rolls.map((rxRoll, idx) => (
+                                                <tr key={`${rxRoll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
+                                                  <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>
+                                                    {rxRoll.id}
+                                                  </td>
+                                                  <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--color-primary)' }}>
+                                                    {rxRoll.greige_roll_id || '—'}
+                                                  </td>
+                                                  <td style={{ padding: '0.5rem 0.25rem', fontWeight: '700', color: '#800000' }}>
+                                                    {rxRoll.processing_dc_no || '—'}
+                                                  </td>
+                                                  <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>
+                                                    {parseFloat(rxRoll.qty || 0).toFixed(2)} m
+                                                  </td>
+                                                </tr>
+                                              ))
+                                            ) : (
+                                              <tr>
+                                                <td colSpan="4" style={{ padding: '1rem', textAlign: 'center', color: '#9ca3af' }}>
+                                                  No processed rolls received yet.
+                                                </td>
+                                              </tr>
+                                            )}
                                           </tbody>
                                           <tfoot>
                                             <tr style={{ fontWeight: '800', borderTop: '2px solid #ddd', backgroundColor: '#fafafa' }}>
-                                              <td colSpan="2" style={{ padding: '0.5rem 0.25rem' }}>Total Received</td>
+                                              <td colSpan="3" style={{ padding: '0.5rem 0.25rem' }}>Total Received Qty</td>
                                               <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#047857' }}>
                                                 {Array.isArray(pof.received_rolls) 
                                                   ? pof.received_rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0).toFixed(2) 
                                                   : '0.00'} m
-                                              </td>
-                                              <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: 'var(--color-primary)' }}>
-                                                {(() => {
-                                                  const totalSent = (pof.fabric_rolls || []).reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
-                                                  const totalRecd = Array.isArray(pof.received_rolls) 
-                                                    ? pof.received_rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0) 
-                                                    : 0;
-                                                  const overallSh = totalSent > 0 ? ((totalSent - totalRecd) / totalSent) * 100 : 0;
-                                                  return `${overallSh.toFixed(2)}%`;
-                                                })()}
                                               </td>
                                             </tr>
                                           </tfoot>
@@ -6026,6 +6037,7 @@ export default function ProcessingModule() {
                           <thead>
                             <tr style={{ backgroundColor: '#fafafa', borderBottom: '1px solid var(--border-current)', fontWeight: '700' }}>
                               <th style={{ padding: '0.75rem 0.5rem', textAlign: 'left' }}>New Processed Roll ID</th>
+                              <th style={{ padding: '0.75rem 0.5rem', textAlign: 'left' }}>Parent Greige Roll</th>
                               <th style={{ padding: '0.75rem 0.5rem', textAlign: 'right', width: '110px' }}>Qty Received (m)</th>
                             </tr>
                           </thead>
@@ -6034,6 +6046,32 @@ export default function ProcessingModule() {
                               <tr key={idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
                                 <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--color-primary)' }}>
                                   {roll.id}
+                                </td>
+                                <td style={{ padding: '0.5rem' }}>
+                                  <select
+                                    className="input-field"
+                                    style={{ padding: '4px 8px', fontSize: '0.75rem', fontWeight: '600', height: 'auto', width: '100%' }}
+                                    value={roll.greige_roll_id || ''}
+                                    onChange={e => {
+                                      const selectedGreigeId = e.target.value;
+                                      setReceiveProcessedRolls(prev => {
+                                        const updated = [...prev];
+                                        updated[idx] = {
+                                          ...updated[idx],
+                                          greige_roll_id: selectedGreigeId,
+                                          userSelectedGreige: true
+                                        };
+                                        return updated;
+                                      });
+                                    }}
+                                  >
+                                    <option value="">Select Parent Greige Roll...</option>
+                                    {(selectedPof?.fabric_rolls || []).map(gr => (
+                                      <option key={gr.id} value={gr.id}>
+                                        {gr.id} ({parseFloat(gr.actual_qty || gr.qty || 0).toFixed(1)} m)
+                                      </option>
+                                    ))}
+                                  </select>
                                 </td>
                                 <td style={{ padding: '0.5rem', textAlign: 'right' }}>
                                   <input
@@ -6047,10 +6085,23 @@ export default function ProcessingModule() {
                                       const qtyVal = e.target.value;
                                       setReceiveProcessedRolls(prev => {
                                         const updated = [...prev];
+                                        const bestGreigeId = findBestMatchingGreigeRoll(qtyVal, selectedPof?.fabric_rolls || [], idx);
                                         updated[idx] = {
                                           ...updated[idx],
-                                          qty: qtyVal
+                                          qty: qtyVal,
+                                          greige_roll_id: updated[idx].userSelectedGreige ? updated[idx].greige_roll_id : (bestGreigeId || updated[idx].greige_roll_id)
                                         };
+
+                                        // Auto-check receiveMarkComplete if total received >= 95% of sent qty
+                                        const totalSent = (selectedPof?.fabric_rolls || []).reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
+                                        const existingRecd = (selectedPof?.received_rolls || []).reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+                                        const currentRecd = updated.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+                                        if (totalSent > 0 && (existingRecd + currentRecd) >= (totalSent * 0.95)) {
+                                          setReceiveMarkComplete(true);
+                                        } else {
+                                          setReceiveMarkComplete(false);
+                                        }
+
                                         return updated;
                                       });
                                     }}
@@ -6062,13 +6113,43 @@ export default function ProcessingModule() {
                           </tbody>
                           <tfoot>
                             <tr style={{ backgroundColor: '#fafafa', fontWeight: '800', borderTop: '2px solid var(--border-current)' }}>
-                              <td style={{ padding: '0.75rem 0.5rem' }}>Total Received Qty</td>
+                              <td colSpan="2" style={{ padding: '0.75rem 0.5rem' }}>Total Received Qty</td>
                               <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right', color: '#047857' }}>
                                 {receiveTotals.received.toFixed(2)} m
                               </td>
                             </tr>
                           </tfoot>
                         </table>
+                      </div>
+
+                      {/* Mark Processing Order Complete Checkbox Card */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        padding: '0.85rem 1rem',
+                        backgroundColor: receiveMarkComplete ? '#ecfdf5' : '#fffbeb',
+                        border: `1px solid ${receiveMarkComplete ? '#a7f3d0' : '#fde68a'}`,
+                        borderRadius: '8px',
+                        marginTop: '0.5rem'
+                      }}>
+                        <input
+                          type="checkbox"
+                          id="receiveMarkComplete"
+                          checked={receiveMarkComplete}
+                          onChange={e => setReceiveMarkComplete(e.target.checked)}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#047857' }}
+                        />
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <label htmlFor="receiveMarkComplete" style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: '800', color: receiveMarkComplete ? '#065f46' : '#92400e' }}>
+                            Mark Processing Order as Complete (Final Delivery DC)
+                          </label>
+                          <span style={{ fontSize: '0.725rem', color: receiveMarkComplete ? '#047857' : '#b45309', fontWeight: '500' }}>
+                            {receiveMarkComplete
+                              ? '✓ Order will be marked Received after saving this DC.'
+                              : '⚠️ Order will stay active as Partially Received so you can receive subsequent DCs.'}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Print Labels Button */}
@@ -6749,25 +6830,11 @@ export default function ProcessingModule() {
                                                 </tr>
                                               </thead>
                                               <tbody>
-                                                {rolls.map(roll => {
-                                                  const rxRolls = receivedRolls.filter(rx => isGreigeRollMatch(rx.greige_roll_id, roll.id));
-                                                  
-                                                  if (rxRolls.length === 0) {
-                                                    return (
-                                                      <tr key={roll.id} style={{ borderBottom: '1px solid #eee' }}>
-                                                        <td style={{ padding: '0.5rem 0.25rem', textAlign: 'center' }}></td>
-                                                        <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af', fontFamily: 'monospace' }}>Pending</td>
-                                                        <td style={{ padding: '0.5rem 0.25rem', color: '#9ca3af' }}>—</td>
-                                                        <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}>—</td>
-                                                        <td style={{ padding: '0.5rem 0.25rem', textAlign: 'center', color: '#9ca3af' }}>—</td>
-                                                      </tr>
-                                                    );
-                                                  }
-
-                                                  return rxRolls.map((rxRoll, idx) => {
+                                                {receivedRolls && receivedRolls.length > 0 ? (
+                                                  receivedRolls.map((rxRoll, idx) => {
                                                     const isChecked = selectedProcessedRollIds.includes(rxRoll.id);
                                                     return (
-                                                      <tr key={`${roll.id}-${idx}`} style={{ borderBottom: '1px solid #eee', backgroundColor: isChecked ? '#f0fdf4' : 'transparent' }}>
+                                                      <tr key={`${rxRoll.id}-${idx}`} style={{ borderBottom: '1px solid #eee', backgroundColor: isChecked ? '#f0fdf4' : 'transparent' }}>
                                                         <td style={{ padding: '0.5rem 0.25rem', textAlign: 'center' }}>
                                                           <input
                                                             type="checkbox"
@@ -6803,8 +6870,14 @@ export default function ProcessingModule() {
                                                         </td>
                                                       </tr>
                                                     );
-                                                  });
-                                                })}
+                                                  })
+                                                ) : (
+                                                  <tr>
+                                                    <td colSpan="5" style={{ padding: '1rem', textAlign: 'center', color: '#9ca3af' }}>
+                                                      No processed rolls received yet.
+                                                    </td>
+                                                  </tr>
+                                                )}
                                               </tbody>
                                               <tfoot>
                                                 <tr style={{ fontWeight: '800', borderTop: '2px solid #ddd', backgroundColor: '#fafafa' }}>
@@ -8089,259 +8162,355 @@ export default function ProcessingModule() {
                 <Loader size={32} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Loading processed rolls...</span>
               </div>
-            ) : (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--text-muted-current)' }}>
-                    Showing {filteredProcessedRolls.length} of {processedRolls.length} rolls
-                  </span>
-                </div>
+            ) : (() => {
+              const isSearchingOrFiltering = Boolean(processedRollsSearch.trim() || activeProcessedRollsFiltersCount > 0);
+              const PROCESSED_ROLLS_PER_PAGE = 50;
+              const totalCount = filteredProcessedRolls.length;
+              const totalPages = isSearchingOrFiltering ? 1 : (Math.ceil(totalCount / PROCESSED_ROLLS_PER_PAGE) || 1);
+              const currentPage = Math.min(processedRollsPage, totalPages);
 
-                <div style={{ flex: 1, overflowX: 'auto' }}>
-                  <table className="table" style={{ fontSize: '0.78rem', width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1.5px solid var(--border-current)', textAlign: 'left' }}>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '10%' }}>Received Date</th>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '18%' }}>Processed Roll ID</th>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '12%' }}>POF & Partner</th>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '12%' }}>Order & Design</th>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '11%' }}>Process</th>
-                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', width: '7%' }}>Qty (m)</th>
-                        <th style={{ padding: '0.6rem 0.75rem', width: '8%' }}>Location</th>
-                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', width: '14%' }}>Milestones</th>
-                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', width: '8%' }}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        if (filteredProcessedRolls.length === 0) {
-                          return (
-                            <tr>
-                              <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
-                                No processed fabric rolls found matching search query or filters.
-                              </td>
-                            </tr>
-                          );
-                        }
+              const displayedRolls = isSearchingOrFiltering
+                ? filteredProcessedRolls
+                : filteredProcessedRolls.slice((currentPage - 1) * PROCESSED_ROLLS_PER_PAGE, currentPage * PROCESSED_ROLLS_PER_PAGE);
 
-                        return filteredProcessedRolls.map((roll, idx) => {
-                          const dateStr = roll.received_at ? new Date(roll.received_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-                          
-                          let tooltipAlign = 'center';
-                          if (idx <= 1) {
-                            tooltipAlign = 'top';
-                          } else if (idx >= filteredProcessedRolls.length - 2) {
-                            tooltipAlign = 'bottom';
+              const startNum = (currentPage - 1) * PROCESSED_ROLLS_PER_PAGE + 1;
+              const endNum = Math.min(currentPage * PROCESSED_ROLLS_PER_PAGE, totalCount);
+
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--text-muted-current)' }}>
+                      {isSearchingOrFiltering ? (
+                        <>Showing all <strong>{totalCount}</strong> matching rolls (search active)</>
+                      ) : (
+                        <>Showing <strong>{totalCount > 0 ? `${startNum}–${endNum}` : '0'}</strong> of <strong>{totalCount}</strong> rolls (50 rolls per page)</>
+                      )}
+                    </span>
+                  </div>
+
+                  <div style={{ flex: 1, overflowX: 'auto' }}>
+                    <table className="table" style={{ fontSize: '0.78rem', width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1.5px solid var(--border-current)', textAlign: 'left' }}>
+                          <th style={{ padding: '0.6rem 0.75rem', width: '10%' }}>Received Date</th>
+                          <th style={{ padding: '0.6rem 0.75rem', width: '18%' }}>Processed Roll ID</th>
+                          <th style={{ padding: '0.6rem 0.75rem', width: '12%' }}>POF & Partner</th>
+                          <th style={{ padding: '0.6rem 0.75rem', width: '12%' }}>Order & Design</th>
+                          <th style={{ padding: '0.6rem 0.75rem', width: '11%' }}>Process</th>
+                          <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', width: '7%' }}>Qty (m)</th>
+                          <th style={{ padding: '0.6rem 0.75rem', width: '8%' }}>Location</th>
+                          <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', width: '14%' }}>Milestones</th>
+                          <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', width: '8%' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          if (displayedRolls.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
+                                  No processed fabric rolls found matching search query or filters.
+                                </td>
+                              </tr>
+                            );
                           }
 
-                          const hasWashedInspection = roll.washed_inspected || (roll.parentRoll && (
-                             roll.parentRoll.washed_inspected || (
-                               roll.parentRoll.inspector_1 && 
-                               roll.parentRoll.inspected_at && 
-                               roll.parentRoll.received_from_processing_at && 
-                               new Date(roll.parentRoll.inspected_at).getTime() >= new Date(roll.parentRoll.received_from_processing_at).getTime()
-                             )
-                          ));
-                          const hasDispatch = roll.latestMovement && 
-                             roll.latestMovement.to_location !== 'Factory' && 
-                             roll.latestMovement.to_location !== 'Office';
+                          return displayedRolls.map((roll, idx) => {
+                            const dateStr = roll.received_at ? new Date(roll.received_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                            
+                            let tooltipAlign = 'center';
+                            if (idx <= 1) {
+                              tooltipAlign = 'top';
+                            } else if (idx >= displayedRolls.length - 2) {
+                              tooltipAlign = 'bottom';
+                            }
 
-                          return (
-                            <tr key={roll.id || idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
-                              {/* Date */}
-                              <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle' }}>
-                                {dateStr}
-                              </td>
+                            const hasWashedInspection = roll.washed_inspected || (roll.parentRoll && (
+                               roll.parentRoll.washed_inspected || (
+                                 roll.parentRoll.inspector_1 && 
+                                 roll.parentRoll.inspected_at && 
+                                 roll.parentRoll.received_from_processing_at && 
+                                 new Date(roll.parentRoll.inspected_at).getTime() >= new Date(roll.parentRoll.received_from_processing_at).getTime()
+                               )
+                            ));
+                            const hasDispatch = roll.latestMovement && 
+                               roll.latestMovement.to_location !== 'Factory' && 
+                               roll.latestMovement.to_location !== 'Office';
 
-                              {/* Processed Roll ID */}
-                              <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle', overflow: 'visible' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                  <span style={{ fontFamily: 'monospace', fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-current)', whiteSpace: 'nowrap' }}>
-                                    {roll.id}
-                                  </span>
-                                </div>
-                              </td>
+                            return (
+                              <tr key={roll.id || idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                                {/* Date */}
+                                <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle' }}>
+                                  {dateStr}
+                                </td>
 
-                              {/* POF & Partner */}
-                              <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                  <span style={{ fontFamily: 'monospace', fontWeight: '700', fontSize: '0.75rem', color: 'var(--text-current)' }}>
-                                    {roll.pof_number}
-                                  </span>
-                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted-current)', marginTop: '2px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={roll.partner_name}>
-                                    {roll.partner_name}
-                                  </span>
-                                </div>
-                              </td>
-
-                              {/* Order & Design */}
-                              <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                  <span style={{ fontWeight: '700', fontSize: '0.78rem', color: '#1e3a8a' }}>
-                                    {roll.order_number}
-                                  </span>
-                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted-current)', marginTop: '2px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={`${roll.design_name} (${roll.design_no})`}>
-                                    {roll.design_name} <span style={{ fontSize: '0.68rem', backgroundColor: '#f1f5f9', padding: '1px 4px', borderRadius: '3px', color: '#334155' }}>{roll.design_no}</span>
-                                  </span>
-                                </div>
-                              </td>
-
-                              {/* Process */}
-                              <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle' }}>
-                                {roll.processes && roll.processes.length > 0 ? (
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
-                                    {roll.processes.map(proc => (
-                                      <span key={proc} style={{ 
-                                        display: 'inline-block', 
-                                        padding: '1px 5px', 
-                                        borderRadius: '4px', 
-                                        fontSize: '0.68rem', 
-                                        fontWeight: '700',
-                                        backgroundColor: 'rgba(128, 0, 0, 0.05)',
-                                        color: 'var(--color-primary)',
-                                        border: '1px solid rgba(128, 0, 0, 0.1)'
-                                      }}>
-                                        {proc}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : '—'}
-                              </td>
-
-                              {/* Qty */}
-                              <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', verticalAlign: 'middle', fontWeight: '800', color: 'var(--color-primary)', fontSize: '0.82rem' }}>
-                                {parseFloat(roll.qty || 0).toFixed(2)}
-                              </td>
-
-                              {/* Location */}
-                              <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle' }}>
-                                <span style={{
-                                  display: 'inline-block',
-                                  padding: '2px 6px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: '700',
-                                  backgroundColor: roll.latestMovement ? '#eff6ff' : '#f0fdf4',
-                                  color: roll.latestMovement ? '#1d4ed8' : '#15803d',
-                                  border: roll.latestMovement ? '1px solid #bfdbfe' : '1px solid #bbf7d0'
-                                }}>
-                                  {roll.location}
-                                </span>
-                              </td>
-
-                              {/* Milestones */}
-                              <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center', overflow: 'visible', verticalAlign: 'middle' }}>
-                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
-                                  {/* Received Milestone */}
-                                  <ProcessedRollReceivedTooltip roll={roll} align={tooltipAlign}>
-                                    <span 
-                                      style={{
-                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                        width: '32px', height: '18px', borderRadius: '4px',
-                                        fontSize: '0.62rem', fontWeight: '800', border: '1px solid #a7f3d0',
-                                        backgroundColor: '#ecfdf5', color: '#047857', cursor: 'pointer'
-                                      }}
-                                    >
-                                      RCV
+                                {/* Processed Roll ID */}
+                                <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle', overflow: 'visible' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ fontFamily: 'monospace', fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-current)', whiteSpace: 'nowrap' }}>
+                                      {roll.id}
                                     </span>
-                                  </ProcessedRollReceivedTooltip>
+                                  </div>
+                                </td>
 
-                                  {/* Washed Inspection Milestone */}
-                                  {hasWashedInspection && (
-                                    <ProcessedRollWashedTooltip roll={roll} align={tooltipAlign}>
-                                      <span 
-                                        style={{
-                                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                          width: '32px', height: '18px', borderRadius: '4px',
-                                          fontSize: '0.62rem', fontWeight: '800',
-                                          border: '1px solid #a7f3d0',
-                                          backgroundColor: '#ecfdf5',
-                                          color: '#047857',
-                                          cursor: 'pointer'
-                                        }}
-                                      >
-                                        WSH
-                                      </span>
-                                    </ProcessedRollWashedTooltip>
+                                {/* POF & Partner */}
+                                <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ fontFamily: 'monospace', fontWeight: '700', fontSize: '0.75rem', color: 'var(--text-current)' }}>
+                                      {roll.pof_number}
+                                    </span>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted-current)', marginTop: '2px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={roll.partner_name}>
+                                      {roll.partner_name}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                {/* Order & Design */}
+                                <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ fontWeight: '700', fontSize: '0.78rem', color: '#1e3a8a' }}>
+                                      {roll.order_number}
+                                    </span>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted-current)', marginTop: '2px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={`${roll.design_name} (${roll.design_no})`}>
+                                      {roll.design_name} <span style={{ fontSize: '0.68rem', backgroundColor: '#f1f5f9', padding: '1px 4px', borderRadius: '3px', color: '#334155' }}>{roll.design_no}</span>
+                                    </span>
+                                  </div>
+                                </td>
+
+                                {/* Process */}
+                                <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle' }}>
+                                  {roll.processes && roll.processes.length > 0 ? (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+                                      {roll.processes.map(proc => (
+                                        <span key={proc} style={{ 
+                                          display: 'inline-block', 
+                                          padding: '1px 5px', 
+                                          borderRadius: '4px', 
+                                          fontSize: '0.68rem', 
+                                          fontWeight: '700',
+                                          backgroundColor: 'rgba(128, 0, 0, 0.05)',
+                                          color: 'var(--color-primary)',
+                                          border: '1px solid rgba(128, 0, 0, 0.1)'
+                                        }}>
+                                          {proc}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted-current)' }}>—</span>
                                   )}
+                                </td>
 
-                                  {/* Re-wash Milestone */}
-                                  {roll.reWashPof && (
-                                    <ProcessedRollReWashTooltip roll={roll} align={tooltipAlign}>
-                                      <span 
-                                        style={{
-                                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                          width: '42px', height: '18px', borderRadius: '4px',
-                                          fontSize: '0.62rem', fontWeight: '800',
-                                          border: '1px solid #fcd34d',
-                                          backgroundColor: '#fffbeb',
-                                          color: '#d97706',
-                                          cursor: 'pointer',
-                                          boxShadow: '0 0 4px rgba(217, 119, 6, 0.2)'
-                                        }}
-                                      >
-                                        RE-W
-                                      </span>
-                                    </ProcessedRollReWashTooltip>
-                                  )}
+                                {/* Qty */}
+                                <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: '800', color: 'var(--color-primary)', fontSize: '0.82rem', verticalAlign: 'middle' }}>
+                                  {parseFloat(roll.qty || 0).toFixed(2)}
+                                </td>
 
-                                  {/* Dispatched Milestone */}
-                                  {hasDispatch && (
-                                    <ProcessedRollDispatchedTooltip roll={roll} align={tooltipAlign}>
-                                      <span 
-                                        style={{
-                                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                          width: '32px', height: '18px', borderRadius: '4px',
-                                          fontSize: '0.62rem', fontWeight: '800',
-                                          border: '1px solid #a7f3d0',
-                                          backgroundColor: '#ecfdf5',
-                                          color: '#047857',
-                                          cursor: 'pointer'
-                                        }}
-                                      >
-                                        DSP
-                                      </span>
-                                    </ProcessedRollDispatchedTooltip>
-                                  )}
-                                </div>
-                              </td>
-
-                              {/* Action */}
-                              <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center', verticalAlign: 'middle' }}>
-                                <button
-                                  onClick={() => handlePrintProcessedRollLabel([roll])}
-                                  className="btn btn-secondary"
-                                  title="Print Roll Label"
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    padding: '4px 8px',
+                                {/* Location */}
+                                <td style={{ padding: '0.6rem 0.75rem', verticalAlign: 'middle' }}>
+                                  <span style={{
+                                    display: 'inline-block',
+                                    padding: '2px 6px',
                                     borderRadius: '4px',
-                                    fontSize: '0.7rem',
-                                    gap: '3px',
-                                    border: '1px solid #800000',
-                                    backgroundColor: 'transparent',
-                                    color: '#800000',
-                                    height: '24px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s'
+                                    fontSize: '0.72rem',
+                                    fontWeight: '700',
+                                    backgroundColor: roll.latestMovement ? '#eff6ff' : '#f0fdf4',
+                                    color: roll.latestMovement ? '#1d4ed8' : '#15803d',
+                                    border: roll.latestMovement ? '1px solid #bfdbfe' : '1px solid #bbf7d0'
+                                  }}>
+                                    {roll.location}
+                                  </span>
+                                </td>
+
+                                {/* Milestones */}
+                                <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center', overflow: 'visible', verticalAlign: 'middle' }}>
+                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                                    {/* Received Milestone */}
+                                    <ProcessedRollReceivedTooltip roll={roll} align={tooltipAlign}>
+                                      <span 
+                                        style={{
+                                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                          width: '32px', height: '18px', borderRadius: '4px',
+                                          fontSize: '0.62rem', fontWeight: '800', border: '1px solid #a7f3d0',
+                                          backgroundColor: '#ecfdf5', color: '#047857', cursor: 'pointer'
+                                        }}
+                                      >
+                                        RCV
+                                      </span>
+                                    </ProcessedRollReceivedTooltip>
+
+                                    {/* Washed Inspection Milestone */}
+                                    {hasWashedInspection && (
+                                      <ProcessedRollWashedTooltip roll={roll} align={tooltipAlign}>
+                                        <span 
+                                          style={{
+                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                            width: '32px', height: '18px', borderRadius: '4px',
+                                            fontSize: '0.62rem', fontWeight: '800',
+                                            border: '1px solid #a7f3d0',
+                                            backgroundColor: '#ecfdf5',
+                                            color: '#047857',
+                                            cursor: 'pointer'
+                                          }}
+                                        >
+                                          WSH
+                                        </span>
+                                      </ProcessedRollWashedTooltip>
+                                    )}
+
+                                    {/* Re-wash Milestone */}
+                                    {roll.reWashPof && (
+                                      <ProcessedRollReWashTooltip roll={roll} align={tooltipAlign}>
+                                        <span 
+                                          style={{
+                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                            width: '42px', height: '18px', borderRadius: '4px',
+                                            fontSize: '0.62rem', fontWeight: '800',
+                                            border: '1px solid #fcd34d',
+                                            backgroundColor: '#fffbeb',
+                                            color: '#d97706',
+                                            cursor: 'pointer',
+                                            boxShadow: '0 0 4px rgba(217, 119, 6, 0.2)'
+                                          }}
+                                        >
+                                          RE-W
+                                        </span>
+                                      </ProcessedRollReWashTooltip>
+                                    )}
+
+                                    {/* Dispatched Milestone */}
+                                    {hasDispatch && (
+                                      <ProcessedRollDispatchedTooltip roll={roll} align={tooltipAlign}>
+                                        <span 
+                                          style={{
+                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                            width: '32px', height: '18px', borderRadius: '4px',
+                                            fontSize: '0.62rem', fontWeight: '800',
+                                            border: '1px solid #a7f3d0',
+                                            backgroundColor: '#ecfdf5',
+                                            color: '#047857',
+                                            cursor: 'pointer'
+                                          }}
+                                        >
+                                          DSP
+                                        </span>
+                                      </ProcessedRollDispatchedTooltip>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* Action */}
+                                <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center', verticalAlign: 'middle' }}>
+                                  <button
+                                    onClick={() => handlePrintProcessedRollLabel([roll])}
+                                    className="btn btn-secondary"
+                                    title="Print Roll Label"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      padding: '4px 8px',
+                                      borderRadius: '4px',
+                                      fontSize: '0.7rem',
+                                      gap: '3px',
+                                      border: '1px solid #800000',
+                                      backgroundColor: 'transparent',
+                                      color: '#800000',
+                                      height: '24px',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(128, 0, 0, 0.08)'; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                  >
+                                    <Printer size={11} /> Print
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination Controls */}
+                  {!isSearchingOrFiltering && totalPages > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border-current)', flexWrap: 'wrap', gap: '1rem' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>
+                        Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong> (Showing {startNum}–{endNum} of {totalCount} rolls)
+                      </span>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <button
+                          type="button"
+                          disabled={currentPage <= 1}
+                          onClick={() => setProcessedRollsPage(prev => Math.max(prev - 1, 1))}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-current)',
+                            backgroundColor: currentPage <= 1 ? '#f3f4f6' : 'white',
+                            color: currentPage <= 1 ? '#9ca3af' : 'var(--text-current)',
+                            fontSize: '0.8rem',
+                            fontWeight: '700',
+                            cursor: currentPage <= 1 ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          Previous
+                        </button>
+
+                        {Array.from({ length: totalPages }, (_, i) => i + 1)
+                          .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+                          .map((page, pageIdx, arr) => {
+                            const prevPage = arr[pageIdx - 1];
+                            const showEllipsis = prevPage && page - prevPage > 1;
+                            return (
+                              <React.Fragment key={page}>
+                                {showEllipsis && <span style={{ fontSize: '0.8rem', color: '#9ca3af', padding: '0 3px' }}>...</span>}
+                                <button
+                                  type="button"
+                                  onClick={() => setProcessedRollsPage(page)}
+                                  style={{
+                                    padding: '6px 12px',
+                                    borderRadius: '6px',
+                                    border: page === currentPage ? '1px solid var(--color-primary)' : '1px solid var(--border-current)',
+                                    backgroundColor: page === currentPage ? 'var(--color-primary)' : 'white',
+                                    color: page === currentPage ? 'white' : 'var(--text-current)',
+                                    fontSize: '0.8rem',
+                                    fontWeight: '700',
+                                    cursor: 'pointer'
                                   }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(128, 0, 0, 0.08)'; }}
-                                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
                                 >
-                                  <Printer size={11} /> Print
+                                  {page}
                                 </button>
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
+                              </React.Fragment>
+                            );
+                          })}
+
+                        <button
+                          type="button"
+                          disabled={currentPage >= totalPages}
+                          onClick={() => setProcessedRollsPage(prev => Math.min(prev + 1, totalPages))}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-current)',
+                            backgroundColor: currentPage >= totalPages ? '#f3f4f6' : 'white',
+                            color: currentPage >= totalPages ? '#9ca3af' : 'var(--text-current)',
+                            fontSize: '0.8rem',
+                            fontWeight: '700',
+                            cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

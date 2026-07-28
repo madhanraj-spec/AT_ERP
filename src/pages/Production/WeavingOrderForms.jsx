@@ -2696,7 +2696,7 @@ export default function WeavingOrderForms() {
                             {(() => {
                               const totalProduced = (wvof.production_logs || []).reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0);
                               const totalGreige = (wvof.fabric_rolls || [])
-                                .filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing')
+                                .filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'))
                                 .reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
                               return (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>
@@ -3405,7 +3405,7 @@ export default function WeavingOrderForms() {
                                             </thead>
                                             <tbody>
                                               {(() => {
-                                                const rolls = (wvof.fabric_rolls || []).filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
+                                                const rolls = (wvof.fabric_rolls || []).filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
                                                 if (rolls.length === 0) {
                                                   return (
                                                     <tr>
@@ -4406,7 +4406,7 @@ export default function WeavingOrderForms() {
                     </div>
                     {(() => {
                       const totalGreige = (selectedWvof.fabric_rolls || [])
-                        .filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing')
+                        .filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'))
                         .reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
                       return (
                         <div>
@@ -5106,7 +5106,7 @@ export default function WeavingOrderForms() {
                               </thead>
                               <tbody>
                                 {(() => {
-                                  const rolls = (selectedWvof.fabric_rolls || []).filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
+                                  const rolls = (selectedWvof.fabric_rolls || []).filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
                                   if (rolls.length === 0) {
                                     return (
                                       <tr>

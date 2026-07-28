@@ -254,7 +254,7 @@ function OrderWeavingTab({ order }) {
   const totalGreigeInputQty = React.useMemo(() => {
     return wvofs.reduce((sum, wv) => {
       const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
-      const greigeRolls = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
+      const greigeRolls = rolls.filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
       const rollsSum = greigeRolls.reduce((rollSum, r) => rollSum + (parseFloat(r.qty) || 0), 0);
       return sum + rollsSum;
     }, 0);
@@ -527,7 +527,7 @@ function OrderWeavingTab({ order }) {
                 const yarnBadge = getWeftYarnStatus(wv, dydi);
                 const actualQty = (wv.production_logs || []).reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0);
                 const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
-                const greigeRolls = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
+                const greigeRolls = rolls.filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
                 const greigeQty = greigeRolls.reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
                 return (
                   <div
@@ -946,7 +946,7 @@ function OrderWeavingTab({ order }) {
                           const isExpanded = expandedWvofId === wvof.id;
                           const actualQtyVal = (wvof.production_logs || []).reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0);
                           const rollsVal = Array.isArray(wvof.fabric_rolls) ? wvof.fabric_rolls : [];
-                          const greigeRollsVal = rollsVal.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
+                          const greigeRollsVal = rollsVal.filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
                           const greigeQtyVal = greigeRollsVal.reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
 
                           return (
@@ -1449,7 +1449,7 @@ function OrderWeavingTab({ order }) {
                                               </thead>
                                               <tbody>
                                                 {(() => {
-                                                  const rolls = (wvof.fabric_rolls || []).filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
+                                                  const rolls = (wvof.fabric_rolls || []).filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
                                                   if (rolls.length === 0) {
                                                     return (
                                                       <tr>
@@ -1672,7 +1672,7 @@ function OrderWeavingTab({ order }) {
 
                         const ganttFabricRolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
                         const ganttGreigeRolls = wv.weaving_type === 'in_house'
-                          ? ganttFabricRolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing')
+                          ? ganttFabricRolls.filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'))
                           : ganttFabricRolls.filter(r => r.gfrr_no);
                         const ganttGreigeInputQty = ganttGreigeRolls.reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
  
@@ -2167,7 +2167,7 @@ Yarn Status: ${getWeftYarnStatus(wv, dydi).label}`;
                                       Greige Fabric Input
                                     </h6>
                                     {(() => {
-                                      const rolls = (wv.fabric_rolls || []).filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
+                                      const rolls = (wv.fabric_rolls || []).filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
                                       if (rolls.length === 0) {
                                         return (
                                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80px', border: '1px dashed #cbd5e1', borderRadius: '8px', color: '#64748b', fontSize: '0.75rem', fontStyle: 'italic' }}>

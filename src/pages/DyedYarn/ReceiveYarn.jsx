@@ -101,7 +101,15 @@ const getApprovalStatusBadge = (status) => {
   }
 };
 
-const getYarnStatus = (status) => {
+const isATDyedYarnInventory = (partnerName) => {
+  if (!partnerName) return false;
+  return partnerName.trim().toUpperCase().includes('AT DYED YARN');
+};
+
+const getYarnStatus = (status, dyeingUnitName) => {
+  if (isATDyedYarnInventory(dyeingUnitName) && status !== 'pending' && status !== 'rejected') {
+    return 'fully_received';
+  }
   switch (status) {
     case 'pending':
     case 'rejected':
@@ -114,8 +122,8 @@ const getYarnStatus = (status) => {
   }
 };
 
-const getYarnStatusBadge = (status) => {
-  const yarn = getYarnStatus(status);
+const getYarnStatusBadge = (status, dyeingUnitName) => {
+  const yarn = getYarnStatus(status, dyeingUnitName);
   switch (yarn) {
     case 'greige_not_sent':       return { bg: '#f1f5f9', text: '#475569', icon: null, label: 'GREIGE NOT SENT' };
     case 'greige_partially_sent': return { bg: '#fef3c7', text: '#92400e', icon: <Clock size={12} />, label: 'GREIGE PARTIALLY SENT' };
@@ -155,6 +163,10 @@ export default function ReceiveYarn() {
   const [productionFormNumber, setProductionFormNumber] = useState('');
   const [selectedProductionForm, setSelectedProductionForm] = useState(null);
   const [productionFormType, setProductionFormType] = useState(''); // 'warping' or 'weaving'
+  const [allProductionWofs, setAllProductionWofs] = useState([]);
+  const [allProductionWeavings, setAllProductionWeavings] = useState([]);
+  const [prodFormsLoading, setProdFormsLoading] = useState(false);
+  const [prodTab, setProdTab] = useState('warping'); // 'warping' or 'weaving'
 
   // DOF List States
   const [allDofs, setAllDofs] = useState([]);
@@ -182,6 +194,7 @@ export default function ReceiveYarn() {
   useEffect(() => {
     fetchMasters();
     fetchAllDofsData();
+    fetchProductionFormsData();
   }, []);
 
   const fetchMasters = async () => {
@@ -233,7 +246,71 @@ export default function ReceiveYarn() {
           .eq('process_type', 'redyeing')
       ]);
 
-      setAllDofs(dofsRes.data || []);
+      const rawDofs = dofsRes.data || [];
+      const uncreditedATDofs = rawDofs.filter(d => 
+        isATDyedYarnInventory(d.dyeing_unit?.partner_name) && 
+        d.status !== 'pending' && 
+        d.status !== 'rejected' && 
+        d.status !== 'received'
+      );
+
+      if (uncreditedATDofs.length > 0) {
+        const year = new Date().getFullYear();
+        for (const form of uncreditedATDofs) {
+          try {
+            const { data: existingRec } = await supabase
+              .from('dyed_yarn_receipts')
+              .select('id')
+              .eq('dof_id', form.id)
+              .maybeSingle();
+
+            if (!existingRec) {
+              const { data: dyrrNumber } = await supabase.rpc('get_next_dyrr_number', { p_year: year });
+              const { data: receipt, error: recErr } = await supabase
+                .from('dyed_yarn_receipts')
+                .insert([{
+                  dyrr_number: dyrrNumber || `AT/${year}/DYRR/AUTO-${form.id.slice(0, 5)}`,
+                  dof_id: form.id,
+                  dof_number: form.dof_number,
+                  dyeing_unit_id: form.dyeing_unit_id,
+                  received_date: new Date().toISOString().split('T')[0],
+                  received_by: 'System Auto-Credit',
+                  source_type: 'partner',
+                  remarks: 'Auto-credited from AT DYED YARN INVENTORY stock allocation',
+                }])
+                .select()
+                .single();
+
+              if (!recErr && receipt) {
+                const itemsToInsert = (form.yarn_allocations || []).map(alloc => ({
+                  receipt_id: receipt.id,
+                  order_id: alloc.orderId,
+                  yarn_count_id: alloc.countId,
+                  colour: alloc.colour,
+                  quantity_kg: parseFloat(alloc.total_kg || alloc.base_kg || 0),
+                  yarn_type: alloc.type || 'warp',
+                  lot_number: form.dof_number
+                }));
+
+                if (itemsToInsert.length > 0) {
+                  await supabase.from('dyed_yarn_receipt_items').insert(itemsToInsert);
+                }
+              }
+            }
+
+            await supabase
+              .from('dyeing_order_forms')
+              .update({ status: 'received', updated_at: new Date().toISOString() })
+              .eq('id', form.id);
+
+            form.status = 'received';
+          } catch (e) {
+            console.error('Error auto-syncing legacy AT DYED YARN INVENTORY DOF:', e);
+          }
+        }
+      }
+
+      setAllDofs(rawDofs);
       setAllOrders(ordersRes.data || []);
       setAllGydrItems(gydiRes.data || []);
       const dyriData = dyriRes.data || [];
@@ -249,7 +326,44 @@ export default function ReceiveYarn() {
     }
   };
 
+  const fetchProductionFormsData = async () => {
+    setProdFormsLoading(true);
+    try {
+      const [wofsRes, weavingsRes] = await Promise.all([
+        supabase
+          .from('warping_order_forms')
+          .select(`
+            *,
+            order:orders(id, order_number, design_no, design_name),
+            machine:master_machines(machine_name),
+            partner:master_partners(partner_name)
+          `)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('weaving_orders')
+          .select(`
+            *,
+            order:orders(id, order_number, design_no, design_name),
+            machine:master_machines(machine_name),
+            partner:master_partners(partner_name)
+          `)
+          .order('created_at', { ascending: false })
+      ]);
+
+      setAllProductionWofs(wofsRes.data || []);
+      setAllProductionWeavings(weavingsRes.data || []);
+    } catch (err) {
+      console.error('Error fetching production forms:', err);
+    } finally {
+      setProdFormsLoading(false);
+    }
+  };
+
   const handleDirectReceive = async (dof) => {
+    if (isATDyedYarnInventory(dof.dyeing_unit?.partner_name)) {
+      alert(`✅ DOF ${dof.dof_number} is created under AT DYED YARN INVENTORY. Stock dyed yarn is automatically received into inventory for Warping & Weaving.`);
+      return;
+    }
     if (dof.dyeing_unit?.partner_name === 'AT') {
       alert('This Dyeing Order Form is in-house (AT). Yarn is automatically received when greige yarn is delivered.');
       return;
@@ -539,53 +653,12 @@ export default function ReceiveYarn() {
     }
   };
 
-  const handleSearchProductionForm = async (e) => {
-    e?.preventDefault();
-    if (!productionFormNumber.trim()) return;
-
+  const loadProductionForm = async (form, formType) => {
     setFetching(true);
     setSelectedProductionForm(null);
     setReceiptItems([]);
 
     try {
-      // 1. Search in warping order forms
-      let form = null;
-      let formType = 'warping';
-
-      const { data: wofData, error: wofErr } = await supabase
-        .from('warping_order_forms')
-        .select(`
-          *,
-          order:orders(id, order_number, design_no, design_name)
-        `)
-        .ilike('wof_number', productionFormNumber.trim())
-        .maybeSingle();
-
-      if (wofData) {
-        form = wofData;
-      } else {
-        // 2. Search in weaving orders
-        const { data: weavingData, error: weavingErr } = await supabase
-          .from('weaving_orders')
-          .select(`
-            *,
-            order:orders(id, order_number, design_no, design_name)
-          `)
-          .ilike('weaving_number', productionFormNumber.trim())
-          .maybeSingle();
-
-        if (weavingData) {
-          form = weavingData;
-          formType = 'weaving';
-        }
-      }
-
-      if (!form) {
-        alert('Warping Order Form or Weaving Order not found.');
-        return;
-      }
-
-      // 3. Fetch dyed yarn delivery items and their source receipts to get dof_id
       const { data: deliveryItems, error: dydiError } = await supabase
         .from('dyed_yarn_delivery_items')
         .select(`
@@ -603,7 +676,7 @@ export default function ReceiveYarn() {
       if (dydiError) throw dydiError;
 
       if (!deliveryItems || deliveryItems.length === 0) {
-        alert('No dyed yarn deliveries found for this order form.');
+        alert(`No dyed yarn deliveries found for this ${formType === 'warping' ? 'Warping Order Form' : 'Weaving Order'}.`);
         return;
       }
 
@@ -653,6 +726,74 @@ export default function ReceiveYarn() {
       setFetching(false);
     }
   };
+
+  const handleSearchProductionForm = async (e) => {
+    e?.preventDefault();
+    if (!productionFormNumber.trim()) return;
+
+    setFetching(true);
+    try {
+      let form = null;
+      let formType = 'warping';
+
+      const { data: wofData } = await supabase
+        .from('warping_order_forms')
+        .select(`
+          *,
+          order:orders(id, order_number, design_no, design_name)
+        `)
+        .ilike('wof_number', productionFormNumber.trim())
+        .maybeSingle();
+
+      if (wofData) {
+        form = wofData;
+      } else {
+        const { data: weavingData } = await supabase
+          .from('weaving_orders')
+          .select(`
+            *,
+            order:orders(id, order_number, design_no, design_name)
+          `)
+          .ilike('weaving_number', productionFormNumber.trim())
+          .maybeSingle();
+
+        if (weavingData) {
+          form = weavingData;
+          formType = 'weaving';
+        }
+      }
+
+      if (!form) {
+        alert('Warping Order Form or Weaving Order not found.');
+        return;
+      }
+
+      await loadProductionForm(form, formType);
+    } catch (err) {
+      console.error(err);
+      alert('Error searching production form.');
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  const filteredWofs = allProductionWofs.filter(w => {
+    if (!productionFormNumber.trim()) return true;
+    const q = productionFormNumber.trim().toLowerCase();
+    const wofNo = (w.wof_number || '').toLowerCase();
+    const orderNo = (w.order?.order_number || '').toLowerCase();
+    const designNo = (w.design_no || w.order?.design_no || '').toLowerCase();
+    return wofNo.includes(q) || orderNo.includes(q) || designNo.includes(q);
+  });
+
+  const filteredWeavings = allProductionWeavings.filter(w => {
+    if (!productionFormNumber.trim()) return true;
+    const q = productionFormNumber.trim().toLowerCase();
+    const wevNo = (w.weaving_number || '').toLowerCase();
+    const orderNo = (w.order?.order_number || '').toLowerCase();
+    const designNo = (w.design_no || w.order?.design_no || '').toLowerCase();
+    return wevNo.includes(q) || orderNo.includes(q) || designNo.includes(q);
+  });
 
   const addManualItem = () => {
     setReceiptItems([...receiptItems, {
@@ -1219,7 +1360,7 @@ export default function ReceiveYarn() {
                                   </span>
                                   {(() => {
                                     const approvalBadge = getApprovalStatusBadge(dof.status);
-                                    const yarnBadge = getYarnStatusBadge(dof.status);
+                                    const yarnBadge = getYarnStatusBadge(dof.status, dof.dyeing_unit?.partner_name);
                                     return (
                                       <>
                                         <span style={{ 
@@ -1286,6 +1427,10 @@ export default function ReceiveYarn() {
                               {dof.dyeing_unit?.partner_name === 'AT' ? (
                                 <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#1e40af', backgroundColor: '#eff6ff', padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
                                   In-House (Auto-Received)
+                                </span>
+                              ) : isATDyedYarnInventory(dof.dyeing_unit?.partner_name) ? (
+                                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#166534', backgroundColor: '#dcfce7', padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
+                                  Stock Inventory (Auto-Received)
                                 </span>
                               ) : dof.status !== 'received' ? (
                                 <button 
@@ -1561,8 +1706,10 @@ export default function ReceiveYarn() {
 
         {sourceType === 'production' && (
           <div className="glass-panel" style={{ padding: '1.75rem', marginBottom: '2.5rem', border: '1px solid #e2e8f0', borderRadius: '16px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.05)', backgroundColor: '#fff' }}>
-            <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Search Production Form (WOF or Weaving Order)</h3>
-            <form onSubmit={handleSearchProductionForm} style={{ display: 'flex', gap: '0.75rem', maxWidth: '600px' }}>
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Search Production Form (WOF or Weaving Order)
+            </h3>
+            <form onSubmit={handleSearchProductionForm} style={{ display: 'flex', gap: '0.75rem', maxWidth: '600px', marginBottom: '1.5rem' }}>
               <div style={{ position: 'relative', flex: 1 }}>
                 <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                 <input 
@@ -1584,78 +1731,299 @@ export default function ReceiveYarn() {
               </button>
             </form>
 
+            {/* 2 Tabs: WARPING and WEAVING */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setProdTab('warping')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.6rem 1.25rem',
+                  borderRadius: '8px',
+                  fontWeight: '800',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  border: 'none',
+                  backgroundColor: prodTab === 'warping' ? '#7f1d1d' : '#f1f5f9',
+                  color: prodTab === 'warping' ? '#ffffff' : '#475569',
+                  boxShadow: prodTab === 'warping' ? '0 4px 6px -1px rgba(127, 29, 29, 0.2)' : 'none',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Layers size={18} />
+                WARPING FORMS ({filteredWofs.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setProdTab('weaving')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.6rem 1.25rem',
+                  borderRadius: '8px',
+                  fontWeight: '800',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  border: 'none',
+                  backgroundColor: prodTab === 'weaving' ? '#7f1d1d' : '#f1f5f9',
+                  color: prodTab === 'weaving' ? '#ffffff' : '#475569',
+                  boxShadow: prodTab === 'weaving' ? '0 4px 6px -1px rgba(127, 29, 29, 0.2)' : 'none',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Factory size={18} />
+                WEAVING FORMS (WVOF) ({filteredWeavings.length})
+              </button>
+            </div>
+
             {selectedProductionForm && (
               <div style={{ 
-                marginTop: '1.5rem', 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
-                gap: '1.5rem' 
+                marginBottom: '1.5rem', 
+                backgroundColor: '#fff5f5', 
+                border: '1.5px solid #fecaca', 
+                borderRadius: '12px', 
+                padding: '1.25rem',
+                boxShadow: '0 4px 6px -1px rgba(127, 29, 29, 0.05)'
               }}>
-                {/* Card: Production Form Details */}
-                <div style={{ 
-                  backgroundColor: 'var(--surface-current, #fff)', 
-                  border: '1px solid var(--border-current, #eee)', 
-                  borderRadius: '12px', 
-                  padding: '1.5rem',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
-                }}>
-                  <h4 style={{ 
-                    margin: '0 0 1rem 0', 
-                    fontSize: '0.9rem', 
-                    fontWeight: '900', 
-                    color: '#7f1d1d', 
-                    textTransform: 'uppercase', 
-                    letterSpacing: '1px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem'
-                  }}>
-                    <FileText size={16} /> Production Form Details
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: '900', color: '#7f1d1d', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <FileText size={16} /> Selected Form: {productionFormType === 'warping' ? selectedProductionForm.wof_number : selectedProductionForm.weaving_number}
                   </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.875rem' }}>
-                    <div>
-                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>FORM TYPE</div>
-                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px', textTransform: 'uppercase' }}>
-                        {productionFormType === 'warping' ? 'Warping (WOF)' : 'Weaving (WEV)'}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>NUMBER</div>
-                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>
-                        {productionFormType === 'warping' ? selectedProductionForm.wof_number : selectedProductionForm.weaving_number}
-                      </div>
-                    </div>
-                    <div style={{ gridColumn: 'span 2' }}>
-                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>ORDER NUMBER</div>
-                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>
-                        {selectedProductionForm.order?.order_number || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>DESIGN NO</div>
-                      <div style={{ fontWeight: '800', color: '#1e293b', marginTop: '2px' }}>
-                        {selectedProductionForm.design_no || selectedProductionForm.order?.design_no || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>STATUS</div>
-                      <div style={{ marginTop: '2px' }}>
-                        <span style={{ 
-                          padding: '0.15rem 0.5rem', 
-                          borderRadius: '4px', 
-                          fontSize: '0.75rem', 
-                          fontWeight: '800',
-                          backgroundColor: selectedProductionForm.status === 'completed' ? '#dcfce7' : '#fef9c3',
-                          color: selectedProductionForm.status === 'completed' ? '#15803d' : '#854d0e',
-                          textTransform: 'capitalize'
-                        }}>
-                          {selectedProductionForm.status}
-                        </span>
-                      </div>
-                    </div>
+                  <button 
+                    onClick={() => { setSelectedProductionForm(null); setReceiptItems([]); }}
+                    style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem', fontWeight: '800', backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                  >
+                    Clear Selection
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', fontSize: '0.85rem' }}>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>TYPE: </span>
+                    <strong style={{ color: '#1e293b' }}>{productionFormType === 'warping' ? 'Warping (WOF)' : 'Weaving (WEV)'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>ORDER NO: </span>
+                    <strong style={{ color: '#1e293b' }}>{selectedProductionForm.order?.order_number || 'N/A'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>DESIGN NO: </span>
+                    <strong style={{ color: '#1e293b' }}>{selectedProductionForm.design_no || selectedProductionForm.order?.design_no || 'N/A'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b', fontWeight: '600', fontSize: '0.75rem' }}>STATUS: </span>
+                    <span style={{ 
+                      padding: '0.15rem 0.5rem', 
+                      borderRadius: '4px', 
+                      fontSize: '0.75rem', 
+                      fontWeight: '800',
+                      backgroundColor: selectedProductionForm.status === 'completed' ? '#dcfce7' : '#fef9c3',
+                      color: selectedProductionForm.status === 'completed' ? '#15803d' : '#854d0e',
+                      textTransform: 'capitalize'
+                    }}>
+                      {selectedProductionForm.status || 'Active'}
+                    </span>
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* List Content by Tab */}
+            {prodFormsLoading ? (
+              <div style={{ textAlign: 'center', padding: '3rem 0' }}>
+                <Loader size={28} className="spin" color="#7f1d1d" />
+                <p style={{ marginTop: '0.75rem', color: '#666', fontSize: '0.85rem' }}>Loading Production Forms...</p>
+              </div>
+            ) : prodTab === 'warping' ? (
+              filteredWofs.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8', fontSize: '0.85rem', border: '1px dashed #e2e8f0', borderRadius: '8px' }}>
+                  No Warping Order Forms found.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  {filteredWofs.map(wof => {
+                    const isSelected = selectedProductionForm?.id === wof.id && productionFormType === 'warping';
+                    return (
+                      <div key={wof.id} style={{ 
+                        backgroundColor: isSelected ? '#fff5f5' : '#fff', 
+                        border: isSelected ? '2px solid #7f1d1d' : '1px solid #e2e8f0', 
+                        borderRadius: '12px',
+                        padding: '1.15rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '1rem',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                      }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: '900', fontSize: '1rem', color: '#7f1d1d' }}>
+                              {wof.wof_number}
+                            </span>
+                            <span style={{ 
+                              padding: '0.15rem 0.5rem', 
+                              borderRadius: '4px', 
+                              fontSize: '0.7rem', 
+                              fontWeight: '800',
+                              backgroundColor: wof.status === 'completed' ? '#dcfce7' : '#fef9c3',
+                              color: wof.status === 'completed' ? '#15803d' : '#854d0e',
+                              textTransform: 'uppercase'
+                            }}>
+                              {wof.status || 'Active'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px', fontWeight: '500', display: 'flex', flexWrap: 'wrap', gap: '0.25rem 0.75rem' }}>
+                            <span>Order: <strong style={{ color: '#334155' }}>{wof.order?.order_number || 'N/A'}</strong></span>
+                            <span>|</span>
+                            <span>Design: <strong style={{ color: '#334155' }}>{wof.design_no || wof.order?.design_no || 'N/A'}</strong></span>
+                            {wof.machine?.machine_name && (
+                              <>
+                                <span>|</span>
+                                <span>Machine: <strong style={{ color: '#334155' }}>{wof.machine.machine_name}</strong></span>
+                              </>
+                            )}
+                            {wof.partner?.partner_name && (
+                              <>
+                                <span>|</span>
+                                <span>Partner: <strong style={{ color: '#334155' }}>{wof.partner.partner_name}</strong></span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <button 
+                            disabled={fetching}
+                            onClick={() => loadProductionForm(wof, 'warping')}
+                            className="btn"
+                            style={{ 
+                              padding: '0.5rem 1.25rem', 
+                              fontSize: '0.825rem', 
+                              fontWeight: '800',
+                              backgroundColor: isSelected ? '#15803d' : '#7f1d1d',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 6px rgba(127, 29, 29, 0.15)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.4rem'
+                            }}
+                          >
+                            {fetching && selectedProductionForm?.id === wof.id ? (
+                              <Loader size={16} className="spin" />
+                            ) : isSelected ? (
+                              <>
+                                <CheckCircle size={16} /> Selected
+                              </>
+                            ) : (
+                              'Fetch Order Details'
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              filteredWeavings.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8', fontSize: '0.85rem', border: '1px dashed #e2e8f0', borderRadius: '8px' }}>
+                  No Weaving Order Forms (WVOF) found.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  {filteredWeavings.map(wvof => {
+                    const isSelected = selectedProductionForm?.id === wvof.id && productionFormType === 'weaving';
+                    return (
+                      <div key={wvof.id} style={{ 
+                        backgroundColor: isSelected ? '#fff5f5' : '#fff', 
+                        border: isSelected ? '2px solid #7f1d1d' : '1px solid #e2e8f0', 
+                        borderRadius: '12px',
+                        padding: '1.15rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '1rem',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                      }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: '900', fontSize: '1rem', color: '#7f1d1d' }}>
+                              {wvof.weaving_number}
+                            </span>
+                            <span style={{ 
+                              padding: '0.15rem 0.5rem', 
+                              borderRadius: '4px', 
+                              fontSize: '0.7rem', 
+                              fontWeight: '800',
+                              backgroundColor: wvof.status === 'completed' ? '#dcfce7' : '#fef9c3',
+                              color: wvof.status === 'completed' ? '#15803d' : '#854d0e',
+                              textTransform: 'uppercase'
+                            }}>
+                              {wvof.status || 'Active'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px', fontWeight: '500', display: 'flex', flexWrap: 'wrap', gap: '0.25rem 0.75rem' }}>
+                            <span>Order: <strong style={{ color: '#334155' }}>{wvof.order?.order_number || 'N/A'}</strong></span>
+                            <span>|</span>
+                            <span>Design: <strong style={{ color: '#334155' }}>{wvof.design_no || wvof.order?.design_no || 'N/A'}</strong></span>
+                            {wvof.machine?.machine_name && (
+                              <>
+                                <span>|</span>
+                                <span>Machine: <strong style={{ color: '#334155' }}>{wvof.machine.machine_name}</strong></span>
+                              </>
+                            )}
+                            {wvof.partner?.partner_name && (
+                              <>
+                                <span>|</span>
+                                <span>Partner: <strong style={{ color: '#334155' }}>{wvof.partner.partner_name}</strong></span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <button 
+                            disabled={fetching}
+                            onClick={() => loadProductionForm(wvof, 'weaving')}
+                            className="btn"
+                            style={{ 
+                              padding: '0.5rem 1.25rem', 
+                              fontSize: '0.825rem', 
+                              fontWeight: '800',
+                              backgroundColor: isSelected ? '#15803d' : '#7f1d1d',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 6px rgba(127, 29, 29, 0.15)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.4rem'
+                            }}
+                          >
+                            {fetching && selectedProductionForm?.id === wvof.id ? (
+                              <Loader size={16} className="spin" />
+                            ) : isSelected ? (
+                              <>
+                                <CheckCircle size={16} /> Selected
+                              </>
+                            ) : (
+                              'Fetch Order Details'
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             )}
           </div>
         )}

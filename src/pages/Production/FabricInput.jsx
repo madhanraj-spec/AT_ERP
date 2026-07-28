@@ -1109,6 +1109,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
   const [selectedFilterDesignNames, setSelectedFilterDesignNames] = useState([]);
   const [selectedFilterDesignNos, setSelectedFilterDesignNos] = useState([]);
   const [isFilterPanelExpanded, setIsFilterPanelExpanded] = useState(false);
+  const [greigeRollsPage, setGreigeRollsPage] = useState(1);
   const [isAirjetExpanded, setIsAirjetExpanded] = useState(true);
   const [isRapierExpanded, setIsRapierExpanded] = useState(true);
   const [isJobWorkExpanded, setIsJobWorkExpanded] = useState(true);
@@ -3882,7 +3883,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                                       <span style={{ color: '#94a3b8' }}>Approved Qty:</span>
-                                                      <strong style={{ color: '#34d399' }}>{roll.approved_qty || 0} m</strong>
+                                                      <strong style={{ color: '#34d399' }}>{parseFloat((roll.actual_qty || roll.actual_length || 0) - (roll.mistake || 0)).toFixed(2)} m</strong>
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #334155', paddingTop: '4px', marginTop: '2px' }}>
                                                       <span style={{ color: '#94a3b8' }}>Inspectors:</span>
@@ -4371,10 +4372,29 @@ export default function FabricInput({ defaultView = 'menu' }) {
     setSelectedFilterOrderNumbers([]);
     setSelectedFilterDesignNames([]);
     setSelectedFilterDesignNos([]);
+    setGreigeRollsPage(1);
   };
+
+  useEffect(() => {
+    setGreigeRollsPage(1);
+  }, [
+    selectedFilterRollIds,
+    selectedFilterTypes,
+    selectedFilterPartners,
+    selectedFilterWvofs,
+    selectedFilterOrderNumbers,
+    selectedFilterDesignNames,
+    selectedFilterDesignNos
+  ]);
 
   // ── Greige Rolls Details View ──
   const renderGreigeRollsDetailsView = () => {
+    const ITEMS_PER_PAGE = 50;
+    const totalPages = Math.ceil(displayedRolls.length / ITEMS_PER_PAGE) || 1;
+    const safePage = Math.min(Math.max(1, greigeRollsPage), totalPages);
+
+    const paginatedRolls = displayedRolls.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+
     return (
       <div style={{ width: '100%', padding: '1.5rem', boxSizing: 'border-box' }}>
         {/* Header */}
@@ -4594,10 +4614,57 @@ export default function FabricInput({ defaultView = 'menu' }) {
             </div>
           </div>
 
+          {/* Top Pagination & Counter Bar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--text-muted-current)' }}>
-              Showing {displayedRolls.length} of {totalGreigeRollsCount} rolls
+              Showing {displayedRolls.length > 0 ? (safePage - 1) * ITEMS_PER_PAGE + 1 : 0} - {Math.min(safePage * ITEMS_PER_PAGE, displayedRolls.length)} of {displayedRolls.length} rolls {hasActiveFilters && `(Filtered from ${totalGreigeRollsCount} total)`}
             </span>
+
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setGreigeRollsPage(prev => Math.max(prev - 1, 1))}
+                  disabled={safePage === 1}
+                  style={{
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-current)',
+                    backgroundColor: 'var(--surface-current)',
+                    color: safePage === 1 ? 'var(--text-muted-current)' : 'var(--text-current)',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    cursor: safePage === 1 ? 'not-allowed' : 'pointer',
+                    opacity: safePage === 1 ? 0.5 : 1
+                  }}
+                >
+                  Previous
+                </button>
+
+                <span style={{ fontSize: '0.78rem', fontWeight: '750', color: 'var(--text-current)', padding: '0 0.25rem' }}>
+                  Page {safePage} of {totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setGreigeRollsPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={safePage === totalPages}
+                  style={{
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-current)',
+                    backgroundColor: 'var(--surface-current)',
+                    color: safePage === totalPages ? 'var(--text-muted-current)' : 'var(--text-current)',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    cursor: safePage === totalPages ? 'not-allowed' : 'pointer',
+                    opacity: safePage === totalPages ? 0.5 : 1
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
 
           <div style={{ flex: 1, overflowX: 'hidden' }}>
@@ -4623,7 +4690,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                 </tr>
               </thead>
               <tbody>
-                {displayedRolls.length === 0 ? (
+                {paginatedRolls.length === 0 ? (
                   <tr>
                     <td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
                       No greige fabric rolls found matching search query or filters.
@@ -4631,7 +4698,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                   </tr>
                 ) : (
                   <>
-                    {displayedRolls.map((roll, idx) => {
+                    {paginatedRolls.map((roll, idx) => {
                       const isReceived = roll.status === 'greige received' || roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing';
                       const isInspected = roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing';
                       const dateStr = roll.created_at ? new Date(roll.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -4639,7 +4706,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                       let tooltipAlign = 'center';
                       if (idx <= 1) {
                         tooltipAlign = 'top';
-                      } else if (idx >= displayedRolls.length - 2) {
+                      } else if (idx >= paginatedRolls.length - 2) {
                         tooltipAlign = 'bottom';
                       }
 
@@ -4776,7 +4843,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                                       </div>
                                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                         <span style={{ color: '#34d399' }}>Approved Qty:</span>
-                                        <strong style={{ color: '#34d399' }}>{roll.approved_qty || 0} m</strong>
+                                        <strong style={{ color: '#34d399' }}>{parseFloat((roll.actual_qty || roll.actual_length || 0) - (roll.mistake || 0)).toFixed(2)} m</strong>
                                       </div>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #334155', paddingTop: '4px', marginTop: '2px' }}>
                                         <span style={{ color: '#94a3b8' }}>Inspectors:</span>
@@ -4877,6 +4944,105 @@ export default function FabricInput({ defaultView = 'menu' }) {
               </tbody>
             </table>
           </div>
+
+          {/* Bottom Pagination Controls */}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border-current)', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>
+                Page {safePage} of {totalPages} ({displayedRolls.length} total rolls)
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setGreigeRollsPage(1)}
+                  disabled={safePage === 1}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-current)',
+                    backgroundColor: 'var(--surface-current)',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    cursor: safePage === 1 ? 'not-allowed' : 'pointer',
+                    opacity: safePage === 1 ? 0.5 : 1
+                  }}
+                >
+                  First
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGreigeRollsPage(prev => Math.max(prev - 1, 1))}
+                  disabled={safePage === 1}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-current)',
+                    backgroundColor: 'var(--surface-current)',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    cursor: safePage === 1 ? 'not-allowed' : 'pointer',
+                    opacity: safePage === 1 ? 0.5 : 1
+                  }}
+                >
+                  Prev
+                </button>
+
+                <select
+                  value={safePage}
+                  onChange={e => setGreigeRollsPage(Number(e.target.value))}
+                  style={{
+                    padding: '0.35rem 0.5rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-current)',
+                    backgroundColor: 'var(--surface-current)',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                    <option key={p} value={p}>Page {p}</option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => setGreigeRollsPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={safePage === totalPages}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-current)',
+                    backgroundColor: 'var(--surface-current)',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    cursor: safePage === totalPages ? 'not-allowed' : 'pointer',
+                    opacity: safePage === totalPages ? 0.5 : 1
+                  }}
+                >
+                  Next
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGreigeRollsPage(totalPages)}
+                  disabled={safePage === totalPages}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-current)',
+                    backgroundColor: 'var(--surface-current)',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    cursor: safePage === totalPages ? 'not-allowed' : 'pointer',
+                    opacity: safePage === totalPages ? 0.5 : 1
+                  }}
+                >
+                  Last
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     );

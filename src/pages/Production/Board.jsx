@@ -4538,6 +4538,7 @@ function WeavingFinancesTab() {
   const [pick, setPick] = useState('');
   const [pickRate, setPickRate] = useState('');
   const [invoiceSubtotal, setInvoiceSubtotal] = useState('');
+  const [taxPercent, setTaxPercent] = useState('');
   const [taxAmount, setTaxAmount] = useState('');
   const [validationError, setValidationError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -4667,6 +4668,7 @@ function WeavingFinancesTab() {
     setInvoiceNumber('Generating...');
     setInvoiceDate(new Date().toISOString().split('T')[0]);
     setInvoiceSubtotal('');
+    setTaxPercent('');
     setTaxAmount('');
     setValidationError('');
     setIsModalOpen(true);
@@ -4699,6 +4701,7 @@ function WeavingFinancesTab() {
     setInvoiceNumber('');
     setInvoiceDate(new Date().toISOString().split('T')[0]);
     setInvoiceSubtotal('');
+    setTaxPercent('');
     setTaxAmount('');
     setValidationError('');
     setIsModalOpen(true);
@@ -4714,6 +4717,7 @@ function WeavingFinancesTab() {
     setPickRate('');
     setInvoiceNumber('');
     setInvoiceSubtotal('');
+    setTaxPercent('');
     setTaxAmount('');
     setValidationError('');
   };
@@ -4728,6 +4732,7 @@ function WeavingFinancesTab() {
       setPickRate('');
       setInvoiceNumber('');
       setInvoiceSubtotal('');
+      setTaxPercent('');
       setTaxAmount('');
       setValidationError('');
       return;
@@ -4752,6 +4757,7 @@ function WeavingFinancesTab() {
     setInvoiceNumber('Generating...');
     setInvoiceDate(new Date().toISOString().split('T')[0]);
     setInvoiceSubtotal('');
+    setTaxPercent('');
     setTaxAmount('');
     setValidationError('');
 
@@ -4778,6 +4784,47 @@ function WeavingFinancesTab() {
     setSelectedWvofId('');
     setSelectedWvof(null);
     setIsManualSelect(false);
+    setTaxPercent('');
+    setTaxAmount('');
+    setInvoiceSubtotal('');
+  };
+
+  const handleSubtotalChange = (val) => {
+    setInvoiceSubtotal(val);
+    const sub = parseFloat(val) || 0;
+    const cleanTaxPercent = (taxPercent || '').replace('%', '').trim();
+    if (cleanTaxPercent !== '' && !isNaN(cleanTaxPercent) && sub > 0) {
+      const percent = parseFloat(cleanTaxPercent) || 0;
+      const calcTax = (sub * percent) / 100;
+      setTaxAmount(calcTax.toFixed(2));
+    }
+  };
+
+  const handleTaxPercentChange = (val) => {
+    setTaxPercent(val);
+    const cleanVal = val.replace('%', '').trim();
+    if (cleanVal === '' || isNaN(cleanVal)) {
+      setTaxAmount('');
+      return;
+    }
+    const percent = parseFloat(cleanVal) || 0;
+    const sub = parseFloat(invoiceSubtotal) || calculatedValues.totalAmount || 0;
+    const calcTax = (sub * percent) / 100;
+    setTaxAmount(calcTax.toFixed(2));
+  };
+
+  const handleTaxAmountChange = (val) => {
+    setTaxAmount(val);
+    if (val === '' || isNaN(val)) {
+      setTaxPercent('');
+      return;
+    }
+    const amt = parseFloat(val) || 0;
+    const sub = parseFloat(invoiceSubtotal) || calculatedValues.totalAmount || 0;
+    if (sub > 0) {
+      const percent = (amt / sub) * 100;
+      setTaxPercent(percent % 1 === 0 ? percent.toFixed(0) : percent.toFixed(2));
+    }
   };
 
   // Roll totals helper
@@ -5925,8 +5972,9 @@ function WeavingFinancesTab() {
                       <input
                         type="text"
                         value={invoiceNumber}
-                        disabled
-                        style={{ width: '100%', padding: '0.4rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.78rem', backgroundColor: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }}
+                        onChange={e => setInvoiceNumber(e.target.value)}
+                        placeholder="Enter Invoice Number"
+                        style={{ width: '100%', padding: '0.4rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.78rem' }}
                         required
                       />
                     </div>
@@ -5942,17 +5990,27 @@ function WeavingFinancesTab() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Claimed Invoice Subtotal (₹)</label>
                       <input
                         type="number"
                         step="0.01"
                         value={invoiceSubtotal}
-                        onChange={e => setInvoiceSubtotal(e.target.value)}
+                        onChange={e => handleSubtotalChange(e.target.value)}
                         placeholder="Must not exceed Calculated Total"
                         style={{ width: '100%', padding: '0.4rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.78rem' }}
                         required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Tax Rate (%)</label>
+                      <input
+                        type="text"
+                        value={taxPercent}
+                        onChange={e => handleTaxPercentChange(e.target.value)}
+                        placeholder="e.g. 5 or 12%"
+                        style={{ width: '100%', padding: '0.4rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.78rem' }}
                       />
                     </div>
                     <div>
@@ -5961,13 +6019,12 @@ function WeavingFinancesTab() {
                         type="number"
                         step="0.01"
                         value={taxAmount}
-                        onChange={e => setTaxAmount(e.target.value)}
+                        onChange={e => handleTaxAmountChange(e.target.value)}
                         placeholder="GST / Surcharges"
                         style={{ width: '100%', padding: '0.4rem 0.6rem', border: '1px solid var(--border-current)', borderRadius: '6px', fontSize: '0.78rem' }}
-                        required
                       />
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', backgroundColor: '#f8fafc', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-current)' }}>
                       <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569' }}>Gross Total (Subtotal + Tax)</span>
                       <strong style={{ fontSize: '1.1rem', color: 'var(--color-primary)' }}>₹{calculatedValues.grossTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                     </div>

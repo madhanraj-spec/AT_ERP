@@ -130,6 +130,18 @@ export default function CreateDyeingForm() {
         }
       }
 
+      // Auto-delete legacy auto-created 'AT DYED YARN INVENTORY' records if present in master_partners
+      const autoCreatedUnits = units.filter(u => u.partner_name === 'AT DYED YARN INVENTORY');
+      if (autoCreatedUnits.length > 0) {
+        try {
+          const idsToDelete = autoCreatedUnits.map(u => u.id);
+          await supabase.from('master_partners').delete().in('id', idsToDelete);
+          units = units.filter(u => u.partner_name !== 'AT DYED YARN INVENTORY');
+        } catch (e) {
+          console.error('Error cleaning up legacy AT DYED YARN INVENTORY partners:', e);
+        }
+      }
+
       setMyOrders(ordersRes.data || []);
       setDyeingUnits(units);
       setYarnCounts(countsRes.data || []);
@@ -780,6 +792,11 @@ export default function CreateDyeingForm() {
                 {dyeingUnits.find(u => u.id === dyeingUnitId)?.partner_name === 'AT' && (
                   <small style={{ color: '#1e40af', backgroundColor: '#eff6ff', padding: '4px 8px', borderRadius: '4px', display: 'block', marginTop: '0.5rem', fontWeight: '600' }}>
                     ℹ️ In-House Dyeing (AT). Greige yarn will be directly delivered to the DOF from greige stock without going to external dyeing. No bill will be raised.
+                  </small>
+                )}
+                {dyeingUnits.find(u => u.id === dyeingUnitId)?.partner_name?.toUpperCase().includes('AT DYED YARN') && (
+                  <small style={{ color: '#166534', backgroundColor: '#dcfce7', border: '1px solid #bbf7d0', padding: '6px 10px', borderRadius: '4px', display: 'block', marginTop: '0.5rem', fontWeight: '600' }}>
+                    ℹ️ AT DYED YARN INVENTORY Selected: Greige yarn dispatch is skipped. Stock dyed yarn will be directly credited to received inventory upon approval for Warping and Weaving.
                   </small>
                 )}
                 {dyeingUnits.length === 0 && (

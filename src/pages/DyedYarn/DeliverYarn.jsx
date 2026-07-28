@@ -489,12 +489,16 @@ export default function DeliverDyedYarn() {
             }];
           }
 
+          const hasDofStock = matchingStocks.some(s => s.dof_id && s.dof_number && s.dof_number !== '—');
+          const sourceType = hasDofStock ? 'dof' : 'stock_inventory';
+
           builtItems.push({
             yarn_count_id: countId,
             colour: colour,
             allotted_qty: allottedQty,
             delivered_qty: deliveredQty,
             availableStocks: matchingStocks,
+            source_type: sourceType,
             allocations: defaultAllocations
           });
         });
@@ -566,12 +570,16 @@ export default function DeliverDyedYarn() {
             }];
           }
 
+          const hasDofStockWeave = matchingStocks.some(s => s.dof_id && s.dof_number && s.dof_number !== '—');
+          const sourceTypeWeave = hasDofStockWeave ? 'dof' : 'stock_inventory';
+
           builtItems.push({
             yarn_count_id: countId,
             colour: colour,
             allotted_qty: allottedQty,
             delivered_qty: deliveredQty,
             availableStocks: matchingStocks,
+            source_type: sourceTypeWeave,
             allocations: defaultAllocations
           });
         });
@@ -593,8 +601,72 @@ export default function DeliverDyedYarn() {
     }
   };
 
+  const changeSourceType = (reqIndex, newSourceType) => {
+    const newItems = [...items];
+    const req = newItems[reqIndex];
+    req.source_type = newSourceType;
+    const stocks = req.availableStocks || [];
+
+    if (newSourceType === 'both') {
+      const dofStock = stocks.find(s => s.dof_id && s.dof_number && s.dof_number !== '—');
+      const genStock = stocks.find(s => !s.dof_id || !s.dof_number || s.dof_number === '—') || stocks[0];
+
+      req.allocations = [
+        {
+          lot_number: dofStock ? dofStock.lot_number : '',
+          location_id: dofStock ? dofStock.location_id : null,
+          location_name: dofStock ? dofStock.location_name : '',
+          dof_id: dofStock ? dofStock.dof_id : null,
+          dof_number: dofStock ? dofStock.dof_number : '',
+          receipt_id: dofStock ? dofStock.receipt_id : null,
+          stock_kg: dofStock ? dofStock.available : 0,
+          quantity_kg: '',
+          no_of_bags: '',
+          is_dof_source: true,
+          source_label: 'From DOF (Capped)'
+        },
+        {
+          lot_number: genStock ? genStock.lot_number : '',
+          location_id: genStock ? genStock.location_id : null,
+          location_name: genStock ? genStock.location_name : '',
+          dof_id: genStock ? genStock.dof_id : null,
+          dof_number: genStock ? genStock.dof_number : '',
+          receipt_id: genStock ? genStock.receipt_id : null,
+          stock_kg: genStock ? genStock.available : 0,
+          quantity_kg: '',
+          no_of_bags: '',
+          is_dof_source: false,
+          source_label: 'From Stock Inventory (Uncapped)'
+        }
+      ];
+    } else {
+      const isDof = newSourceType === 'dof';
+      const filteredStocks = isDof 
+        ? stocks.filter(s => s.dof_id && s.dof_number && s.dof_number !== '—')
+        : stocks;
+      
+      const firstStock = filteredStocks.length === 1 ? filteredStocks[0] : null;
+
+      req.allocations = [{
+        lot_number: firstStock ? firstStock.lot_number : '',
+        location_id: firstStock ? firstStock.location_id : null,
+        location_name: firstStock ? firstStock.location_name : (filteredStocks.length === 0 ? 'No matching stock' : ''),
+        dof_id: firstStock ? firstStock.dof_id : null,
+        dof_number: firstStock ? firstStock.dof_number : '',
+        receipt_id: firstStock ? firstStock.receipt_id : null,
+        stock_kg: firstStock ? firstStock.available : 0,
+        quantity_kg: '',
+        no_of_bags: '',
+        is_dof_source: isDof,
+        disabled: filteredStocks.length === 0
+      }];
+    }
+    setItems(newItems);
+  };
+
   const addAllocationRow = (reqIndex) => {
     const newItems = [...items];
+    const isDof = newItems[reqIndex].source_type === 'dof';
     newItems[reqIndex].allocations.push({
       lot_number: '',
       location_id: null,
@@ -605,7 +677,8 @@ export default function DeliverDyedYarn() {
       stock_kg: 0,
       quantity_kg: '',
       no_of_bags: '',
-      selectedIndex: ''
+      selectedIndex: '',
+      is_dof_source: isDof
     });
     setItems(newItems);
   };
@@ -614,6 +687,7 @@ export default function DeliverDyedYarn() {
     const newItems = [...items];
     newItems[reqIndex].allocations.splice(allocIndex, 1);
     if (newItems[reqIndex].allocations.length === 0) {
+      const isDof = newItems[reqIndex].source_type === 'dof';
       newItems[reqIndex].allocations.push({
         lot_number: '',
         location_id: null,
@@ -624,7 +698,8 @@ export default function DeliverDyedYarn() {
         stock_kg: 0,
         quantity_kg: '',
         no_of_bags: '',
-        selectedIndex: ''
+        selectedIndex: '',
+        is_dof_source: isDof
       });
     }
     setItems(newItems);
@@ -632,34 +707,29 @@ export default function DeliverDyedYarn() {
 
   const updateAllocation = (reqIndex, allocIndex, field, value) => {
     const newItems = [...items];
-    const alloc = newItems[reqIndex].allocations[allocIndex];
-    const stocks = newItems[reqIndex].availableStocks || [];
+    const req = newItems[reqIndex];
+    const alloc = req.allocations[allocIndex];
+    const stocks = req.availableStocks || [];
 
     if (field === 'lot_number') {
       const selectedLot = value;
       alloc.lot_number = selectedLot;
       
-      // Filter stocks matching the new lot number
       const matching = stocks.filter(s => !selectedLot || s.lot_number === selectedLot);
-      
-      // If there was a DOF selected, check if it's still valid under the selected lot
       let dofStillValid = false;
       if (alloc.dof_number) {
         dofStillValid = matching.some(s => s.dof_number === alloc.dof_number);
       }
-      
       if (!dofStillValid) {
         alloc.dof_number = '';
         alloc.dof_id = null;
       }
       
-      // Now find matching stock with both selected lot and selected DOF
       const finalMatch = stocks.find(s => 
         s.lot_number === selectedLot && 
         (!alloc.dof_number || s.dof_number === alloc.dof_number)
       );
 
-      // If we don't have a final match but there's a unique DOF for this lot, auto-select it
       const uniqueDofsForLot = [...new Set(stocks.filter(s => s.lot_number === selectedLot).map(s => s.dof_number))];
       if (selectedLot && !alloc.dof_number && uniqueDofsForLot.length === 1) {
         alloc.dof_number = uniqueDofsForLot[0];
@@ -677,7 +747,7 @@ export default function DeliverDyedYarn() {
         }
       }
 
-      if (finalMatch && selectedLot && alloc.dof_number) {
+      if (finalMatch && selectedLot) {
         alloc.location_id = finalMatch.location_id;
         alloc.location_name = finalMatch.location_name;
         alloc.dof_id = finalMatch.dof_id;
@@ -698,26 +768,20 @@ export default function DeliverDyedYarn() {
       const selectedDof = value;
       alloc.dof_number = selectedDof;
 
-      // Filter stocks matching the new DOF number
       const matching = stocks.filter(s => !selectedDof || s.dof_number === selectedDof);
-
-      // If there was a lot selected, check if it's still valid under the selected DOF
       let lotStillValid = false;
       if (alloc.lot_number) {
         lotStillValid = matching.some(s => s.lot_number === alloc.lot_number);
       }
-
       if (!lotStillValid) {
         alloc.lot_number = '';
       }
 
-      // Now find matching stock with both selected lot and selected DOF
       const finalMatch = stocks.find(s => 
         (!alloc.lot_number || s.lot_number === alloc.lot_number) && 
         s.dof_number === selectedDof
       );
 
-      // If we don't have a final match but there's a unique lot for this DOF, auto-select it
       const uniqueLotsForDof = [...new Set(stocks.filter(s => s.dof_number === selectedDof).map(s => s.lot_number))];
       if (selectedDof && !alloc.lot_number && uniqueLotsForDof.length === 1) {
         alloc.lot_number = uniqueLotsForDof[0];
@@ -735,7 +799,7 @@ export default function DeliverDyedYarn() {
         }
       }
 
-      if (finalMatch && alloc.lot_number && selectedDof) {
+      if (finalMatch && selectedDof) {
         alloc.location_id = finalMatch.location_id;
         alloc.location_name = finalMatch.location_name;
         alloc.dof_id = finalMatch.dof_id;
@@ -754,7 +818,10 @@ export default function DeliverDyedYarn() {
 
     } else if (field === 'quantity_kg') {
       const floatVal = parseFloat(value) || 0;
-      if (floatVal > alloc.stock_kg) {
+      const isDofSource = alloc.is_dof_source ?? (req.source_type === 'dof');
+
+      // Cap to DOF balance if source is DOF
+      if (isDofSource && alloc.stock_kg > 0 && floatVal > alloc.stock_kg) {
         alloc.quantity_kg = alloc.stock_kg.toString();
       } else if (floatVal < 0) {
         alloc.quantity_kg = '0';
@@ -788,13 +855,19 @@ export default function DeliverDyedYarn() {
       for (const alloc of allocations) {
         const qty = parseFloat(alloc.quantity_kg) || 0;
         if (qty > 0) {
-          // Validate quantity against available stock
-          if (qty > alloc.stock_kg) {
-            alert(`Entered quantity for ${req.colour} (${qty.toFixed(2)} kg) exceeds available stock of ${alloc.stock_kg.toFixed(2)} kg!`);
+          const isDofSource = alloc.is_dof_source ?? (req.source_type === 'dof');
+
+          // Validate quantity against available stock if DOF source
+          if (isDofSource && qty > alloc.stock_kg && alloc.stock_kg > 0) {
+            alert(`Entered quantity for ${req.colour} (${qty.toFixed(2)} kg) exceeds available DOF stock of ${alloc.stock_kg.toFixed(2)} kg!`);
             return;
           }
-          if (!alloc.lot_number || !alloc.dof_number) {
-            alert(`Please select both Lot Number and DOF Number for the allocated quantity of ${req.colour}.`);
+          if (!alloc.lot_number) {
+            alert(`Please select Lot Number for the allocated quantity of ${req.colour}.`);
+            return;
+          }
+          if (isDofSource && !alloc.dof_number) {
+            alert(`Please select DOF Number for the DOF allocation of ${req.colour}.`);
             return;
           }
           validItems.push({
@@ -1451,12 +1524,43 @@ export default function DeliverDyedYarn() {
                         <tr>
                           <td colSpan={5} style={{ padding: '1rem', backgroundColor: '#fafafa', borderBottom: '2px solid var(--border-current)' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                              <div style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                Lot Allocations for {req.colour} ({getFormatCount(req.yarn_count_id)})
+                              
+                              {/* Source Selector Header per Color */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', backgroundColor: '#f1f5f9', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                  Lot Allocations for <span style={{ color: '#800000' }}>{req.colour}</span> ({getFormatCount(req.yarn_count_id)})
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>Delivery Source:</label>
+                                  <select
+                                    value={req.source_type || 'dof'}
+                                    onChange={e => changeSourceType(reqIdx, e.target.value)}
+                                    style={{
+                                      padding: '0.35rem 0.65rem',
+                                      borderRadius: '6px',
+                                      border: '1.5px solid #800000',
+                                      fontSize: '0.78rem',
+                                      fontWeight: '700',
+                                      color: '#800000',
+                                      backgroundColor: '#fff',
+                                      cursor: 'pointer',
+                                      outline: 'none'
+                                    }}
+                                  >
+                                    <option value="dof">🏢 From DOF (Capped to DOF balance)</option>
+                                    <option value="stock_inventory">📦 From Stock Inventory (Uncapped by DOF)</option>
+                                    <option value="both">🔀 From Both (DOF & Stock Inventory)</option>
+                                  </select>
+                                </div>
                               </div>
                               
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                 {(req.allocations || []).map((alloc, allocIdx) => {
+                                  const isDofSourceRow = alloc.is_dof_source ?? (req.source_type === 'dof');
+                                  const availableStockOptions = isDofSourceRow
+                                    ? req.availableStocks.filter(s => s.dof_id && s.dof_number && s.dof_number !== '—')
+                                    : req.availableStocks;
+
                                   return (
                                     <div 
                                       key={allocIdx} 
@@ -1468,15 +1572,24 @@ export default function DeliverDyedYarn() {
                                         backgroundColor: '#fff', 
                                         padding: '0.5rem 0.75rem', 
                                         borderRadius: '6px', 
-                                        border: '1px solid var(--border-current)',
+                                        border: `1px solid ${isDofSourceRow ? '#fde68a' : '#bfdbfe'}`,
                                         boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
                                       }}
                                     >
                                       {/* Lot Number Dropdown */}
                                       <div>
-                                        <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>Lot Number</label>
-                                        {req.availableStocks.length === 0 ? (
-                                          <span style={{ fontSize: '0.78rem', color: '#ef4444', fontStyle: 'italic', fontWeight: '600' }}>No stock in warehouse</span>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                          <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)' }}>Lot Number</label>
+                                          {alloc.source_label && (
+                                            <span style={{ fontSize: '0.6rem', fontWeight: '700', color: isDofSourceRow ? '#92400e' : '#1e40af' }}>
+                                              {alloc.source_label}
+                                            </span>
+                                          )}
+                                        </div>
+                                        {availableStockOptions.length === 0 ? (
+                                          <span style={{ fontSize: '0.78rem', color: '#ef4444', fontStyle: 'italic', fontWeight: '600' }}>
+                                            {isDofSourceRow ? 'No DOF stock available' : 'No stock in warehouse'}
+                                          </span>
                                         ) : (
                                           <select
                                             className="form-input"
@@ -1486,24 +1599,22 @@ export default function DeliverDyedYarn() {
                                             disabled={alloc.disabled}
                                           >
                                             <option value="">Select Lot...</option>
-                                            {[...new Set(req.availableStocks
+                                            {[...new Set(availableStockOptions
                                               .filter(s => !alloc.dof_number || s.dof_number === alloc.dof_number)
                                               .map(s => s.lot_number)
-                                            )].map((lot, idx) => {
-                                              return (
-                                                <option key={idx} value={lot}>
-                                                  {lot}
-                                                </option>
-                                              );
-                                            })}
+                                            )].map((lot, idx) => (
+                                              <option key={idx} value={lot}>{lot}</option>
+                                            ))}
                                           </select>
                                         )}
                                       </div>
 
                                       {/* DOF Number Dropdown */}
                                       <div>
-                                        <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>DOF Number</label>
-                                        {req.availableStocks.length === 0 ? (
+                                        <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>
+                                          DOF Number {isDofSourceRow ? '(Required)' : '(Optional)'}
+                                        </label>
+                                        {availableStockOptions.length === 0 ? (
                                           <span style={{ fontSize: '0.78rem', color: '#9ca3af', fontStyle: 'italic' }}>—</span>
                                         ) : (
                                           <select
@@ -1513,17 +1624,13 @@ export default function DeliverDyedYarn() {
                                             onChange={e => updateAllocation(reqIdx, allocIdx, 'dof_number', e.target.value)}
                                             disabled={alloc.disabled}
                                           >
-                                            <option value="">Select DOF...</option>
-                                            {[...new Set(req.availableStocks
+                                            <option value="">{isDofSourceRow ? 'Select DOF...' : 'General Stock (No DOF)'}</option>
+                                            {[...new Set(availableStockOptions
                                               .filter(s => !alloc.lot_number || s.lot_number === alloc.lot_number)
                                               .map(s => s.dof_number)
-                                            )].map((dof, idx) => {
-                                              return (
-                                                <option key={idx} value={dof}>
-                                                  {dof}
-                                                </option>
-                                              );
-                                            })}
+                                            )].map((dof, idx) => (
+                                              <option key={idx} value={dof}>{dof}</option>
+                                            ))}
                                           </select>
                                         )}
                                       </div>
@@ -1538,7 +1645,9 @@ export default function DeliverDyedYarn() {
 
                                       {/* Available Stock */}
                                       <div>
-                                        <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>Available Stock</label>
+                                        <label style={{ fontSize: '0.62rem', fontWeight: '750', textTransform: 'uppercase', color: 'var(--text-muted-current)', display: 'block', marginBottom: '4px' }}>
+                                          {isDofSourceRow ? 'DOF Balance' : 'Inventory Stock'}
+                                        </label>
                                         <span style={{ fontSize: '0.78rem', fontWeight: '700', color: alloc.stock_kg > 0 ? '#047857' : '#9ca3af' }}>
                                           {alloc.stock_kg > 0 ? `${alloc.stock_kg.toFixed(2)} kg` : '—'}
                                         </span>
@@ -1551,8 +1660,8 @@ export default function DeliverDyedYarn() {
                                           type="number"
                                           step="0.01"
                                           min="0"
-                                          max={alloc.stock_kg}
-                                          disabled={!alloc.lot_number || !alloc.dof_number || alloc.disabled}
+                                          max={isDofSourceRow ? alloc.stock_kg : undefined}
+                                          disabled={!alloc.lot_number || (isDofSourceRow && !alloc.dof_number) || alloc.disabled}
                                           className="form-input"
                                           style={{
                                             fontWeight: '800',
@@ -1566,11 +1675,16 @@ export default function DeliverDyedYarn() {
                                           }}
                                           value={alloc.quantity_kg}
                                           onChange={e => updateAllocation(reqIdx, allocIdx, 'quantity_kg', e.target.value)}
-                                          placeholder={!alloc.lot_number || !alloc.dof_number ? 'Select lot/DOF' : '0.00'}
+                                          placeholder={!alloc.lot_number ? 'Select lot' : '0.00'}
                                         />
-                                        {isOverAllotted && (
-                                          <div style={{ fontSize: '0.65rem', color: '#ef4444', marginTop: '2px', textAlign: 'right', fontWeight: 'bold' }}>
-                                            Exceeds WOF limit!
+                                        {isDofSourceRow && alloc.stock_kg > 0 && (
+                                          <div style={{ fontSize: '0.6rem', color: '#d97706', marginTop: '2px', textAlign: 'right', fontWeight: 'bold' }}>
+                                            Capped to {alloc.stock_kg.toFixed(2)} kg
+                                          </div>
+                                        )}
+                                        {!isDofSourceRow && (
+                                          <div style={{ fontSize: '0.6rem', color: '#2563eb', marginTop: '2px', textAlign: 'right', fontWeight: 'bold' }}>
+                                            Uncapped by DOF
                                           </div>
                                         )}
                                       </div>

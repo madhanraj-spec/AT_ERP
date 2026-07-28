@@ -437,7 +437,10 @@ function OrderCard({
     let sum = 0;
     (orderWvofs || []).forEach(wv => {
       const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
-      const greigeRolls = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
+      const greigeRolls = rolls.filter(r => 
+        !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) &&
+        (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing')
+      );
       sum += greigeRolls.reduce((acc, r) => acc + parseFloat(r.qty || 0), 0);
     });
     return sum;
@@ -1233,7 +1236,10 @@ function TabInspection({ order }) {
     let sum = 0;
     weavingOrders.forEach(wv => {
       const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
-      const greigeRolls = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
+      const greigeRolls = rolls.filter(r => 
+        !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) &&
+        (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing')
+      );
       sum += greigeRolls.reduce((acc, r) => acc + parseFloat(r.qty || 0), 0);
     });
     return sum;
@@ -1243,7 +1249,10 @@ function TabInspection({ order }) {
     let sum = 0;
     weavingOrders.forEach(wv => {
       const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
-      const inspectedRolls = rolls.filter(r => r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
+      const inspectedRolls = rolls.filter(r => 
+        !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) &&
+        (r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing')
+      );
       sum += inspectedRolls.reduce((acc, r) => acc + parseFloat(r.actual_qty || r.actual_length || 0), 0);
     });
     return sum;
@@ -1604,10 +1613,11 @@ function TabInspection({ order }) {
                       const startDateStr = wvof.start_date ? new Date(wvof.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
                       const endDateStr = wvof.end_date ? new Date(wvof.end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
                       const isExpanded = !!expandedWvofs[wvof.id];
-                      const totalWvofGreigeQty = rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
-                      const totalWvofActualQty = rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.actual_length || 0), 0);
-                      const scannedCount = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing').length;
-                      const inspectedCount = rolls.filter(r => r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing').length;
+                      const greigeOnlyRolls = rolls.filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)));
+                      const totalWvofGreigeQty = greigeOnlyRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+                      const totalWvofActualQty = greigeOnlyRolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.actual_length || 0), 0);
+                      const scannedCount = greigeOnlyRolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing').length;
+                      const inspectedCount = greigeOnlyRolls.filter(r => r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing').length;
 
                       return (
                         <React.Fragment key={wvof.id}>
@@ -1625,8 +1635,8 @@ function TabInspection({ order }) {
                             </td>
                             <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '800' }}>{totalWvofGreigeQty.toLocaleString()} m</td>
                             <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '800', color: '#800000' }}>{totalWvofActualQty > 0 ? `${totalWvofActualQty.toLocaleString()} m` : '—'}</td>
-                            <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted-current)', fontWeight: '700' }}>{scannedCount} / {rolls.length} Scanned</td>
-                            <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted-current)', fontWeight: '700' }}>{inspectedCount} / {rolls.length} Inspected</td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted-current)', fontWeight: '700' }}>{scannedCount} / {greigeOnlyRolls.length} Scanned</td>
+                            <td style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted-current)', fontWeight: '700' }}>{inspectedCount} / {greigeOnlyRolls.length} Inspected</td>
                           </tr>
                           {isExpanded && (
                             rolls.length === 0 ? (
@@ -1634,7 +1644,7 @@ function TabInspection({ order }) {
                                 <td colSpan={5} style={{ padding: '0.75rem 1.5rem', color: 'var(--text-muted-current)', fontStyle: 'italic', fontSize: '0.78rem' }}>No fabric rolls generated for this form yet.</td>
                               </tr>
                             ) : (
-                              [...rolls].sort((a, b) => a.roll_no - b.roll_no).map(roll => {
+                              [...greigeOnlyRolls].sort((a, b) => a.roll_no - b.roll_no).map(roll => {
                                 const isGreigeScanned = roll.status === 'greige received' || roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing';
                                 const isQCInspected = roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing';
                                 return (
@@ -1665,7 +1675,7 @@ function TabInspection({ order }) {
                                               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Actual Qty:</span> <strong>{roll.actual_qty || roll.actual_length || '—'} m</strong></div>
                                               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Shortage:</span> <strong style={{ color: (roll.shortage || 0) > 0 ? '#fbbf24' : '#34d399' }}>{roll.shortage || 0} m</strong></div>
                                               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Mistakes:</span> <strong style={{ color: '#f87171' }}>{roll.mistake || 0} m</strong></div>
-                                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#34d399' }}>Ok Qty:</span> <strong style={{ color: '#34d399' }}>{roll.approved_qty || 0} m</strong></div>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#34d399' }}>Ok Qty:</span> <strong style={{ color: '#34d399' }}>{parseFloat((roll.actual_qty || roll.actual_length || 0) - (roll.mistake || 0)).toFixed(2)} m</strong></div>
                                               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Inspectors:</span> <strong style={{ color: 'white', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '170px' }}>{roll.inspector_1 || '—'}{roll.inspector_2 ? ` & ${roll.inspector_2}` : ''}</strong></div>
                                               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Fitter:</span> <strong style={{ color: 'white' }}>{roll.attended_fitter || '—'}</strong></div>
                                               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#94a3b8' }}>Result:</span> <strong style={{ color: roll.roll_ok ? '#34d399' : '#f87171' }}>{roll.roll_ok ? '🟢 Roll OK' : '🔴 Defects Observed'}</strong></div>

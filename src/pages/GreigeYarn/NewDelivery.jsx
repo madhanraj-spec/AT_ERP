@@ -37,6 +37,11 @@ export default function NewDelivery() {
         return;
       }
 
+      if (data.dyeing_unit?.partner_name?.toUpperCase().includes('AT DYED YARN')) {
+        setResult({ found: true, form: data, isATInventory: true });
+        return;
+      }
+
       if (data.status === 'pending' || data.status === 'rejected') {
         setResult({ found: true, form: data, notApproved: true });
         return;
@@ -137,6 +142,16 @@ export default function NewDelivery() {
                 <p style={{ margin: 0, fontWeight: '700', color: '#991b1b', fontSize: '1rem' }}>Order Form Not Found</p>
                 <p style={{ margin: 0, color: '#7f1d1d', fontSize: '0.85rem' }}>
                   No DOF found with number "<strong>{dofNumber}</strong>". Please check and try again.
+                </p>
+              </div>
+            )}
+
+            {result.found && result.isATInventory && (
+              <div style={{ backgroundColor: '#dcfce7', border: '1px solid #86efac', borderRadius: '8px', padding: '1.25rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', textAlign: 'center' }}>
+                <CheckCircle size={32} color="#166534" />
+                <p style={{ margin: 0, fontWeight: '700', color: '#14532d', fontSize: '1rem' }}>Stock Dyed Yarn Allocation</p>
+                <p style={{ margin: 0, color: '#166534', fontSize: '0.85rem' }}>
+                  <strong>{result.form.dof_number}</strong> is created under <strong>AT DYED YARN INVENTORY</strong>. Greige yarn delivery is skipped because stock dyed yarn is directly allocated for Warping & Weaving.
                 </p>
               </div>
             )}

@@ -2777,6 +2777,34 @@ function ReviewEInvoiceModal({ bill, onClose, onConfirm, loading }) {
 // ─────────────────────────────────────────────
 // Bill Form (Invoice Creation)
 // ─────────────────────────────────────────────
+const formatBilledToFromPi = (pi) => {
+  if (!pi) return '';
+  const parts = [];
+  if (pi.billed_to_name) parts.push(pi.billed_to_name);
+  if (pi.billed_to_address) parts.push(pi.billed_to_address);
+  const stateStr = [
+    pi.billed_to_state ? `State: ${pi.billed_to_state}` : null,
+    pi.billed_to_state_code ? `Code: ${pi.billed_to_state_code}` : null
+  ].filter(Boolean).join(' ');
+  if (stateStr) parts.push(stateStr);
+  if (pi.billed_to_gstin) parts.push(`GSTIN: ${pi.billed_to_gstin}`);
+  return parts.join('\n');
+};
+
+const formatShippedToFromPi = (pi) => {
+  if (!pi) return '';
+  const parts = [];
+  if (pi.shipped_to_name) parts.push(pi.shipped_to_name);
+  if (pi.shipped_to_address) parts.push(pi.shipped_to_address);
+  const stateStr = [
+    pi.shipped_to_state ? `State: ${pi.shipped_to_state}` : null,
+    pi.shipped_to_state_code ? `Code: ${pi.shipped_to_state_code}` : null
+  ].filter(Boolean).join(' ');
+  if (stateStr) parts.push(stateStr);
+  if (pi.shipped_to_gstin) parts.push(`GSTIN: ${pi.shipped_to_gstin}`);
+  return parts.join('\n');
+};
+
 function BillForm({ editBillId, onBack, onSaveComplete }) {
   const isInitialEditLoad = useRef(true);
   const [billNumber, setBillNumber] = useState('');
@@ -2804,6 +2832,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
   const [billedTo, setBilledTo] = useState('');
   const [shippedFrom, setShippedFrom] = useState('');
   const [shippedTo, setShippedTo] = useState('');
+  const [fetchedPis, setFetchedPis] = useState([]);
 
   // Dropdown list data
   const [partners, setPartners] = useState([]);
@@ -2845,7 +2874,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
         technical_specs,
         vendor_id,
         vendor:master_partners(id, partner_name, address, gstin),
-        proforma_invoices(invoice_number, invoice_date, rate, cgst_percent, sgst_percent, igst_percent)
+        proforma_invoices(id, invoice_number, invoice_date, rate, cgst_percent, sgst_percent, igst_percent, hsn_code, billed_to_name, billed_to_address, billed_to_gstin, billed_to_state, billed_to_state_code, shipped_to_name, shipped_to_address, shipped_to_gstin, shipped_to_state, shipped_to_state_code)
       `)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
@@ -2936,27 +2965,42 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
         setAlreadyDispatchedMap(map);
       });
 
-    // Prepopulate Billed To from the first order's vendor details
-    const firstOrder = selectedOrders[0];
-    if (firstOrder && firstOrder.vendor) {
-      const v = firstOrder.vendor;
-      const addr = [v.partner_name, v.address, `GSTIN: ${v.gstin || '—'}`].filter(Boolean).join('\n');
-      setBilledTo(addr);
-    }
-
     // Default active order
     if (!activeOrderId || !selectedIds.includes(activeOrderId)) {
       setActiveOrderId(selectedIds[0]);
     }
 
-    // Fetch Proforma Invoices rates
+    // Fetch Proforma Invoices rates and address details
     supabase
       .from('proforma_invoices')
-      .select('order_id, invoice_number, invoice_date, rate, cgst_percent, sgst_percent, igst_percent, hsn_code')
+      .select(`
+        id,
+        order_id,
+        invoice_number,
+        invoice_date,
+        rate,
+        cgst_percent,
+        sgst_percent,
+        igst_percent,
+        hsn_code,
+        billed_to_name,
+        billed_to_address,
+        billed_to_gstin,
+        billed_to_state,
+        billed_to_state_code,
+        shipped_to_name,
+        shipped_to_address,
+        shipped_to_gstin,
+        shipped_to_state,
+        shipped_to_state_code
+      `)
       .in('order_id', selectedIds)
       .then(({ data }) => {
+        const pis = data || [];
+        setFetchedPis(pis);
+
         const piMap = {};
-        (data || []).forEach(pi => {
+        pis.forEach(pi => {
           piMap[pi.order_id] = {
             rate: pi.rate,
             piNumber: pi.invoice_number,
@@ -2964,9 +3008,27 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
             cgst: pi.cgst_percent,
             sgst: pi.sgst_percent,
             igst: pi.igst_percent,
-            hsn: pi.hsn_code
+            hsn: pi.hsn_code,
+            rawPi: pi
           };
         });
+
+        // Prepopulate Billed To and Shipped To from the PI created for the order
+        if (!editBillId && selectedOrders.length > 0) {
+          const firstOrder = selectedOrders[0];
+          const firstPi = pis.find(p => p.order_id === firstOrder.id) || pis[0];
+          if (firstPi) {
+            const piBilled = formatBilledToFromPi(firstPi);
+            const piShipped = formatShippedToFromPi(firstPi);
+            if (piBilled) setBilledTo(piBilled);
+            if (piShipped) setShippedTo(piShipped);
+            else if (piBilled) setShippedTo(piBilled);
+          } else if (firstOrder && firstOrder.vendor) {
+            const v = firstOrder.vendor;
+            const addr = [v.partner_name, v.address, v.gstin ? `GSTIN: ${v.gstin}` : null].filter(Boolean).join('\n');
+            setBilledTo(addr);
+          }
+        }
 
         setItemsDetails(prev => {
           const next = { ...prev };
@@ -3758,17 +3820,37 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                   <span style={labelStyle}>Consignee / Billed To *</span>
                   <select
                     onChange={e => {
-                      const part = partners.find(p => p.id === e.target.value);
-                      if (part) {
-                        setBilledTo(`${part.partner_name}\n${part.address || ''}`);
+                      const val = e.target.value;
+                      if (!val) return;
+                      if (val.startsWith('PI:')) {
+                        const piId = val.replace('PI:', '');
+                        const selectedPi = fetchedPis.find(p => String(p.id) === piId);
+                        if (selectedPi) {
+                          setBilledTo(formatBilledToFromPi(selectedPi));
+                        }
+                      } else {
+                        const part = partners.find(p => p.id === val);
+                        if (part) {
+                          const addr = [part.partner_name, part.address, part.gstin ? `GSTIN: ${part.gstin}` : null].filter(Boolean).join('\n');
+                          setBilledTo(addr);
+                        }
                       }
                     }}
                     style={{ ...inputStyle, width: '220px', padding: '0.35rem', fontSize: '0.75rem' }}
                   >
-                    <option value="">Prefill from Vendors...</option>
-                    {partners.filter(p => p.partner_type === 'Vendor').map(p => (
-                      <option key={p.id} value={p.id}>{p.partner_name} - {p.address}</option>
-                    ))}
+                    <option value="">Prefill Billed To from...</option>
+                    {fetchedPis.length > 0 && (
+                      <optgroup label="From Order PI">
+                        {fetchedPis.map(p => (
+                          <option key={p.id} value={`PI:${p.id}`}>PI: {p.invoice_number} ({p.billed_to_name || 'Details'})</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="From Master Partners">
+                      {partners.map(p => (
+                        <option key={p.id} value={p.id}>{p.partner_name} {p.address ? `- ${p.address}` : ''}</option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
                 <textarea rows={3} value={billedTo} onChange={e => setBilledTo(e.target.value)} style={{ ...inputStyle, resize: 'vertical' }} />
@@ -3802,17 +3884,37 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                   <span style={labelStyle}>Shipped To (Optional)</span>
                   <select
                     onChange={e => {
-                      const part = partners.find(p => p.id === e.target.value);
-                      if (part) {
-                        setShippedTo(`${part.partner_name}\n${part.address || ''}`);
+                      const val = e.target.value;
+                      if (!val) return;
+                      if (val.startsWith('PI:')) {
+                        const piId = val.replace('PI:', '');
+                        const selectedPi = fetchedPis.find(p => String(p.id) === piId);
+                        if (selectedPi) {
+                          setShippedTo(formatShippedToFromPi(selectedPi) || formatBilledToFromPi(selectedPi));
+                        }
+                      } else {
+                        const part = partners.find(p => p.id === val);
+                        if (part) {
+                          const addr = [part.partner_name, part.address, part.gstin ? `GSTIN: ${part.gstin}` : null].filter(Boolean).join('\n');
+                          setShippedTo(addr);
+                        }
                       }
                     }}
                     style={{ ...inputStyle, width: '220px', padding: '0.35rem', fontSize: '0.75rem' }}
                   >
-                    <option value="">Prefill from Vendors...</option>
-                    {partners.filter(p => p.partner_type === 'Vendor').map(p => (
-                      <option key={p.id} value={p.id}>{p.partner_name} - {p.address}</option>
-                    ))}
+                    <option value="">Prefill Shipped To from...</option>
+                    {fetchedPis.length > 0 && (
+                      <optgroup label="From Order PI">
+                        {fetchedPis.map(p => (
+                          <option key={p.id} value={`PI:${p.id}`}>PI: {p.invoice_number} ({p.shipped_to_name || p.billed_to_name || 'Details'})</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="From Master Partners">
+                      {partners.map(p => (
+                        <option key={p.id} value={p.id}>{p.partner_name} {p.address ? `- ${p.address}` : ''}</option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
                 <textarea rows={2} value={shippedTo} onChange={e => setShippedTo(e.target.value)} placeholder="Type shipped to address..." style={{ ...inputStyle, resize: 'vertical' }} />
