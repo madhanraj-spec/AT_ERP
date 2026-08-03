@@ -321,6 +321,11 @@ export default function MasterDetail() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
 
+  // Filter State (for Machines)
+  const [machineDeptFilter, setMachineDeptFilter] = useState('all');
+  const [machineScopeFilter, setMachineScopeFilter] = useState('all');
+  const [machinePartnerFilter, setMachinePartnerFilter] = useState('all');
+
   useEffect(() => {
     if (!config) {
       navigate('/masters');
@@ -336,6 +341,9 @@ export default function MasterDetail() {
     setFilterOpen(false);
     setShowAddModal(false);
     setActiveTab('all');
+    setMachineDeptFilter('all');
+    setMachineScopeFilter('all');
+    setMachinePartnerFilter('all');
   }, [type]);
 
   // Compute tab-filtered items first
@@ -347,15 +355,79 @@ export default function MasterDetail() {
     return items.filter(item => item.partner_type === tabMatch);
   }, [items, activeTab, type]);
 
-  // Compute filtered items (interdependent filters for Partners)
+  // Compute filtered items (interdependent filters for Partners & Machines)
   const filteredItems = useMemo(() => {
-    if (type !== 'partners') return items;
-    return tabFilteredItems.filter(item => {
-      if (filterTypes.length > 0 && !filterTypes.includes(item.partner_type)) return false;
-      if (filterNames.length > 0 && !filterNames.includes(item.partner_name)) return false;
+    if (type === 'partners') {
+      return tabFilteredItems.filter(item => {
+        if (filterTypes.length > 0 && !filterTypes.includes(item.partner_type)) return false;
+        if (filterNames.length > 0 && !filterNames.includes(item.partner_name)) return false;
+        return true;
+      });
+    }
+    if (type === 'machines') {
+      return items.filter(item => {
+        const deptName = (item.master_departments?.department_name || '').toLowerCase();
+        if (machineDeptFilter !== 'all' && !deptName.includes(machineDeptFilter.toLowerCase())) return false;
+        if (machineScopeFilter !== 'all' && item.scope !== machineScopeFilter) return false;
+        if (machinePartnerFilter !== 'all' && item.partner_id !== machinePartnerFilter && item.master_partners?.partner_name !== machinePartnerFilter) return false;
+        return true;
+      });
+    }
+    return items;
+  }, [items, tabFilteredItems, filterTypes, filterNames, machineDeptFilter, machineScopeFilter, machinePartnerFilter, type]);
+
+  // Interdependent machine department counts
+  const machineDeptCounts = useMemo(() => {
+    if (type !== 'machines') return {};
+    const base = items.filter(item => {
+      if (machineScopeFilter !== 'all' && item.scope !== machineScopeFilter) return false;
+      if (machinePartnerFilter !== 'all' && item.partner_id !== machinePartnerFilter && item.master_partners?.partner_name !== machinePartnerFilter) return false;
       return true;
     });
-  }, [tabFilteredItems, filterTypes, filterNames, type]);
+    const counts = { all: base.length, warping: 0, sizing: 0, weaving: 0 };
+    base.forEach(item => {
+      const deptName = (item.master_departments?.department_name || '').toLowerCase();
+      if (deptName.includes('warping')) counts.warping++;
+      else if (deptName.includes('sizing')) counts.sizing++;
+      else if (deptName.includes('weaving')) counts.weaving++;
+    });
+    return counts;
+  }, [items, machineScopeFilter, machinePartnerFilter, type]);
+
+  // Interdependent machine scope counts
+  const machineScopeCounts = useMemo(() => {
+    if (type !== 'machines') return {};
+    const base = items.filter(item => {
+      const deptName = (item.master_departments?.department_name || '').toLowerCase();
+      if (machineDeptFilter !== 'all' && !deptName.includes(machineDeptFilter.toLowerCase())) return false;
+      if (machinePartnerFilter !== 'all' && item.partner_id !== machinePartnerFilter && item.master_partners?.partner_name !== machinePartnerFilter) return false;
+      return true;
+    });
+    const counts = { all: base.length, in_house: 0, job_work: 0 };
+    base.forEach(item => {
+      if (item.scope === 'in_house') counts.in_house++;
+      else if (item.scope === 'job_work') counts.job_work++;
+    });
+    return counts;
+  }, [items, machineDeptFilter, machinePartnerFilter, type]);
+
+  // Interdependent machine partners list
+  const machineFilterPartners = useMemo(() => {
+    if (type !== 'machines') return [];
+    const base = items.filter(item => {
+      const deptName = (item.master_departments?.department_name || '').toLowerCase();
+      if (machineDeptFilter !== 'all' && !deptName.includes(machineDeptFilter.toLowerCase())) return false;
+      if (machineScopeFilter !== 'all' && item.scope !== machineScopeFilter) return false;
+      return true;
+    });
+    const partnerMap = new Map();
+    base.forEach(item => {
+      if (item.scope === 'job_work' && item.master_partners) {
+        partnerMap.set(item.partner_id || item.master_partners.partner_name, item.master_partners.partner_name);
+      }
+    });
+    return Array.from(partnerMap.entries()).map(([id, name]) => ({ id, name }));
+  }, [items, machineDeptFilter, machineScopeFilter, type]);
 
   // Get unique partner types and names for filter dropdowns (interdependent)
   const partnerFilterTypes = useMemo(() => {
@@ -1558,18 +1630,180 @@ export default function MasterDetail() {
             <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-current)', backgroundColor: 'var(--bg-current)', borderTopLeftRadius: 'var(--radius-lg)', borderTopRightRadius: 'var(--radius-lg)' }}>
               <h2 style={{ fontSize: '1.125rem', margin: 0 }}>Existing Database Entries</h2>
             </div>
+
+            {/* Machine Interdependent Filters Panel */}
+            {type === 'machines' && (
+              <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border-current)', backgroundColor: 'var(--surface-current)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {/* Department Filter Pills */}
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
+                    Department
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'all', label: 'All Depts', count: machineDeptCounts.all },
+                      { id: 'warping', label: 'Warping', count: machineDeptCounts.warping },
+                      { id: 'sizing', label: 'Sizing', count: machineDeptCounts.sizing },
+                      { id: 'weaving', label: 'Weaving', count: machineDeptCounts.weaving },
+                    ].map(pill => {
+                      const isActive = machineDeptFilter === pill.id;
+                      return (
+                        <button
+                          key={pill.id}
+                          type="button"
+                          onClick={() => setMachineDeptFilter(pill.id)}
+                          style={{
+                            background: isActive ? 'var(--color-primary)' : 'var(--bg-current)',
+                            color: isActive ? '#fff' : 'var(--text-current)',
+                            border: isActive ? 'none' : '1px solid var(--border-current)',
+                            borderRadius: 'var(--radius-full)',
+                            padding: '0.3rem 0.85rem',
+                            fontSize: '0.8125rem',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {pill.label}
+                          <span style={{
+                            background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.06)',
+                            color: isActive ? '#fff' : 'var(--text-muted-current)',
+                            fontSize: '0.7rem',
+                            padding: '0.05rem 0.4rem',
+                            borderRadius: '999px',
+                            fontWeight: '700'
+                          }}>
+                            {pill.count || 0}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Scope Filter Pills & Partner Dropdown Row */}
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+                  {/* Scope Pills */}
+                  <div>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
+                      Ownership / Type
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      {[
+                        { id: 'all', label: 'All', count: machineScopeCounts.all },
+                        { id: 'in_house', label: 'In-House', count: machineScopeCounts.in_house },
+                        { id: 'job_work', label: 'Job Work', count: machineScopeCounts.job_work },
+                      ].map(pill => {
+                        const isActive = machineScopeFilter === pill.id;
+                        return (
+                          <button
+                            key={pill.id}
+                            type="button"
+                            onClick={() => setMachineScopeFilter(pill.id)}
+                            style={{
+                              background: isActive ? 'var(--color-primary)' : 'var(--bg-current)',
+                              color: isActive ? '#fff' : 'var(--text-current)',
+                              border: isActive ? 'none' : '1px solid var(--border-current)',
+                              borderRadius: 'var(--radius-full)',
+                              padding: '0.3rem 0.85rem',
+                              fontSize: '0.8125rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            {pill.label}
+                            <span style={{
+                              background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.06)',
+                              color: isActive ? '#fff' : 'var(--text-muted-current)',
+                              fontSize: '0.7rem',
+                              padding: '0.05rem 0.4rem',
+                              borderRadius: '999px',
+                              fontWeight: '700'
+                            }}>
+                              {pill.count || 0}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Partner Dropdown & Clear Filters */}
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    {(machineScopeFilter === 'job_work' || machineFilterPartners.length > 0) && (
+                      <div>
+                        <select
+                          value={machinePartnerFilter}
+                          onChange={(e) => setMachinePartnerFilter(e.target.value)}
+                          className="form-control"
+                          style={{
+                            fontSize: '0.8125rem',
+                            padding: '0.3rem 0.6rem',
+                            borderRadius: 'var(--radius-md)',
+                            borderColor: machinePartnerFilter !== 'all' ? 'var(--color-primary)' : 'var(--border-current)',
+                            minWidth: '150px'
+                          }}
+                        >
+                          <option value="all">All Partners</option>
+                          {machineFilterPartners.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {(machineDeptFilter !== 'all' || machineScopeFilter !== 'all' || machinePartnerFilter !== 'all') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMachineDeptFilter('all');
+                          setMachineScopeFilter('all');
+                          setMachinePartnerFilter('all');
+                        }}
+                        style={{
+                          background: 'none',
+                          color: '#dc2626',
+                          border: '1px solid #fca5a5',
+                          borderRadius: 'var(--radius-full)',
+                          padding: '0.3rem 0.75rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          fontSize: '0.75rem',
+                          fontWeight: '600'
+                        }}
+                      >
+                        <X size={12} /> Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div style={{ padding: '1rem' }}>
               {loading ? (
                 <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>
                   <Loader size={24} className="spin" style={{ margin: '0 auto 1rem' }} /> Loading...
                 </div>
-              ) : items.length === 0 ? (
+              ) : filteredItems.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)' }}>
-                  No {config.title.toLowerCase()} found in the database.
+                  {items.length > 0
+                    ? `No ${config.title.toLowerCase()} match the selected filters.`
+                    : `No ${config.title.toLowerCase()} found in the database.`
+                  }
                 </div>
               ) : (
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {items.map(item => (
+                  {filteredItems.map(item => (
                     <li key={item.id} style={{ 
                       padding: '0.75rem 1rem', 
                       backgroundColor: editingId === item.id ? 'var(--surface-current)' : 'var(--bg-current)', 

@@ -495,43 +495,17 @@ function calcBarPosition(wof, days) {
   return calcBarPositionForDates(wof.start_date, wof.end_date, days);
 }
 
-// --- Mock Looms Fallback List ---
-const MOCK_AIRJET_LOOMS = [
-  { id: 'mock-aj1', machine_name: 'AJ1', scope: 'in_house' },
-  { id: 'mock-aj2', machine_name: 'AJ2', scope: 'in_house' },
-  { id: 'mock-aj3', machine_name: 'AJ3', scope: 'in_house' },
-  { id: 'mock-aj4', machine_name: 'AJ4', scope: 'in_house' },
-  { id: 'mock-aj5', machine_name: 'AJ5', scope: 'in_house' },
-];
-
-const MOCK_RAPIER_LOOMS = [
-  { id: 'mock-ar1', machine_name: 'AR1', scope: 'in_house' },
-  { id: 'mock-ar2', machine_name: 'AR2', scope: 'in_house' },
-  { id: 'mock-ar3', machine_name: 'AR3', scope: 'in_house' },
-];
-
 const getLooms = (dbMachines, type) => {
   const prefix = type === 'airjet' ? 'AJ' : 'AR';
-  const mockList = type === 'airjet' ? MOCK_AIRJET_LOOMS : MOCK_RAPIER_LOOMS;
-  
   const dbMatch = dbMachines.filter(m => m.machine_name && m.machine_name.trim().toUpperCase().startsWith(prefix));
-  
-  const finalMachines = [...dbMatch];
-  mockList.forEach(mock => {
-    const exists = finalMachines.some(m => m.machine_name.trim().toUpperCase() === mock.machine_name.toUpperCase());
-    if (!exists) {
-      finalMachines.push(mock);
-    }
-  });
-  
-  return finalMachines.sort((a, b) => a.machine_name.localeCompare(b.machine_name, undefined, { numeric: true, sensitivity: 'base' }));
+  return dbMatch.sort((a, b) => a.machine_name.localeCompare(b.machine_name, undefined, { numeric: true, sensitivity: 'base' }));
 };
 
 const getOrdersForMachine = (machine, allOrders) => {
   return allOrders.filter(w => {
     if (w.weaving_type !== 'in_house') return false;
     
-    if (w.machine_id && !machine.id.startsWith('mock-') && w.machine_id === machine.id) {
+    if (w.machine_id && machine.id && w.machine_id === machine.id) {
       return true;
     }
     if (w.machine_name && machine.machine_name && w.machine_name.trim().toUpperCase() === machine.machine_name.trim().toUpperCase()) {

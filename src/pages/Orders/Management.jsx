@@ -419,6 +419,7 @@ function OrderCard({
   allPofs = [],
   hideDeleteButton = false,
   orderBills = [],
+  allStockItems = [],
   onRefresh
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -443,8 +444,13 @@ function OrderCard({
       );
       sum += greigeRolls.reduce((acc, r) => acc + parseFloat(r.qty || 0), 0);
     });
-    return sum;
-  }, [orderWvofs, order.order_number]);
+
+    const stockGreigeSum = (allStockItems || [])
+      .filter(item => item.allotted_order_id === order.id && item.roll_type === 'greige')
+      .reduce((acc, item) => acc + parseFloat(item.actual_meters || item.meters || 0), 0);
+
+    return sum + stockGreigeSum;
+  }, [orderWvofs, allStockItems, order.id]);
 
   const totalDispatchedQty = useMemo(() => {
     return (orderBills || []).reduce((sum, b) => {
@@ -1219,6 +1225,25 @@ function TabInspection({ order }) {
     }
   }, [order?.id]);
 
+  const [stockRolls, setStockRolls] = useState([]);
+
+  useEffect(() => {
+    if (!order?.id) return;
+    async function fetchStockRolls() {
+      const { data } = await supabase
+        .from('fabric_stock_inventory')
+        .select('*, fso:fabric_stock_orders(id, fso_number, source_order_number, design_no, design_name)')
+        .eq('allotted_order_id', order.id)
+        .in('status', ['allotted', 'dispatched']);
+      if (data) setStockRolls(data);
+    }
+    fetchStockRolls();
+  }, [order?.id]);
+
+  const stockGreigeRolls = useMemo(() => {
+    return stockRolls.filter(r => r.roll_type === 'greige');
+  }, [stockRolls]);
+
   const productionQty = order.technical_specs?.production_quantity || order.total_quantity || '—';
 
   const totalDailyLogs = useMemo(() => {
@@ -1242,8 +1267,9 @@ function TabInspection({ order }) {
       );
       sum += greigeRolls.reduce((acc, r) => acc + parseFloat(r.qty || 0), 0);
     });
-    return sum;
-  }, [weavingOrders]);
+    const stockGreigeSum = stockGreigeRolls.reduce((acc, r) => acc + parseFloat(r.actual_meters || r.meters || 0), 0);
+    return sum + stockGreigeSum;
+  }, [weavingOrders, stockGreigeRolls]);
 
   const totalFourPointQty = useMemo(() => {
     let sum = 0;
@@ -1255,8 +1281,13 @@ function TabInspection({ order }) {
       );
       sum += inspectedRolls.reduce((acc, r) => acc + parseFloat(r.actual_qty || r.actual_length || 0), 0);
     });
+
+    stockGreigeRolls.forEach(s => {
+      sum += parseFloat(s.actual_meters || s.meters || 0);
+    });
+
     return sum;
-  }, [weavingOrders]);
+  }, [weavingOrders, stockGreigeRolls]);
 
   const totalWashedGreigeActualQty = useMemo(() => {
     let sum = 0;
@@ -1264,16 +1295,6 @@ function TabInspection({ order }) {
       const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
       const receivedRolls = rolls.filter(r => r.washed_inspected === true || r.status === 'received_from_processing');
       sum += receivedRolls.reduce((acc, r) => acc + parseFloat(r.actual_qty || r.actual_length || r.qty || 0), 0);
-    });
-    return sum;
-  }, [weavingOrders]);
-
-  const totalWashedInspectionQty = useMemo(() => {
-    let sum = 0;
-    weavingOrders.forEach(wv => {
-      const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
-      const inspectedRolls = rolls.filter(r => r.washed_inspected === true);
-      sum += inspectedRolls.reduce((acc, r) => acc + parseFloat(r.washed_actual_qty || r.actual_qty || 0), 0);
     });
     return sum;
   }, [weavingOrders]);
@@ -1288,8 +1309,62 @@ function TabInspection({ order }) {
         }
       });
     });
+
+    stockRolls.forEach(s => {
+      const isWashedInspected = s.metadata?.washed_inspected === true || s.metadata?.washed_inspected_at || s.roll_type === 'processed';
+      if (isWashedInspected) {
+        const rollId = s.original_roll_id || s.roll_id || s.id;
+        const alreadyInList = list.some(item => (item.roll.processed_roll_id || item.roll.id) === rollId);
+        if (!alreadyInList) {
+          const rollObj = {
+            id: rollId,
+            processed_roll_id: rollId,
+            qty: parseFloat(s.actual_meters || s.meters || 0),
+            actual_qty: parseFloat(s.actual_meters || s.meters || 0),
+            received_qty: parseFloat(s.actual_meters || s.meters || 0),
+            washed_inspected: true,
+            washed_inspected_at: s.metadata?.washed_inspected_at || s.updated_at,
+            washed_actual_qty: parseFloat(s.actual_meters || s.meters || 0),
+            washed_shortage: s.metadata?.washed_shortage || 0,
+            washed_width: s.metadata?.washed_width,
+            washed_lot: s.metadata?.washed_lot,
+            washed_place: s.metadata?.washed_place || 'Factory',
+            washed_inspector_1: s.metadata?.washed_inspector_1,
+            washed_inspector_2: s.metadata?.washed_inspector_2,
+            washed_total_defect_points: s.metadata?.washed_total_defect_points || 0,
+            washed_no_of_tags: s.metadata?.washed_no_of_tags || 0,
+            fso_number: s.fso_number || s.fso?.fso_number,
+            isStockRoll: true,
+            ...(s.metadata || {})
+          };
+
+          const weavingOrderObj = {
+            id: s.fso_id || 'stock-allotted',
+            weaving_number: s.fso_number || s.fso?.fso_number || 'FABRIC-STOCK',
+            partner_name: 'Fabric Stock Transfer',
+            machine_name: 'Stock',
+            order: {
+              id: order.id,
+              order_number: order.order_number,
+              design_no: order.design_no,
+              design_name: order.design_name
+            }
+          };
+
+          list.push({ roll: rollObj, weavingOrder: weavingOrderObj });
+        }
+      }
+    });
+
     return list;
-  }, [weavingOrders]);
+  }, [weavingOrders, stockRolls, order]);
+
+  const totalWashedInspectionQty = useMemo(() => {
+    return washedRollsList.reduce((acc, item) => {
+      const actQty = parseFloat(item.roll.washed_actual_qty ?? item.roll.actual_qty ?? item.roll.qty ?? 0);
+      return acc + actQty;
+    }, 0);
+  }, [washedRollsList]);
 
   const isAllWashedSelected = washedRollsList.length > 0 && washedRollsList.every(r => selectedWashedRolls[r.roll.processed_roll_id || r.roll.id]);
 
@@ -1698,9 +1773,56 @@ function TabInspection({ order }) {
             </table>
           </div>
         )}
+        {stockGreigeRolls.length > 0 && (
+            <div style={{ marginTop: '1.5rem' }}>
+              <h4 style={{ margin: '0 0 1rem 0', fontWeight: '800', fontSize: '0.95rem', color: '#6b21a8', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                📦 Fabric Stock Orders (Greige Stock Transfers)
+              </h4>
+              <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid var(--border-current)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#fcf5ff', borderBottom: '2px solid var(--border-current)', textAlign: 'left' }}>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: '#6b21a8' }}>FSO Number / Roll ID</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: '#6b21a8', textAlign: 'right' }}>Greige Qty</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: '#6b21a8', textAlign: 'right' }}>Actual Qty</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: '#6b21a8', textAlign: 'center' }}>Greige Input</th>
+                      <th style={{ padding: '0.75rem 1rem', fontWeight: '800', fontSize: '0.65rem', textTransform: 'uppercase', color: '#6b21a8', textAlign: 'center' }}>4-Point Inspection</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stockGreigeRolls.map(sRoll => {
+                      const rollId = sRoll.original_roll_id || sRoll.roll_id || sRoll.id;
+                      const fsoNo = sRoll.fso_number || sRoll.fso?.fso_number || 'FSO-STOCK';
+                      const meters = parseFloat(sRoll.meters || 0);
+                      const actualMeters = parseFloat(sRoll.actual_meters || sRoll.meters || 0);
+                      
+                      return (
+                        <tr key={sRoll.id} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: 'white' }}>
+                          <td style={{ padding: '0.65rem 1rem', fontWeight: '600', color: 'var(--text-current)', fontFamily: 'monospace' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{ fontSize: '0.7rem', backgroundColor: '#f3e8ff', color: '#6b21a8', padding: '2px 6px', borderRadius: '4px', fontWeight: '800' }}>{fsoNo}</span>
+                              <span>Roll ID: {rollId}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.65rem 1rem', textAlign: 'right', fontWeight: '600' }}>{meters} m</td>
+                          <td style={{ padding: '0.65rem 1rem', textAlign: 'right', fontWeight: '600', color: '#800000' }}>{actualMeters} m</td>
+                          <td style={{ padding: '0.65rem 1rem', textAlign: 'center' }}>
+                            <span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: '800' }}>✔️ Stock Allotted</span>
+                          </td>
+                          <td style={{ padding: '0.65rem 1rem', textAlign: 'center' }}>
+                            <span style={{ backgroundColor: '#ecfdf5', color: '#047857', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: '800' }}>✔️ Inspected</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  ) : (
+    ) : (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
         {/* ── Top Level Metric Cards (Washed) ── */}
         <div className="grid-4-to-2" style={{ gap: '1rem', gridTemplateColumns: 'repeat(3, 1fr)' }}>
@@ -2547,6 +2669,22 @@ function TabDyeing({ order, yarnCounts, onViewDOF, onViewGYDR, onViewDYRR }) {
 function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
   const [expandedPofId, setExpandedPofId] = useState(null);
   const [expandedPofrrNo, setExpandedPofrrNo] = useState(null);
+  const [stockProcessedRolls, setStockProcessedRolls] = useState([]);
+  const [expandedStockFsoId, setExpandedStockFsoId] = useState(null);
+
+  useEffect(() => {
+    if (!order?.id) return;
+    async function fetchStockProcessedRolls() {
+      const { data } = await supabase
+        .from('fabric_stock_inventory')
+        .select('*, fso:fabric_stock_orders(id, fso_number, source_order_number, design_no, design_name)')
+        .eq('allotted_order_id', order.id)
+        .eq('roll_type', 'processed')
+        .in('status', ['allotted', 'dispatched']);
+      if (data) setStockProcessedRolls(data);
+    }
+    fetchStockProcessedRolls();
+  }, [order?.id]);
 
   // Helper to format processes into a key, e.g., 'overdye' or 'desize + zero-zero'
   const getPofProcessesKey = (pof) => {
@@ -2568,18 +2706,28 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
   }, [orderPofs]);
 
   const processKeys = useMemo(() => Object.keys(groupedPofs).sort(), [groupedPofs]);
+  const STOCK_TRANSFER_KEY = '__stock_transfer__';
+
+  const allTabs = useMemo(() => {
+    const tabs = [...processKeys];
+    if (stockProcessedRolls.length > 0) {
+      tabs.push(STOCK_TRANSFER_KEY);
+    }
+    return tabs;
+  }, [processKeys, stockProcessedRolls]);
+
   const [activeProcessTab, setActiveProcessTab] = useState(null);
 
   // Default to the first key or reset if active key is no longer available
   useEffect(() => {
-    if (processKeys.length > 0) {
-      if (!activeProcessTab || !processKeys.includes(activeProcessTab)) {
-        setActiveProcessTab(processKeys[0]);
+    if (allTabs.length > 0) {
+      if (!activeProcessTab || !allTabs.includes(activeProcessTab)) {
+        setActiveProcessTab(allTabs[0]);
       }
     } else {
       setActiveProcessTab(null);
     }
-  }, [processKeys, activeProcessTab]);
+  }, [allTabs, activeProcessTab]);
 
   const handleTabClick = (key) => {
     setActiveProcessTab(key);
@@ -2588,17 +2736,20 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
   };
 
   // Get active POFs
-  const activePofs = activeProcessTab ? (groupedPofs[activeProcessTab] || []) : [];
+  const activePofs = activeProcessTab && activeProcessTab !== STOCK_TRANSFER_KEY ? (groupedPofs[activeProcessTab] || []) : [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       
       {/* Dynamic Process Sub-Tabs UI */}
-      {processKeys.length > 0 && (
+      {allTabs.length > 0 && (
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-current)', gap: '1rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
-          {processKeys.map(key => {
+          {allTabs.map(key => {
             const isActive = activeProcessTab === key;
-            const count = groupedPofs[key].length;
+            const isStockTab = key === STOCK_TRANSFER_KEY;
+            const label = isStockTab ? 'Processed Stock Transfer' : key;
+            const count = isStockTab ? stockProcessedRolls.length : groupedPofs[key].length;
+
             return (
               <button
                 key={key}
@@ -2610,8 +2761,8 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
                   cursor: 'pointer',
                   fontSize: '0.8rem',
                   fontWeight: '800',
-                  color: isActive ? '#800000' : 'var(--text-muted-current)',
-                  borderBottom: isActive ? '2.5px solid #800000' : '2.5px solid transparent',
+                  color: isActive ? (isStockTab ? '#7c3aed' : '#800000') : 'var(--text-muted-current)',
+                  borderBottom: isActive ? `2.5px solid ${isStockTab ? '#7c3aed' : '#800000'}` : '2.5px solid transparent',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.5rem',
@@ -2620,12 +2771,12 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
                   paddingBottom: '0.75rem'
                 }}
               >
-                <span style={{ textTransform: 'capitalize' }}>{key}</span>
+                <span style={{ textTransform: isStockTab ? 'none' : 'capitalize' }}>{label}</span>
                 <span style={{
                   fontSize: '0.7rem',
                   padding: '2px 8px',
                   borderRadius: '10px',
-                  backgroundColor: isActive ? '#800000' : '#f3f4f6',
+                  backgroundColor: isActive ? (isStockTab ? '#7c3aed' : '#800000') : '#f3f4f6',
                   color: isActive ? '#fff' : 'var(--text-muted-current)',
                   fontWeight: '800',
                   transition: 'all 0.15s ease'
@@ -2638,65 +2789,199 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
         </div>
       )}
 
-      {/* ── Summary Metrics ── */}
-      {(() => {
-        let totalSentQty = 0;
-        let totalReceivedQty = 0;
-        let totalSentRolls = 0;
-        let totalReceivedRolls = 0;
+      {activeProcessTab === STOCK_TRANSFER_KEY ? (
+        <div>
+          {/* ── Summary Metrics for Stock Transfer ── */}
+          {(() => {
+            const totalStockRolls = stockProcessedRolls.length;
+            const totalStockQty = stockProcessedRolls.reduce((sum, r) => sum + parseFloat(r.actual_meters || r.meters || 0), 0);
 
-        activePofs.forEach(pof => {
-          if (pof.is_rewash) return;
-          const rolls = pof.fabric_rolls || [];
-          totalSentRolls += rolls.length;
-          totalSentQty += rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid #e9d5ff', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: '#7c3aed' }}>Total Rolls Received</span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: '850', color: '#7c3aed' }}>
+                    {totalStockRolls} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Rolls</span>
+                  </span>
+                </div>
 
-          const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
-          totalReceivedRolls += rxRolls.length;
-          totalReceivedQty += rxRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
-        });
+                <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid #e9d5ff', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: '#047857' }}>Total Qty Received</span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: '850', color: '#047857' }}>
+                    {totalStockQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
-        const overallShrinkage = totalSentQty > 0 ? ((totalSentQty - totalReceivedQty) / totalSentQty) * 100 : 0;
+          {/* ── Fabric Stock Orders Accordion ── */}
+          {(() => {
+            const fsoGroups = {};
+            stockProcessedRolls.forEach(roll => {
+              const fsoNum = roll.fso_number || roll.fso?.fso_number || 'Unknown';
+              if (!fsoGroups[fsoNum]) {
+                fsoGroups[fsoNum] = {
+                  fso: roll.fso || {},
+                  fso_number: fsoNum,
+                  rolls: []
+                };
+              }
+              fsoGroups[fsoNum].rolls.push(roll);
+            });
 
-        return (
-          <div className="stats-grid-5">
-            <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Rolls Sent</span>
-              <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
-                {totalSentRolls} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Rolls</span>
-              </span>
-            </div>
+            return (
+              <div className="no-print">
+                <h5 style={{ margin: '0 0 0.75rem 0', fontWeight: '800', fontSize: '0.85rem', color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '22px', borderRadius: '6px', backgroundColor: '#f3e8ff', color: '#7c3aed' }}>
+                    <Layers size={14} />
+                  </span>
+                  Fabric Stock Orders (Processed Stock Transfer)
+                </h5>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {Object.values(fsoGroups).map(group => {
+                    const isExpanded = expandedStockFsoId === group.fso_number;
+                    const totalMeters = group.rolls.reduce((sum, r) => sum + parseFloat(r.actual_meters || r.meters || 0), 0);
+                    return (
+                      <div key={group.fso_number} style={{
+                        border: '1px solid #e9d5ff', borderRadius: '10px', overflow: 'hidden',
+                        backgroundColor: 'white'
+                      }}>
+                        <div
+                          onClick={() => setExpandedStockFsoId(isExpanded ? null : group.fso_number)}
+                          style={{
+                            padding: '0.75rem 1rem', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '0.75rem',
+                            backgroundColor: isExpanded ? '#faf5ff' : 'white',
+                            borderBottom: isExpanded ? '1px solid #e9d5ff' : 'none'
+                          }}
+                        >
+                          {isExpanded ? <ChevronDown size={14} color="#7c3aed" /> : <ChevronRight size={14} color="#7c3aed" />}
+                          <span style={{ fontWeight: '800', fontFamily: 'monospace', color: '#7c3aed', fontSize: '0.85rem' }}>
+                            {group.fso_number}
+                          </span>
+                          <span style={{
+                            fontSize: '0.65rem', fontWeight: '700', padding: '2px 8px', borderRadius: '6px',
+                            backgroundColor: '#f3e8ff', color: '#7c3aed', border: '1px solid #e9d5ff'
+                          }}>
+                            PROCESSED STOCK TRANSFER
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginLeft: 'auto' }}>
+                            {group.rolls.length} rolls &nbsp;|&nbsp; {totalMeters.toFixed(2)} m &nbsp;|&nbsp;
+                            Source: {group.fso?.source_order_number || '—'}
+                          </span>
+                        </div>
+                        {isExpanded && (
+                          <div style={{ padding: '0.5rem 1rem' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                              <thead>
+                                <tr style={{ backgroundColor: '#faf5ff', borderBottom: '1px solid #e9d5ff' }}>
+                                  <th style={{ padding: '0.5rem', textAlign: 'left' }}>Roll ID</th>
+                                  <th style={{ padding: '0.5rem', textAlign: 'left' }}>Original POF</th>
+                                  <th style={{ padding: '0.5rem', textAlign: 'right' }}>Qty (m)</th>
+                                  <th style={{ padding: '0.5rem', textAlign: 'left' }}>Source Order</th>
+                                  <th style={{ padding: '0.5rem', textAlign: 'left' }}>Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {group.rolls.map((roll, idx) => (
+                                  <tr key={roll.id || idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                    <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontWeight: '700', color: '#800000' }}>
+                                      {roll.original_roll_id || roll.roll_id || roll.id}
+                                    </td>
+                                    <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontSize: '0.75rem', color: '#047857', fontWeight: '700' }}>
+                                      {roll.original_pof_number || '—'}
+                                    </td>
+                                    <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '700' }}>
+                                      {parseFloat(roll.actual_meters || roll.meters || 0).toFixed(2)}
+                                    </td>
+                                    <td style={{ padding: '0.5rem', fontSize: '0.75rem' }}>
+                                      {roll.original_order_number || roll.fso?.source_order_number || '—'}
+                                    </td>
+                                    <td style={{ padding: '0.5rem' }}>
+                                      <span style={{
+                                        fontSize: '0.65rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px',
+                                        backgroundColor: roll.status === 'allotted' ? '#fef3c7' : '#dcfce7',
+                                        color: roll.status === 'allotted' ? '#92400e' : '#166534'
+                                      }}>
+                                        {roll.status === 'allotted' ? 'Allotted' : roll.status}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      ) : (
+        <>
+          {/* ── Summary Metrics ── */}
+          {(() => {
+            let totalSentQty = 0;
+            let totalReceivedQty = 0;
+            let totalSentRolls = 0;
+            let totalReceivedRolls = 0;
 
-            <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Rolls Received</span>
-              <span style={{ fontSize: '1.5rem', fontWeight: '850', color: '#047857' }}>
-                {totalReceivedRolls} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Rolls</span>
-              </span>
-            </div>
+            activePofs.forEach(pof => {
+              if (pof.is_rewash) return;
+              const rolls = pof.fabric_rolls || [];
+              totalSentRolls += rolls.length;
+              totalSentQty += rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
 
-            <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Qty Sent</span>
-              <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
-                {totalSentQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
-              </span>
-            </div>
+              const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+              totalReceivedRolls += rxRolls.length;
+              totalReceivedQty += rxRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+            });
 
-            <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Qty Received</span>
-              <span style={{ fontSize: '1.5rem', fontWeight: '850', color: '#047857' }}>
-                {totalReceivedQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
-              </span>
-            </div>
+            const overallShrinkage = totalSentQty > 0 ? ((totalSentQty - totalReceivedQty) / totalSentQty) * 100 : 0;
 
-            <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Overall Shrinkage</span>
-              <span style={{ fontSize: '1.5rem', fontWeight: '850', color: overallShrinkage > 0 ? '#b45309' : '#047857' }}>
-                {totalSentQty > 0 ? `${overallShrinkage.toFixed(2)}%` : '—'}
-              </span>
-            </div>
-          </div>
-        );
-      })()}
+            return (
+              <div className="stats-grid-5">
+                <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Rolls Sent</span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
+                    {totalSentRolls} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Rolls</span>
+                  </span>
+                </div>
+
+                <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Rolls Received</span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: '850', color: '#047857' }}>
+                    {totalReceivedRolls} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Rolls</span>
+                  </span>
+                </div>
+
+                <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Qty Sent</span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: '850', color: 'var(--text-current)' }}>
+                    {totalSentQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
+                  </span>
+                </div>
+
+                <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Total Qty Received</span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: '850', color: '#047857' }}>
+                    {totalReceivedQty.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-muted-current)' }}>Mtrs</span>
+                  </span>
+                </div>
+
+                <div style={{ padding: '1.25rem', backgroundColor: '#fdfdfd', border: '1px solid var(--border-current)', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: '800', color: 'var(--text-muted-current)' }}>Overall Shrinkage</span>
+                  <span style={{ fontSize: '1.5rem', fontWeight: '850', color: overallShrinkage > 0 ? '#b45309' : '#047857' }}>
+                    {totalSentQty > 0 ? `${overallShrinkage.toFixed(2)}%` : '—'}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
       {/* ── Details Table ── */}
       <div>
@@ -2909,28 +3194,46 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {rolls.map(roll => {
-                                        const rxRolls = receivedRolls.filter(rx => isGreigeRollMatch(rx.greige_roll_id, roll.id));
-                                        if (rxRolls.length === 0) {
-                                          return (
-                                            <tr key={roll.id} style={{ borderBottom: '1px solid #eee' }}>
-                                              <td style={{ padding: '0.4rem 0.25rem', color: '#9ca3af', fontFamily: 'monospace' }}>{roll.id} (Pending)</td>
-                                              <td style={{ padding: '0.4rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}>—</td>
-                                            </tr>
-                                          );
-                                        }
+                                      {(() => {
+                                        const isFullyReceived = pof.status === 'received';
+                                        const renderedRows = [];
 
-                                        return rxRolls.map((rxRoll, idx) => {
+                                        // 1. Render all actual received processed rolls
+                                        receivedRolls.forEach((rxRoll, idx) => {
                                           const recdQty = parseFloat(rxRoll.qty || 0);
-                                          
-                                          return (
-                                            <tr key={`${roll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
+                                          renderedRows.push(
+                                            <tr key={`rx-${rxRoll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
                                               <td style={{ padding: '0.4rem 0.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>{rxRoll.id}</td>
                                               <td style={{ padding: '0.4rem 0.25rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{recdQty.toFixed(2)} m</td>
                                             </tr>
                                           );
                                         });
-                                      })}
+
+                                        // 2. If POF is not fully received, render sent rolls that have not been received yet
+                                        if (!isFullyReceived) {
+                                          rolls.forEach(roll => {
+                                            const isMatched = receivedRolls.some(rx => isGreigeRollMatch(rx.greige_roll_id, roll.id) || (rx.id && isGreigeRollMatch(rx.id, roll.id)));
+                                            if (!isMatched) {
+                                              renderedRows.push(
+                                                <tr key={`pending-${roll.id}`} style={{ borderBottom: '1px solid #eee' }}>
+                                                  <td style={{ padding: '0.4rem 0.25rem', color: '#9ca3af', fontFamily: 'monospace' }}>{roll.id} (Pending)</td>
+                                                  <td style={{ padding: '0.4rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}>—</td>
+                                                </tr>
+                                              );
+                                            }
+                                          });
+                                        }
+
+                                        if (renderedRows.length === 0) {
+                                          return (
+                                            <tr>
+                                              <td colSpan="2" style={{ padding: '0.5rem 0.25rem', color: '#9ca3af', textAlign: 'center' }}>No rolls received yet</td>
+                                            </tr>
+                                          );
+                                        }
+
+                                        return renderedRows;
+                                      })()}
                                     </tbody>
                                   </table>
                                 </div>
@@ -3121,7 +3424,9 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
           </div>
         )}
       </div>
-    </div>
+    </>
+  )}
+</div>
   );
 }
 
@@ -3167,6 +3472,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
   const [allDydi, setAllDydi] = useState([]);
   const [allPofs, setAllPofs] = useState([]);
   const [allBills, setAllBills] = useState([]);
+  const [allStockItems, setAllStockItems] = useState([]);
   
   // Collapsible Filters State
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
@@ -3249,8 +3555,8 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      // Fetch Masters for display names and all DOFs/Receipts/WOFs/SOFs/Weaving orders/DYDR deliveries/Bills
-      const [yarnRes, brandRes, dofsRes, dyrrsRes, partnersRes, wofsRes, sofsRes, wvofsRes, dydiRes, pofsRes, billsRes] = await Promise.all([
+      // Fetch Masters for display names and all DOFs/Receipts/WOFs/SOFs/Weaving orders/DYDR deliveries/Bills/Stock Items
+      const [yarnRes, brandRes, dofsRes, dyrrsRes, partnersRes, wofsRes, sofsRes, wvofsRes, dydiRes, pofsRes, billsRes, stockRes] = await Promise.all([
         supabase.from('master_yarn_counts').select('*'),
         supabase.from('master_brands').select('*'),
         supabase.from('dyeing_order_forms').select('id, dof_number, expected_delivery_date, order_ids, status'),
@@ -3261,7 +3567,8 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
         supabase.from('weaving_orders').select('id, weaving_number, order_id, status, start_date, end_date, process_started_at, process_completed_at, updated_at, weft_allotments, fabric_rolls, production_logs'),
         supabase.from('dyed_yarn_delivery_items').select('id, production_form_id, quantity_kg, process_type, order_id'),
         supabase.from('processing_orders').select('*'),
-        supabase.from('dispatch_bills').select('id, order_id, items, qty')
+        supabase.from('dispatch_bills').select('id, order_id, items, qty'),
+        supabase.from('fabric_stock_inventory').select('*').in('status', ['allotted', 'dispatched'])
       ]);
       setYarnCounts(yarnRes.data || []);
       setBrands(brandRes.data || []);
@@ -3274,6 +3581,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
       setAllDydi(dydiRes.data || []);
       setAllPofs(pofsRes.data || []);
       setAllBills(billsRes.data || []);
+      setAllStockItems(stockRes.data || []);
 
       let query = supabase
         .from('orders')
@@ -3806,6 +4114,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
                 orderDydis={orderDydis}
                 allPofs={allPofs}
                 orderBills={orderBills}
+                allStockItems={allStockItems}
                 onRefresh={() => setRefreshTrigger(prev => prev + 1)}
               />
             );
@@ -3956,6 +4265,10 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
                   const greigeRolls = rolls.filter(r => r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing');
                   totalGreigeInputQty += greigeRolls.reduce((acc, r) => acc + parseFloat(r.qty || 0), 0);
                 });
+                const stockGreigeSum = (allStockItems || [])
+                  .filter(item => item.allotted_order_id === order.id && item.roll_type === 'greige')
+                  .reduce((acc, item) => acc + parseFloat(item.actual_meters || item.meters || 0), 0);
+                totalGreigeInputQty += stockGreigeSum;
 
                 const orderBills = allBills.filter(b => b.order_id === order.id || (Array.isArray(b.items) && b.items.some(item => item.order_id === order.id)));
                 const totalDispatchedQty = orderBills.reduce((sum, b) => {
@@ -5674,7 +5987,19 @@ function CreatePIModal({ order, partners, yarnCounts, pi, onClose, onSuccess }) 
   );
   
   const [hsnCode, setHsnCode] = useState(pi ? (pi.hsn_code || '') : '');
+  const [uom, setUom] = useState(pi ? (pi.uom || 'Meters') : 'Meters');
   const [qty, setQty] = useState(pi ? pi.qty : (order.total_quantity || specs.production_quantity || 0));
+
+  const handleUomChange = (newUom) => {
+    if (newUom === uom) return;
+    const numQty = parseFloat(qty) || 0;
+    if (newUom === 'Yards' && uom === 'Meters') {
+      setQty(Number((numQty * 1.09361).toFixed(2)).toString());
+    } else if (newUom === 'Meters' && uom === 'Yards') {
+      setQty(Number((numQty / 1.09361).toFixed(2)).toString());
+    }
+    setUom(newUom);
+  };
   const [rate, setRate] = useState(pi ? pi.rate : '');
   const [discountPercent, setDiscountPercent] = useState(pi ? pi.discount_percent : '0');
   
@@ -5916,6 +6241,7 @@ function CreatePIModal({ order, partners, yarnCounts, pi, onClose, onSuccess }) 
         shipped_to_state_code: shippedToStateCode || null,
         
         hsn_code: hsnCode,
+        uom: uom,
         qty: parsedQty,
         rate: parsedRate,
         discount_percent: parsedDiscountP,
@@ -6186,8 +6512,8 @@ function CreatePIModal({ order, partners, yarnCounts, pi, onClose, onSuccess }) 
                     <th style={{ padding: '0.75rem 0.5rem' }}>Count</th>
                     <th style={{ padding: '0.75rem 0.5rem' }}>Construction</th>
                     <th style={{ padding: '0.75rem 0.5rem', width: '100px' }}>HSN Code</th>
-                    <th style={{ padding: '0.75rem 0.5rem', width: '90px' }}>UOM</th>
-                    <th style={{ padding: '0.75rem 0.5rem', width: '100px' }}>Qty (Mtrs)</th>
+                    <th style={{ padding: '0.75rem 0.5rem', width: '100px' }}>UOM</th>
+                    <th style={{ padding: '0.75rem 0.5rem', width: '100px' }}>Qty ({uom})</th>
                     <th style={{ padding: '0.75rem 0.5rem', width: '100px' }}>Rate (₹)</th>
                     <th style={{ padding: '0.75rem 0.5rem', width: '80px' }}>Disc %</th>
                   </tr>
@@ -6202,7 +6528,17 @@ function CreatePIModal({ order, partners, yarnCounts, pi, onClose, onSuccess }) 
                     <td style={{ padding: '0.5rem 0.25rem' }}>
                       <input type="text" className="input-field" style={{ padding: '0.35rem', fontSize: '0.8rem' }} value={hsnCode} onChange={e => setHsnCode(e.target.value)} placeholder="HSN" required />
                     </td>
-                    <td style={{ padding: '0.75rem 0.5rem' }}>METER</td>
+                    <td style={{ padding: '0.5rem 0.25rem' }}>
+                      <select 
+                        className="input-field" 
+                        style={{ padding: '0.35rem', fontSize: '0.8rem', fontWeight: 'bold' }} 
+                        value={uom} 
+                        onChange={e => handleUomChange(e.target.value)}
+                      >
+                        <option value="Meters">Meters</option>
+                        <option value="Yards">Yards</option>
+                      </select>
+                    </td>
                     <td style={{ padding: '0.5rem 0.25rem' }}>
                       <input type="number" className="input-field" style={{ padding: '0.35rem', fontSize: '0.8rem' }} value={qty} onChange={e => setQty(e.target.value)} placeholder="Qty" required />
                     </td>
@@ -6590,7 +6926,7 @@ function PrintPIModal({ pi, onClose }) {
                   <strong>Construction:</strong> {pi.construction || '—'}
                 </td>
                 <td style={{ padding: '0.5rem 0.4rem' }}>{pi.hsn_code}</td>
-                <td style={{ padding: '0.5rem 0.4rem' }}>METER</td>
+                <td style={{ padding: '0.5rem 0.4rem' }}>{(pi.uom || 'Meters').toUpperCase()}</td>
                 <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{Number(pi.qty).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                 <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{Number(pi.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                 <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>{pi.discount_percent}%</td>

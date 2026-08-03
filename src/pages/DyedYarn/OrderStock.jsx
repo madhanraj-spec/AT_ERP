@@ -2361,28 +2361,46 @@ function TabProcessing({ order, orderPofs, onViewPOF, onViewPOFRR }) {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {rolls.map(roll => {
-                                        const rxRolls = receivedRolls.filter(rx => isGreigeRollMatch(rx.greige_roll_id, roll.id));
-                                        if (rxRolls.length === 0) {
-                                          return (
-                                            <tr key={roll.id} style={{ borderBottom: '1px solid #eee' }}>
-                                              <td style={{ padding: '0.4rem 0.25rem', color: '#9ca3af', fontFamily: 'monospace' }}>{roll.id} (Pending)</td>
-                                              <td style={{ padding: '0.4rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}>—</td>
-                                            </tr>
-                                          );
-                                        }
+                                      {(() => {
+                                        const isFullyReceived = pof.status === 'received';
+                                        const renderedRows = [];
 
-                                        return rxRolls.map((rxRoll, idx) => {
+                                        // 1. Render all actual received processed rolls
+                                        receivedRolls.forEach((rxRoll, idx) => {
                                           const recdQty = parseFloat(rxRoll.qty || 0);
-                                          
-                                          return (
-                                            <tr key={`${roll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
+                                          renderedRows.push(
+                                            <tr key={`rx-${rxRoll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
                                               <td style={{ padding: '0.4rem 0.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>{rxRoll.id}</td>
                                               <td style={{ padding: '0.4rem 0.25rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>{recdQty.toFixed(2)} m</td>
                                             </tr>
                                           );
                                         });
-                                      })}
+
+                                        // 2. If POF is not fully received, render sent rolls that have not been received yet
+                                        if (!isFullyReceived) {
+                                          rolls.forEach(roll => {
+                                            const isMatched = receivedRolls.some(rx => isGreigeRollMatch(rx.greige_roll_id, roll.id) || (rx.id && isGreigeRollMatch(rx.id, roll.id)));
+                                            if (!isMatched) {
+                                              renderedRows.push(
+                                                <tr key={`pending-${roll.id}`} style={{ borderBottom: '1px solid #eee' }}>
+                                                  <td style={{ padding: '0.4rem 0.25rem', color: '#9ca3af', fontFamily: 'monospace' }}>{roll.id} (Pending)</td>
+                                                  <td style={{ padding: '0.4rem 0.25rem', textAlign: 'right', color: '#9ca3af' }}>—</td>
+                                                </tr>
+                                              );
+                                            }
+                                          });
+                                        }
+
+                                        if (renderedRows.length === 0) {
+                                          return (
+                                            <tr>
+                                              <td colSpan="2" style={{ padding: '0.5rem 0.25rem', color: '#9ca3af', textAlign: 'center' }}>No rolls received yet</td>
+                                            </tr>
+                                          );
+                                        }
+
+                                        return renderedRows;
+                                      })()}
                                     </tbody>
                                   </table>
                                 </div>

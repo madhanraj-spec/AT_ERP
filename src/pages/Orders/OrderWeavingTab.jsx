@@ -132,6 +132,8 @@ function OrderWeavingTab({ order }) {
   const [selectedDydr, setSelectedDydr] = useState(null);
   const [expandedYarnKeys, setExpandedYarnKeys] = useState(new Set());
   const [expandedFormKeys, setExpandedFormKeys] = useState(new Set());
+  const [stockGreigeRolls, setStockGreigeRolls] = useState([]);
+  const [expandedFsoId, setExpandedFsoId] = useState(null);
 
   const handleToggleYarnExpand = (key) => {
     const next = new Set(expandedYarnKeys);
@@ -252,13 +254,16 @@ function OrderWeavingTab({ order }) {
   }, [wvofs]);
 
   const totalGreigeInputQty = React.useMemo(() => {
-    return wvofs.reduce((sum, wv) => {
+    const wvofGreigeTotal = wvofs.reduce((sum, wv) => {
       const rolls = Array.isArray(wv.fabric_rolls) ? wv.fabric_rolls : [];
       const greigeRolls = rolls.filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
       const rollsSum = greigeRolls.reduce((rollSum, r) => rollSum + (parseFloat(r.qty) || 0), 0);
       return sum + rollsSum;
     }, 0);
-  }, [wvofs]);
+    // Add stock-allotted greige rolls
+    const stockGreigeTotal = stockGreigeRolls.reduce((sum, r) => sum + parseFloat(r.meters || 0), 0);
+    return wvofGreigeTotal + stockGreigeTotal;
+  }, [wvofs, stockGreigeRolls]);
 
   const minMaxDates = React.useMemo(() => {
     if (wvofs.length === 0) return { start: null, end: null, dates: [] };
@@ -409,6 +414,15 @@ function OrderWeavingTab({ order }) {
       if (!wvError && weavingData) {
         setWvofs(weavingData);
       }
+
+      // 4. Fetch allotted greige stock rolls for this order
+      const { data: stockData } = await supabase
+        .from('fabric_stock_inventory')
+        .select('*, fso:fabric_stock_orders(id, fso_number, source_order_number, design_no, design_name)')
+        .eq('allotted_order_id', order.id)
+        .eq('roll_type', 'greige')
+        .in('status', ['allotted', 'dispatched']);
+      setStockGreigeRolls(stockData || []);
     } catch (err) {
       console.error('Error fetching Weaving tab data:', err);
     } finally {
@@ -1505,6 +1519,113 @@ function OrderWeavingTab({ order }) {
                   </div>
                 )}
               </div>
+
+              {/* ─── Fabric Stock Orders (allotted greige from stock inventory) ─── */}
+              {stockGreigeRolls.length > 0 && (() => {
+                // Group by FSO
+                const fsoGroups = {};
+                stockGreigeRolls.forEach(roll => {
+                  const fsoNum = roll.fso_number || roll.fso?.fso_number || 'Unknown';
+                  if (!fsoGroups[fsoNum]) {
+                    fsoGroups[fsoNum] = {
+                      fso: roll.fso || {},
+                      fso_number: fsoNum,
+                      rolls: []
+                    };
+                  }
+                  fsoGroups[fsoNum].rolls.push(roll);
+                });
+
+                return (
+                  <div className="no-print" style={{ marginTop: '2rem' }}>
+                    <h5 style={{ margin: '0 0 0.75rem 0', fontWeight: '800', fontSize: '0.85rem', color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '22px', borderRadius: '6px', backgroundColor: '#f3e8ff', color: '#7c3aed' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                      </span>
+                      Fabric Stock Orders (Greige Stock Transfer)
+                    </h5>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {Object.values(fsoGroups).map(group => {
+                        const isExpanded = expandedFsoId === group.fso_number;
+                        const totalMeters = group.rolls.reduce((sum, r) => sum + parseFloat(r.meters || 0), 0);
+                        return (
+                          <div key={group.fso_number} style={{
+                            border: '1px solid #e9d5ff', borderRadius: '10px', overflow: 'hidden',
+                            backgroundColor: 'white'
+                          }}>
+                            <div
+                              onClick={() => setExpandedFsoId(isExpanded ? null : group.fso_number)}
+                              style={{
+                                padding: '0.75rem 1rem', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '0.75rem',
+                                backgroundColor: isExpanded ? '#faf5ff' : 'white',
+                                borderBottom: isExpanded ? '1px solid #e9d5ff' : 'none'
+                              }}
+                            >
+                              {isExpanded ? <ChevronDown size={14} color="#7c3aed" /> : <ChevronRight size={14} color="#7c3aed" />}
+                              <span style={{ fontWeight: '800', fontFamily: 'monospace', color: '#7c3aed', fontSize: '0.85rem' }}>
+                                {group.fso_number}
+                              </span>
+                              <span style={{
+                                fontSize: '0.65rem', fontWeight: '700', padding: '2px 8px', borderRadius: '6px',
+                                backgroundColor: '#f3e8ff', color: '#7c3aed', border: '1px solid #e9d5ff'
+                              }}>
+                                STOCK TRANSFER
+                              </span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginLeft: 'auto' }}>
+                                {group.rolls.length} rolls &nbsp;|&nbsp; {totalMeters.toFixed(2)} m &nbsp;|&nbsp;
+                                Source: {group.fso?.source_order_number || '—'}
+                              </span>
+                            </div>
+                            {isExpanded && (
+                              <div style={{ padding: '0.5rem 1rem' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                                  <thead>
+                                    <tr style={{ backgroundColor: '#faf5ff', borderBottom: '1px solid #e9d5ff' }}>
+                                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Roll ID</th>
+                                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Original WVOF</th>
+                                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Qty (m)</th>
+                                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Source Order</th>
+                                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {group.rolls.map((roll, idx) => (
+                                      <tr key={roll.id || idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                        <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontWeight: '700', color: '#800000' }}>
+                                          {roll.original_roll_id}
+                                        </td>
+                                        <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                                          {roll.original_wvof_number || '—'}
+                                        </td>
+                                        <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '700' }}>
+                                          {parseFloat(roll.meters || 0).toFixed(2)}
+                                        </td>
+                                        <td style={{ padding: '0.5rem', fontSize: '0.75rem' }}>
+                                          {roll.original_order_number || '—'}
+                                        </td>
+                                        <td style={{ padding: '0.5rem' }}>
+                                          <span style={{
+                                            fontSize: '0.65rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px',
+                                            backgroundColor: roll.status === 'allotted' ? '#fef3c7' : '#dcfce7',
+                                            color: roll.status === 'allotted' ? '#92400e' : '#166534'
+                                          }}>
+                                            {roll.status === 'allotted' ? 'Allotted' : roll.status}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

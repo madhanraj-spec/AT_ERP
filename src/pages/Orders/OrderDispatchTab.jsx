@@ -215,10 +215,10 @@ export default function OrderDispatchTab({ order }) {
     return bill;
   };
 
-  const handleGenerateEInvoice = async (bill) => {
+  const handleGenerateEInvoice = async (bill, options = {}) => {
     try {
       setGeneratingEInvId(bill.id);
-      const res = await createEInvoice(bill);
+      const res = await createEInvoice(bill, options);
       if (res.success) {
         alert(`E-Invoice generated successfully!\nIRN: ${res.irn}`);
         await fetchDispatchData();

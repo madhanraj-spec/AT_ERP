@@ -44,6 +44,7 @@ import WashedInspection from './pages/Inspection/WashedInspection';
 import InspectionReport from './pages/Inspection/InspectionReport';
 import ProcessingModule from './pages/Processing/ProcessingModule';
 import DispatchModule from './pages/Dispatch/DispatchModule';
+import FabricStockInventory from './pages/Production/FabricStockInventory';
 import { Loader } from 'lucide-react';
 import EwayBillDashboard from './pages/EwayBill/EwayBillDashboard';
 
@@ -142,6 +143,7 @@ function AppRoutes() {
               <Route path="report" element={<InspectionReport />} />
             </Route>
             <Route path="/processing" element={<ProcessingModule />} />
+            <Route path="/fabric-stock" element={<FabricStockInventory />} />
             <Route path="/dispatch" element={<DispatchModule />} />
             <Route path="/eway-bill" element={<EwayBillDashboard />} />
             {/* Masters Routing */}

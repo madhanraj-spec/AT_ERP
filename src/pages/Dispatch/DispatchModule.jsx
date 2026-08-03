@@ -25,7 +25,8 @@ import {
   QrCode,
   RefreshCw,
   XCircle,
-  HelpCircle
+  HelpCircle,
+  Settings
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { createEInvoice, cancelEInvoice } from '../../utils/whitebooks';
@@ -379,26 +380,186 @@ function PackageSlipForm({ onBack, editSlipId }) {
     setIsLoading(true);
 
     try {
-      const duplicate = addedRolls.some(r => r.roll_id.toLowerCase() === targetId.toLowerCase());
+      // 1. Check duplicate within current form session
+      const duplicate = addedRolls.some(r => r.roll_id.trim().toLowerCase() === targetId.toLowerCase());
       if (duplicate) {
         setError(`Roll "${targetId}" is already added to this package slip.`);
         setIsLoading(false);
         return;
       }
 
+      // 2. MUST-HAVE VALIDATION: Check if roll is already included in ANY saved package slip in DB
+      const { data: existingSlips } = await supabase
+        .from('dispatch_package_slips')
+        .select('id, slip_number, status, items');
+
+      if (existingSlips) {
+        for (const slip of existingSlips) {
+          if (editSlipId && slip.id === editSlipId) continue;
+          const slipItems = Array.isArray(slip.items) ? slip.items : [];
+          const matchedItem = slipItems.find(item =>
+            (item.roll_id || '').trim().toLowerCase() === targetId.toLowerCase()
+          );
+          if (matchedItem) {
+            const slipState = slip.status === 'dispatched' ? 'Dispatched' : (slip.status === 'invoiced' ? 'Invoiced / Billed' : 'Package Slip Created');
+            setError(`Roll "${targetId}" is already included in Package Slip "${slip.slip_number}" (${slipState}). It cannot be added to another package slip.`);
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+
       let foundRoll = null;
       let foundOrder = null;
 
+      // Source 1: Search weaving_orders fabric_rolls
       for (const wo of allWeavingOrders) {
         const rolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
         const match = rolls.find(r =>
-          (r.processed_roll_id && r.processed_roll_id.toLowerCase() === targetId.toLowerCase()) ||
-          (r.id && r.id.toLowerCase() === targetId.toLowerCase())
+          (r.processed_roll_id && r.processed_roll_id.trim().toLowerCase() === targetId.toLowerCase()) ||
+          (r.id && r.id.trim().toLowerCase() === targetId.toLowerCase())
         );
         if (match) {
           foundRoll = match;
           foundOrder = wo;
           break;
+        }
+      }
+
+      // Source 2: Search processing_orders received_rolls
+      if (!foundRoll) {
+        const { data: pofsData } = await supabase
+          .from('processing_orders')
+          .select('*, order:orders(id, order_number, design_no, design_name, buyer_po_number, avg_weight_meter, technical_specs, vendor_id)');
+
+        if (pofsData) {
+          for (const pof of pofsData) {
+            const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+            const rxMatch = rxRolls.find(rx =>
+              (rx.id && rx.id.trim().toLowerCase() === targetId.toLowerCase()) ||
+              (rx.processed_roll_id && rx.processed_roll_id.trim().toLowerCase() === targetId.toLowerCase()) ||
+              (rx.roll_id && rx.roll_id.trim().toLowerCase() === targetId.toLowerCase())
+            );
+            if (rxMatch) {
+              foundRoll = {
+                id: rxMatch.processed_roll_id || rxMatch.id,
+                processed_roll_id: rxMatch.processed_roll_id || rxMatch.id,
+                washed_inspected: rxMatch.washed_inspected === true || rxMatch.status === 'washed_inspected' || rxMatch.status === 'completed' || pof.status === 'completed',
+                washed_actual_qty: parseFloat(rxMatch.washed_actual_qty || rxMatch.qty || rxMatch.actual_meters || 0)
+              };
+              foundOrder = {
+                order_id: pof.order_id || pof.orders?.id,
+                order: pof.orders || {
+                  order_number: pof.order_number
+                }
+              };
+              break;
+            }
+          }
+        }
+      }
+
+      // Source 3: Search fabric_stock_inventory
+      if (!foundRoll) {
+        const { data: stockMatch } = await supabase
+          .from('fabric_stock_inventory')
+          .select('*, allotted_order:orders!allotted_order_id(*)')
+          .or(`original_roll_id.ilike.${targetId},id.eq.${targetId},roll_id.ilike.${targetId}`)
+          .maybeSingle();
+
+        if (stockMatch) {
+          if (stockMatch.status === 'dispatched') {
+            setError(`Roll "${targetId}" is already marked as Dispatched in fabric stock inventory.`);
+            setIsLoading(false);
+            return;
+          }
+          foundRoll = {
+            id: stockMatch.original_roll_id || stockMatch.roll_id || stockMatch.id,
+            processed_roll_id: stockMatch.original_roll_id || stockMatch.roll_id || stockMatch.id,
+            washed_inspected: stockMatch.metadata?.washed_inspected === true || stockMatch.status === 'allotted' || stockMatch.status === 'available',
+            washed_actual_qty: parseFloat(stockMatch.actual_meters || stockMatch.meters || 0),
+            isStockRoll: true,
+            stockInventoryId: stockMatch.id
+          };
+          foundOrder = {
+            order_id: stockMatch.allotted_order_id,
+            order: stockMatch.allotted_order || {
+              order_number: stockMatch.allotted_order_number,
+              design_no: stockMatch.allotted_design_no,
+              design_name: stockMatch.allotted_design_name
+            }
+          };
+        }
+      }
+
+      // Extract order number from roll ID (e.g. AT/2026/B/00002/P2/00016 -> AT/2026/B/00002)
+      const rollIdStr = targetId.toUpperCase().trim();
+      let extractedOrderNo = '';
+      if (rollIdStr.includes('/P')) {
+        extractedOrderNo = rollIdStr.split('/P')[0];
+      } else {
+        const parts = rollIdStr.split('/');
+        if (parts.length >= 4) extractedOrderNo = parts.slice(0, -1).join('/');
+      }
+
+      if (extractedOrderNo) {
+        const currentOrderNo = (foundOrder?.order?.order_number || '').toUpperCase().trim();
+        if (!foundOrder || extractedOrderNo !== currentOrderNo) {
+          const { data: correctOrder } = await supabase
+            .from('orders')
+            .select('*, master_brands(brand_name)')
+            .ilike('order_number', extractedOrderNo)
+            .maybeSingle();
+
+          if (correctOrder) {
+            foundOrder = {
+              order_id: correctOrder.id,
+              order: correctOrder
+            };
+          }
+        }
+      }
+
+      // Cross-check washed inspection status across processing_orders and stock inventory if needed
+      if (foundRoll && foundRoll.washed_inspected !== true) {
+        try {
+          const { data: pofsCheck } = await supabase
+            .from('processing_orders')
+            .select('received_rolls');
+          if (pofsCheck) {
+            for (const pof of pofsCheck) {
+              const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+              const rxMatch = rxRolls.find(rx => 
+                (rx.id && rx.id.trim().toLowerCase() === targetId.toLowerCase()) ||
+                (rx.processed_roll_id && rx.processed_roll_id.trim().toLowerCase() === targetId.toLowerCase()) ||
+                (rx.roll_id && rx.roll_id.trim().toLowerCase() === targetId.toLowerCase())
+              );
+              if (rxMatch && (rxMatch.washed_inspected === true || rxMatch.status === 'washed_inspected')) {
+                foundRoll.washed_inspected = true;
+                if (!foundRoll.washed_actual_qty) {
+                  foundRoll.washed_actual_qty = parseFloat(rxMatch.washed_actual_qty || rxMatch.qty || 0);
+                }
+                break;
+              }
+            }
+          }
+        } catch (pCheckErr) {
+          console.error('Error cross-checking processing_orders in Dispatch:', pCheckErr);
+        }
+
+        if (foundRoll.washed_inspected !== true) {
+          const { data: stockCheck } = await supabase
+            .from('fabric_stock_inventory')
+            .select('*')
+            .or(`original_roll_id.ilike.${targetId},id.eq.${targetId},roll_id.ilike.${targetId}`)
+            .maybeSingle();
+
+          if (stockCheck && (stockCheck.metadata?.washed_inspected === true || stockCheck.status === 'allotted' || stockCheck.status === 'available')) {
+            foundRoll.washed_inspected = true;
+            if (!foundRoll.washed_actual_qty) {
+              foundRoll.washed_actual_qty = parseFloat(stockCheck.actual_meters || stockCheck.meters || 0);
+            }
+          }
         }
       }
 
@@ -431,6 +592,15 @@ function PackageSlipForm({ onBack, editSlipId }) {
           .from('proforma_invoices')
           .select('*')
           .eq('order_id', currentOrderId);
+
+        if (piData && piData.length > 0) {
+          const firstPi = piData[0];
+          if (firstPi?.uom?.toLowerCase().includes('yard')) {
+            setDisplayUnit('yards');
+          } else if (firstPi?.uom?.toLowerCase().includes('meter')) {
+            setDisplayUnit('meters');
+          }
+        }
 
         const piNumbers = piData && piData.length > 0 ? piData.map(pi => pi.invoice_number).join(', ') : '—';
         const poNumber = foundOrder.order?.buyer_po_number || '—';
@@ -1760,10 +1930,10 @@ function BillList({ onCreateNew, onPrintInvoice, onPrintEInvoice, onPrintPacking
   const [filterDesign, setFilterDesign] = useState([]);
   const [filterBilledTo, setFilterBilledTo] = useState([]);
 
-  const handleConfirmGenerateEInvoice = async (bill) => {
+  const handleConfirmGenerateEInvoice = async (bill, options = {}) => {
     try {
       setModalLoading(true);
-      const res = await createEInvoice(bill);
+      const res = await createEInvoice(bill, options);
       if (res.success) {
         alert(`E-Invoice generated successfully!\nIRN: ${res.irn}`);
         setSelectedReviewBill(null);
@@ -2558,10 +2728,22 @@ function BillList({ onCreateNew, onPrintInvoice, onPrintEInvoice, onPrintPacking
 function ReviewEInvoiceModal({ bill, onClose, onConfirm, loading }) {
   if (!bill) return null;
 
+  const [docType, setDocType] = useState('INV');
+  const [supplyType, setSupplyType] = useState('AUTO');
+  const [regRev, setRegRev] = useState('N');
+
   const docNo = bill.bill_number || '—';
   const docDate = bill.bill_date ? formatDate(bill.bill_date) : '—';
   const billedTo = bill.billed_to_address || '—';
   const items = Array.isArray(bill.items) ? bill.items : [];
+
+  const handleConfirmClick = () => {
+    onConfirm(bill, {
+      docType,
+      supplyType: supplyType === 'AUTO' ? null : supplyType,
+      reverseCharge: regRev
+    });
+  };
 
   return (
     <div style={{
@@ -2590,7 +2772,7 @@ function ReviewEInvoiceModal({ bill, onClose, onConfirm, loading }) {
                 Review E-Invoice Details
               </h3>
               <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>
-                Verify invoice details before generating IRN via Whitebooks Sandbox API
+                Verify & configure invoice parameters before generating IRN via Whitebooks Sandbox API
               </p>
             </div>
           </div>
@@ -2605,19 +2787,71 @@ function ReviewEInvoiceModal({ bill, onClose, onConfirm, loading }) {
         {/* Content Body */}
         <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
-          {/* Document Summary Cards */}
+          {/* Document Summary & Selection Controls */}
+          <div style={{ background: '#f0f9ff', padding: '1.1rem', borderRadius: '12px', border: '1px solid #bae6fd' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#0369a1', textTransform: 'uppercase', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Settings size={15} /> E-Invoice Classification & Schema Options
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: '#334155', marginBottom: '0.25rem' }}>
+                  Document Type (DocTyp)
+                </label>
+                <select
+                  value={docType}
+                  onChange={(e) => setDocType(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', background: 'white', fontWeight: '600', color: '#0f172a' }}
+                >
+                  <option value="INV">INV - Tax Invoice (Default)</option>
+                  <option value="CRN">CRN - Credit Note (Sales Return)</option>
+                  <option value="DBN">DBN - Debit Note (Purchase Return)</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: '#334155', marginBottom: '0.25rem' }}>
+                  Supply Type (SupTyp)
+                </label>
+                <select
+                  value={supplyType}
+                  onChange={(e) => setSupplyType(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', background: 'white', fontWeight: '600', color: '#0f172a' }}
+                >
+                  <option value="AUTO">Auto Detect (B2B/B2C via GSTIN)</option>
+                  <option value="B2B">B2B - Business to Business</option>
+                  <option value="SEZWP">SEZWP - SEZ with Payment of Tax</option>
+                  <option value="SEZWOP">SEZWOP - SEZ without Payment of Tax</option>
+                  <option value="EXPWP">EXPWP - Exports with Payment of Tax</option>
+                  <option value="EXPWOP">EXPWOP - Exports without Payment of Tax</option>
+                  <option value="DEXP">DEXP - Deemed Export</option>
+                  <option value="B2C">B2C - Business to Consumer</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: '#334155', marginBottom: '0.25rem' }}>
+                  Reverse Charge (RegRev)
+                </label>
+                <select
+                  value={regRev}
+                  onChange={(e) => setRegRev(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem 0.6rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', background: 'white', fontWeight: '600', color: '#0f172a' }}
+                >
+                  <option value="N">No (Default - Standard Tax)</option>
+                  <option value="Y">Yes (Reverse Charge Applicable)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-            <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+            <div style={{ background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Invoice Number</div>
               <div style={{ fontSize: '1rem', fontWeight: '800', fontFamily: 'monospace', color: 'var(--color-primary)', marginTop: '2px' }}>{docNo}</div>
             </div>
-            <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+            <div style={{ background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Invoice Date</div>
               <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#1e293b', marginTop: '2px' }}>{docDate}</div>
-            </div>
-            <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-muted-current)', textTransform: 'uppercase' }}>Doc Type & Supply Type</div>
-              <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#1e293b', marginTop: '2px' }}>INV / B2B</div>
             </div>
           </div>
 
@@ -2746,7 +2980,7 @@ function ReviewEInvoiceModal({ bill, onClose, onConfirm, loading }) {
           </button>
 
           <button
-            onClick={() => onConfirm(bill)}
+            onClick={handleConfirmClick}
             disabled={loading}
             style={{
               padding: '0.6rem 1.5rem', borderRadius: '8px', border: 'none',
@@ -2847,9 +3081,39 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
   const [lrNo, setLrNo] = useState('');
   const [lrDate, setLrDate] = useState('');
 
-  // Pricing, Tax & Discount
   const [discountAmount, setDiscountAmount] = useState('0');
+  const [billUom, setBillUom] = useState('Meters');
   const [itemsDetails, setItemsDetails] = useState({}); // orderId -> { rate, hsn, cgst, sgst, igst }
+
+  const handleBillUomChange = (newUom) => {
+    setBillUom(newUom);
+
+    setItemsDetails(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(orderId => {
+        const item = next[orderId];
+        const baseRate = parseFloat(item?.piRate ?? item?.rate ?? 0);
+        const baseUom = item?.piUom || newUom;
+
+        if (baseRate > 0) {
+          let targetRate = baseRate;
+          if (baseUom === 'Yards' && newUom === 'Meters') {
+            targetRate = baseRate * 1.09361;
+          } else if (baseUom === 'Meters' && newUom === 'Yards') {
+            targetRate = baseRate / 1.09361;
+          } else if (baseUom === newUom) {
+            targetRate = baseRate;
+          }
+
+          next[orderId] = {
+            ...next[orderId],
+            rate: (Math.round(targetRate * 100) / 100).toFixed(2)
+          };
+        }
+      });
+      return next;
+    });
+  };
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -2874,7 +3138,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
         technical_specs,
         vendor_id,
         vendor:master_partners(id, partner_name, address, gstin),
-        proforma_invoices(id, invoice_number, invoice_date, rate, cgst_percent, sgst_percent, igst_percent, hsn_code, billed_to_name, billed_to_address, billed_to_gstin, billed_to_state, billed_to_state_code, shipped_to_name, shipped_to_address, shipped_to_gstin, shipped_to_state, shipped_to_state_code)
+        proforma_invoices(id, invoice_number, invoice_date, rate, cgst_percent, sgst_percent, igst_percent, hsn_code, uom, billed_to_name, billed_to_address, billed_to_gstin, billed_to_state, billed_to_state_code, shipped_to_name, shipped_to_address, shipped_to_gstin, shipped_to_state, shipped_to_state_code)
       `)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
@@ -2983,6 +3247,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
         sgst_percent,
         igst_percent,
         hsn_code,
+        uom,
         billed_to_name,
         billed_to_address,
         billed_to_gstin,
@@ -3003,6 +3268,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
         pis.forEach(pi => {
           piMap[pi.order_id] = {
             rate: pi.rate,
+            uom: pi.uom,
             piNumber: pi.invoice_number,
             piDate: pi.invoice_date,
             cgst: pi.cgst_percent,
@@ -3018,6 +3284,11 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
           const firstOrder = selectedOrders[0];
           const firstPi = pis.find(p => p.order_id === firstOrder.id) || pis[0];
           if (firstPi) {
+            if (firstPi.uom?.toLowerCase().includes('yard')) {
+              setBillUom('Yards');
+            } else if (firstPi.uom?.toLowerCase().includes('meter')) {
+              setBillUom('Meters');
+            }
             const piBilled = formatBilledToFromPi(firstPi);
             const piShipped = formatShippedToFromPi(firstPi);
             if (piBilled) setBilledTo(piBilled);
@@ -3037,8 +3308,12 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
               const piInfo = piMap[o.id] || {};
               const hasIgst = parseFloat(piInfo.igst || 0) > 0;
               const hasCgst = parseFloat(piInfo.cgst || 0) > 0 || parseFloat(piInfo.sgst || 0) > 0;
+              const piUomNormalized = piInfo.uom?.toLowerCase().includes('yard') ? 'Yards' : 'Meters';
+
               next[o.id] = {
                 rate: piInfo.rate !== undefined ? String(piInfo.rate) : '0.00',
+                piRate: piInfo.rate !== undefined ? parseFloat(piInfo.rate) : 0,
+                piUom: piUomNormalized,
                 hsn: piInfo.hsn || '5208',
                 cgst: hasIgst ? '0' : (piInfo.cgst !== undefined ? String(piInfo.cgst) : '2.5'),
                 sgst: hasIgst ? '0' : (piInfo.sgst !== undefined ? String(piInfo.sgst) : '2.5'),
@@ -3083,6 +3358,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
         setLrNo(bill.lr_no || '');
         setLrDate(bill.lr_date || '');
         setDiscountAmount(String(bill.discount_amount || 0));
+        setBillUom(bill.uom || 'Meters');
 
         // Reconstruct orders and itemsDetails
         const orderIds = (bill.items || []).map(i => i.order_id);
@@ -3234,15 +3510,19 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
   const totalWeight = selectedSlipsDetails.reduce((sum, s) => sum + parseFloat(s.total_weight || 0), 0);
 
   let totalGross = 0;
+  const isYards = (billUom || 'Meters').toLowerCase().includes('yard');
+
   const itemsCalculationList = selectedOrders.map(o => {
     const oSlips = availableSlips.filter(s => s.order_id === o.id && selectedSlips.includes(s.id));
-    const billedQty = oSlips.reduce((sum, s) => sum + parseFloat(s.total_qty || 0), 0);
+    const rawQtyMeters = oSlips.reduce((sum, s) => sum + parseFloat(s.total_qty || 0), 0);
+    const billedQty = isYards ? (rawQtyMeters * 1.09361) : rawQtyMeters;
     const oDetails = itemsDetails[o.id] || { rate: '0.00', hsn: '5208', cgst: '2.5', sgst: '2.5', igst: '0' };
     const amount = billedQty * parseFloat(oDetails.rate || 0);
     totalGross += amount;
 
     return {
       order: o,
+      rawQtyMeters,
       billedQty,
       rate: oDetails.rate,
       hsn: oDetails.hsn,
@@ -3342,7 +3622,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
           }))
         })),
         hsn_code: finalItemsList[0]?.hsn || '5208',
-        uom: 'Meter',
+        uom: billUom,
         qty: finalItemsList.reduce((sum, i) => sum + i.billedQty, 0),
         rate: parseFloat(finalItemsList[0]?.rate || 0),
         amount: totalGross,
@@ -3730,7 +4010,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                                 />
                                 <div>
                                   <span style={{ fontWeight: '600', fontFamily: 'monospace' }}>{s.slip_number}</span>
-                                  <span style={{ fontSize: '0.65rem', color: '#64748b', marginLeft: '5px' }}>({fmtNum(s.total_qty)} m, {s.total_rolls} r)</span>
+                                  <span style={{ fontSize: '0.65rem', color: '#64748b', marginLeft: '5px' }}>({fmtNum(s.total_qty)} m / {fmtNum(s.total_qty * 1.09361)} yds, {s.total_rolls} r)</span>
                                 </div>
                               </label>
                             );
@@ -3754,7 +4034,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                         <th style={{ padding: '0.5rem', textAlign: 'left' }}>Slip No</th>
                         <th style={{ padding: '0.5rem', textAlign: 'left' }}>Order No</th>
                         <th style={{ padding: '0.5rem', textAlign: 'right' }}>Rolls</th>
-                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Meters</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Meters / Yards</th>
                         <th style={{ padding: '0.5rem', textAlign: 'right' }}>Weight (kg)</th>
                       </tr>
                     </thead>
@@ -3766,7 +4046,9 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                             <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontWeight: '600' }}>{s.slip_number}</td>
                             <td style={{ padding: '0.5rem' }}>{order?.order_number || '—'}</td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>{s.total_rolls}</td>
-                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>{fmtNum(s.total_qty)}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>
+                              {fmtNum(s.total_qty)} m <span style={{ color: '#64748b', fontSize: '0.7rem' }}>({fmtNum(s.total_qty * 1.09361)} yds)</span>
+                            </td>
                             <td style={{ padding: '0.5rem', textAlign: 'right' }}>{fmtNum(s.total_weight, 3)}</td>
                           </tr>
                         );
@@ -3785,7 +4067,7 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                 {selectedSlips.length > 0 && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginTop: '1rem', background: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-current)', fontSize: '0.8rem', fontWeight: 'bold' }}>
                     <div>Total Rolls: {totalRolls}</div>
-                    <div style={{ textAlign: 'center' }}>Total Qty: {fmtNum(totalQty)} m</div>
+                    <div style={{ textAlign: 'center' }}>Total Qty: {fmtNum(totalQty)} m / {fmtNum(totalQty * 1.09361)} yds</div>
                     <div style={{ textAlign: 'right' }}>Total Weight: {fmtNum(totalWeight, 3)} kg</div>
                   </div>
                 )}
@@ -3993,7 +4275,16 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
         {step === 4 && (
           <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-md)' }}>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: '850', color: 'var(--color-primary)', margin: '0 0 1rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Step 4: Items, Taxes & Review</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h3 style={{ fontSize: '0.9rem', fontWeight: '850', color: 'var(--color-primary)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Step 4: Items, Taxes & Review</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={labelStyle}>Billing UOM:</span>
+                  <select value={billUom} onChange={e => handleBillUomChange(e.target.value)} style={{ ...inputStyle, width: '130px', padding: '0.35rem', fontWeight: 'bold' }}>
+                    <option value="Meters">Meters</option>
+                    <option value="Yards">Yards</option>
+                  </select>
+                </div>
+              </div>
 
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
@@ -4001,9 +4292,9 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                     <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid var(--border-current)' }}>
                       <th style={{ padding: '0.75rem', textAlign: 'left' }}>Goods Description (Order/Design/Specs)</th>
                       <th style={{ padding: '0.75rem', textAlign: 'center', width: '100px' }}>HSN</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '90px' }}>Order Qty</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '90px' }}>Billed Qty</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '110px' }}>Rate (₹/m)</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '120px' }}>Order Qty ({isYards ? 'Yds' : 'Mtrs'})</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '120px' }}>Billed Qty ({isYards ? 'Yds' : 'Mtrs'})</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right', width: '110px' }}>Rate (₹/{isYards ? 'yd' : 'm'})</th>
                       <th style={{ padding: '0.75rem', textAlign: 'right', width: '110px' }}>Gross Amt</th>
                       <th style={{ padding: '0.75rem', textAlign: 'center', width: '70px' }}>CGST %</th>
                       <th style={{ padding: '0.75rem', textAlign: 'center', width: '70px' }}>SGST %</th>
@@ -4012,33 +4303,47 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {finalItemsList.map(item => (
-                      <tr key={item.order.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '0.75rem' }}>
-                          <div style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>Order: {item.order.order_number}</div>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
-                            <div><strong>Design:</strong> {item.order.design_name || '—'} ({item.order.design_no || '—'})</div>
-                            <div><strong>Yarn Count:</strong> {getShortCountsString(item.order.technical_specs)}</div>
-                            <div><strong>Construction:</strong> {getConstruction(item.order.technical_specs)}</div>
-                            <div><strong>Width:</strong> {item.order.technical_specs?.finished_width || item.order.technical_specs?.order_width || '—'}"</div>
-                          </div>
-                        </td>
-                        <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                          <input
-                            type="text"
-                            value={item.hsn}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setItemsDetails(prev => ({
-                                ...prev,
-                                [item.order.id]: { ...(prev[item.order.id] || {}), hsn: val }
-                              }));
-                            }}
-                            style={{ ...inputStyle, textAlign: 'center', padding: '0.35rem' }}
-                          />
-                        </td>
-                        <td style={{ padding: '0.75rem', textAlign: 'right' }}>{fmtNum(item.order.total_quantity)}</td>
-                        <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-primary)' }}>{fmtNum(item.billedQty)}</td>
+                    {finalItemsList.map(item => {
+                      const rawOrderQtyMeters = parseFloat(item.order.total_quantity || 0);
+                      const displayOrderQty = isYards ? (rawOrderQtyMeters * 1.09361) : rawOrderQtyMeters;
+                      const secondaryOrderQty = isYards ? rawOrderQtyMeters : (rawOrderQtyMeters * 1.09361);
+
+                      const displayBilledQty = item.billedQty;
+                      const secondaryBilledQty = isYards ? item.rawQtyMeters : (item.rawQtyMeters * 1.09361);
+
+                      return (
+                        <tr key={item.order.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '0.75rem' }}>
+                            <div style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>Order: {item.order.order_number}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                              <div><strong>Design:</strong> {item.order.design_name || '—'} ({item.order.design_no || '—'})</div>
+                              <div><strong>Yarn Count:</strong> {getShortCountsString(item.order.technical_specs)}</div>
+                              <div><strong>Construction:</strong> {getConstruction(item.order.technical_specs)}</div>
+                              <div><strong>Width:</strong> {item.order.technical_specs?.finished_width || item.order.technical_specs?.order_width || '—'}"</div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                            <input
+                              type="text"
+                              value={item.hsn}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setItemsDetails(prev => ({
+                                  ...prev,
+                                  [item.order.id]: { ...(prev[item.order.id] || {}), hsn: val }
+                                }));
+                              }}
+                              style={{ ...inputStyle, textAlign: 'center', padding: '0.35rem' }}
+                            />
+                          </td>
+                          <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                            <div style={{ fontWeight: '600' }}>{fmtNum(displayOrderQty)} {isYards ? 'yds' : 'm'}</div>
+                            <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>({fmtNum(secondaryOrderQty)} {isYards ? 'm' : 'yds'})</div>
+                          </td>
+                          <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                            <div style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{fmtNum(displayBilledQty)} {isYards ? 'yds' : 'm'}</div>
+                            <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>({fmtNum(secondaryBilledQty)} {isYards ? 'm' : 'yds'})</div>
+                          </td>
                         <td style={{ padding: '0.5rem', textAlign: 'right' }}>
                           <input
                             type="number"
@@ -4132,7 +4437,8 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
                         </td>
                         <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 'bold', fontFamily: 'monospace' }}>₹{fmtNum(item.total)}</td>
                       </tr>
-                    ))}
+                    );
+                  })}
                   </tbody>
                 </table>
               </div>
@@ -4727,7 +5033,7 @@ export default function DispatchModule() {
                     <tr style={{ background: '#f5f5f5', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
                       <th style={{ border: '1px solid #ccc', padding: '1.5mm', textAlign: 'left' }}>S.No</th>
                       <th style={{ border: '1px solid #ccc', padding: '1.5mm', textAlign: 'left' }}>Roll / Piece ID</th>
-                      <th style={{ border: '1px solid #ccc', padding: '1.5mm', textAlign: 'right' }}>Qty (Meters)</th>
+                      <th style={{ border: '1px solid #ccc', padding: '1.5mm', textAlign: 'right' }}>Qty ({printData.uom || 'Meters'})</th>
                       <th style={{ border: '1px solid #ccc', padding: '1.5mm', textAlign: 'right' }}>Weight (kg)</th>
                     </tr>
                   </thead>
@@ -4748,7 +5054,7 @@ export default function DispatchModule() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4mm', borderTop: '1.5px solid #000', paddingTop: '2mm', marginTop: '2mm', fontSize: '11px', fontWeight: 'bold' }}>
                 <div>Total Rolls: {printData.total_rolls}</div>
-                <div style={{ textAlign: 'center' }}>Total Qty: {fmtNum(printData.total_qty)} Mtrs</div>
+                <div style={{ textAlign: 'center' }}>Total Qty: {fmtNum(printData.total_qty || printData.qty)} {(printData.uom || '').toLowerCase().includes('yard') ? 'Yds' : 'Mtrs'}</div>
                 <div style={{ textAlign: 'right' }}>Total Weight: {fmtNum(printData.total_weight, 3)} kg</div>
               </div>
 
@@ -4913,8 +5219,8 @@ export default function DispatchModule() {
                                 </div>
                               )}
                             </td>
-                            <td style={{ border: '1px solid black', padding: '1.5mm', textAlign: 'center', fontFamily: 'monospace', verticalAlign: 'top' }}>{item.hsn_code || '5208'}</td>
-                            <td style={{ border: '1px solid black', padding: '1.5mm', textAlign: 'right', fontFamily: 'monospace', verticalAlign: 'top' }}>{fmtNum(item.qty)} mtrs</td>
+                             <td style={{ border: '1px solid black', padding: '1.5mm', textAlign: 'center', fontFamily: 'monospace', verticalAlign: 'top' }}>{item.hsn_code || '5208'}</td>
+                            <td style={{ border: '1px solid black', padding: '1.5mm', textAlign: 'right', fontFamily: 'monospace', verticalAlign: 'top' }}>{fmtNum(item.qty)} {(item.uom || printData.uom || '').toLowerCase().includes('yard') ? 'yds' : 'mtrs'}</td>
                             <td style={{ border: '1px solid black', padding: '1.5mm', textAlign: 'right', fontFamily: 'monospace', verticalAlign: 'top' }}>₹{fmtNum(item.rate)}</td>
                             <td style={{ border: '1px solid black', padding: '1.5mm', textAlign: 'right', fontFamily: 'monospace', fontSize: '9.5px', verticalAlign: 'top' }}>
                               {cg > 0 ? `${cgPct}%\n(₹${fmtNum(cg)})` : '—'}
@@ -4940,7 +5246,7 @@ export default function DispatchModule() {
                           <tr style={{ fontWeight: 'bold', background: '#fafafa' }}>
                             <td colSpan={3} style={{ border: '1px solid black', padding: '1.5mm', textAlign: 'right' }}>Total</td>
                             <td style={{ border: '1px solid black', padding: '1.5mm', textAlign: 'right', fontFamily: 'monospace' }}>
-                              {fmtNum(printData.qty || (printData.items || []).reduce((sum, i) => sum + parseFloat(i.qty || 0), 0))} mtrs
+                              {fmtNum(printData.qty || (printData.items || []).reduce((sum, i) => sum + parseFloat(i.qty || 0), 0))} {(printData.uom || '').toLowerCase().includes('yard') ? 'yds' : 'mtrs'}
                             </td>
                             <td style={{ border: '1px solid black', padding: '1.5mm' }}></td>
                             <td colSpan={3} style={{ border: '1px solid black', padding: '1.5mm', textAlign: 'right', fontFamily: 'monospace' }}>

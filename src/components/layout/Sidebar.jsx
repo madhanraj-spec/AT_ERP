@@ -20,6 +20,7 @@ import {
   Users,
   Truck
 } from 'lucide-react';
+import { Archive } from 'lucide-react';
 
 const MASTER_LINKS = [
   { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -45,6 +46,7 @@ const MASTER_LINKS = [
     ]
   },
   { name: 'Processing', path: '/processing', icon: Layers },
+  { name: 'Fabric Stock Inventory', path: '/fabric-stock', icon: Archive },
   { name: 'Dispatch', path: '/dispatch', icon: Truck },
   { name: 'E-Way Bill', path: '/eway-bill', icon: Truck },
   { name: 'Masters', path: '/masters', icon: Settings },
@@ -102,6 +104,7 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
               ]
             },
             { name: 'Processing', path: '/processing', icon: Layers },
+            { name: 'Fabric Stock Inventory', path: '/fabric-stock', icon: Archive },
             { name: 'Dispatch', path: '/dispatch', icon: Truck },
             { name: 'E-Way Bill', path: '/eway-bill', icon: Truck },
             { name: 'Masters', path: '/masters', icon: Settings },
@@ -111,6 +114,7 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
           return [
             { name: 'Orders', path: '/merchandiser/orders', icon: ShoppingCart },
             { name: 'Dyeing Order Forms', path: '/merchandiser/dyeing-forms', icon: Droplet },
+            { name: 'Fabric Stock Inventory', path: '/fabric-stock', icon: Archive },
             { name: 'Masters', path: '/masters', icon: Settings }
           ];
         case 'yarn':
@@ -118,6 +122,7 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
             { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch },
             { name: 'Dyed Yarn', path: '/dyed-yarn', icon: Droplet },
             { name: 'Processing', path: '/processing', icon: Layers },
+            { name: 'Fabric Stock Inventory', path: '/fabric-stock', icon: Archive },
             { name: 'Dispatch', path: '/dispatch', icon: Truck },
             { name: 'E-Way Bill', path: '/eway-bill', icon: Truck },
             { name: 'Masters', path: '/masters', icon: Settings }
@@ -137,6 +142,7 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
             { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
             { name: 'Production Management', path: '/production', icon: Scissors },
             { name: 'Processing', path: '/processing', icon: Layers },
+            { name: 'Fabric Stock Inventory', path: '/fabric-stock', icon: Archive },
             { name: 'Dispatch', path: '/dispatch', icon: Truck },
             { name: 'Masters', path: '/masters', icon: Settings }
           ];
@@ -147,7 +153,8 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
         case 'weaving':
           return [
             { name: 'Weaving', path: '/weaving', icon: Layers },
-            { name: 'Processing', path: '/processing', icon: Layers }
+            { name: 'Processing', path: '/processing', icon: Layers },
+            { name: 'Fabric Stock Inventory', path: '/fabric-stock', icon: Archive }
           ];
         case 'inspection':
           return [

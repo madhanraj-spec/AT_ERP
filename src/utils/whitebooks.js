@@ -358,9 +358,10 @@ export async function cancelEwayBill(params) {
 /**
  * Generate E-Invoice (IRN) through Whitebooks Sandbox API
  * @param {Object} bill Dispatch Bill record from database
+ * @param {Object} [options] Custom configurations (supplyType, docType, reverseCharge)
  * @returns {Promise<Object>} Result object with status, IRN, Ack Details
  */
-export async function createEInvoice(bill) {
+export async function createEInvoice(bill, options = {}) {
   if (!bill || !bill.id) {
     throw new Error('Invalid dispatch bill record provided for E-Invoice generation.');
   }
@@ -491,7 +492,7 @@ export async function createEInvoice(bill) {
       HsnCd: String(hsn),
       Qty: qty,
       FreeQty: 0,
-      Unit: (item.uom || bill.uom || 'MTRS').toUpperCase().startsWith('M') ? 'MTRS' : 'KGS',
+      Unit: (item.uom || bill.uom || '').toUpperCase().startsWith('Y') ? 'YDS' : 'MTRS',
       UnitPrice: rate,
       TotAmt: Number((qty * rate).toFixed(2)),
       Discount: Number((item.discount_amount || 0).toFixed(2)),
@@ -548,18 +549,24 @@ export async function createEInvoice(bill) {
     };
   }
 
+  // Determine final Supply Type, Doc Type and Reverse Charge from options or defaults
+  const finalSupTyp = options.supplyType ? options.supplyType : (toGstin === 'URP' ? "B2C" : "B2B");
+  const finalDocTyp = options.docType || "INV";
+  const finalRegRev = options.reverseCharge || "N";
+  const finalIgstOnIntra = options.igstOnIntra || "N";
+
   // 5. Build Full Payload
   const payload = {
     Version: "1.1",
     TranDtls: {
       TaxSch: "GST",
-      SupTyp: toGstin === 'URP' ? "B2C" : "B2B",
-      RegRev: "N",
+      SupTyp: finalSupTyp,
+      RegRev: finalRegRev,
       EcmGstin: null,
-      IgstOnIntra: "N"
+      IgstOnIntra: finalIgstOnIntra
     },
     DocDtls: {
-      Typ: "INV",
+      Typ: finalDocTyp,
       No: cleanDocNo,
       Dt: formattedDocDate
     },

@@ -469,34 +469,12 @@ export default function Dashboard({ user }) {
   const weavingStats = useMemo(() => {
     const dbInHouseMachines = (data.machines || []).filter(m => m.scope === 'in_house');
     
-    const MOCK_AIRJET_LOOMS = [
-      { id: 'mock-aj1', machine_name: 'AJ1', scope: 'in_house' },
-      { id: 'mock-aj2', machine_name: 'AJ2', scope: 'in_house' },
-      { id: 'mock-aj3', machine_name: 'AJ3', scope: 'in_house' },
-      { id: 'mock-aj4', machine_name: 'AJ4', scope: 'in_house' },
-      { id: 'mock-aj5', machine_name: 'AJ5', scope: 'in_house' },
-    ];
-
-    const MOCK_RAPIER_LOOMS = [
-      { id: 'mock-ar1', machine_name: 'AR1', scope: 'in_house' },
-      { id: 'mock-ar2', machine_name: 'AR2', scope: 'in_house' },
-      { id: 'mock-ar3', machine_name: 'AR3', scope: 'in_house' },
-    ];
-
-    const getLooms = (dbMachines, prefix, mockList) => {
-      const dbMatch = dbMachines.filter(m => m.machine_name && m.machine_name.trim().toUpperCase().startsWith(prefix));
-      const finalMachines = [...dbMatch];
-      mockList.forEach(mock => {
-        const exists = finalMachines.some(m => m.machine_name.trim().toUpperCase() === mock.machine_name.toUpperCase());
-        if (!exists) {
-          finalMachines.push(mock);
-        }
-      });
-      return finalMachines;
+    const getLooms = (dbMachines, prefix) => {
+      return dbMachines.filter(m => m.machine_name && m.machine_name.trim().toUpperCase().startsWith(prefix));
     };
 
-    const airjetLooms = getLooms(dbInHouseMachines, 'AJ', MOCK_AIRJET_LOOMS);
-    const rapierLooms = getLooms(dbInHouseMachines, 'AR', MOCK_RAPIER_LOOMS);
+    const airjetLooms = getLooms(dbInHouseMachines, 'AJ');
+    const rapierLooms = getLooms(dbInHouseMachines, 'AR');
     const finalInHouseMachines = [...airjetLooms, ...rapierLooms];
     const totalMachines = finalInHouseMachines.length;
 
@@ -513,7 +491,7 @@ export default function Dashboard({ user }) {
         if (w.weaving_type !== 'in_house') return false;
         if (finishedStatuses.includes(w.status)) return false;
         
-        if (w.machine_id && !m.id.startsWith('mock-') && w.machine_id === m.id) {
+        if (w.machine_id && m.id && w.machine_id === m.id) {
           return true;
         }
         if (w.machine_name && m.machine_name && w.machine_name.trim().toUpperCase() === m.machine_name.trim().toUpperCase()) {

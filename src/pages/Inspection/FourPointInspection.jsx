@@ -177,6 +177,52 @@ export default function FourPointInspection() {
       }
 
       if (!foundRoll) {
+        // Fallback: check fabric_stock_inventory for allotted greige stock roll
+        const { data: stockItems } = await supabase
+          .from('fabric_stock_inventory')
+          .select('*')
+          .eq('roll_type', 'greige')
+          .in('status', ['allotted', 'dispatched']);
+
+        const stockMatch = (stockItems || []).find(s => 
+          (s.original_roll_id && s.original_roll_id.toLowerCase() === targetId.toLowerCase()) ||
+          (s.roll_id && s.roll_id.toLowerCase() === targetId.toLowerCase()) ||
+          (s.id && s.id.toLowerCase() === targetId.toLowerCase())
+        );
+
+        if (stockMatch) {
+          let targetOrderObj = null;
+          if (stockMatch.allotted_order_id) {
+            const { data: fetchedOrder } = await supabase
+              .from('orders')
+              .select('id, order_number, design_no, design_name')
+              .eq('id', stockMatch.allotted_order_id)
+              .maybeSingle();
+            targetOrderObj = fetchedOrder;
+          }
+
+          foundRoll = {
+            id: stockMatch.original_roll_id || stockMatch.roll_id || targetId,
+            qty: stockMatch.meters,
+            actual_qty: stockMatch.actual_meters || stockMatch.meters,
+            status: 'greige received',
+            isStockRoll: true,
+            stockInventoryId: stockMatch.id,
+            metadata: stockMatch.metadata || {}
+          };
+          foundOrder = {
+            id: 'stock-order',
+            weaving_number: stockMatch.original_wvof_number || stockMatch.fso_number || 'FSO-STOCK',
+            order: targetOrderObj || {
+              order_number: stockMatch.allotted_order_number,
+              design_no: stockMatch.allotted_design_no,
+              design_name: stockMatch.allotted_design_name
+            }
+          };
+        }
+      }
+
+      if (!foundRoll) {
         setError('greige not scanned at input');
         setIsLoading(false);
         return;
@@ -333,39 +379,66 @@ export default function FourPointInspection() {
 
     setIsLoading(true);
     try {
-      // Read current rolls array of weaving order
-      const currentRolls = Array.isArray(weavingOrder.fabric_rolls) ? weavingOrder.fabric_rolls : [];
-      
-      // Update targeted roll values
-      const updatedRolls = currentRolls.map(r => {
-        if (r.id.toLowerCase() === matchedRoll.id.toLowerCase()) {
-          return {
-            ...r,
-            status: '4_point_inspected',
-            actual_qty: parsedActualQty,
-            actual_length: parsedActualQty, // "becomes the qty in the actual length"
-            shortage: shortage,
-            mistake: parsedMistakeQty,
-            approved_qty: approvedQty,
-            inspector_1: inspector1,
-            inspector_2: inspector2,
-            roll_ok: isRollOk,
-            warp_comments: isRollOk ? [] : selectedWarpComments,
-            weft_comments: isRollOk ? [] : selectedWeftComments,
-            attended_fitter: attendedFitter,
-            inspected_at: new Date().toISOString()
-          };
-        }
-        return r;
-      });
+      if (matchedRoll.isStockRoll && matchedRoll.stockInventoryId) {
+        const { error: stockUpdateErr } = await supabase
+          .from('fabric_stock_inventory')
+          .update({
+            actual_meters: parsedActualQty,
+            metadata: {
+              ...(matchedRoll.metadata || {}),
+              status: '4_point_inspected',
+              actual_qty: parsedActualQty,
+              actual_length: parsedActualQty,
+              shortage: shortage,
+              mistake: parsedMistakeQty,
+              approved_qty: approvedQty,
+              inspector_1: inspector1,
+              inspector_2: inspector2,
+              roll_ok: isRollOk,
+              warp_comments: isRollOk ? [] : selectedWarpComments,
+              weft_comments: isRollOk ? [] : selectedWeftComments,
+              attended_fitter: attendedFitter,
+              inspected_at: new Date().toISOString()
+            }
+          })
+          .eq('id', matchedRoll.stockInventoryId);
 
-      // Update weaving_orders table
-      const { error: updateErr } = await supabase
-        .from('weaving_orders')
-        .update({ fabric_rolls: updatedRolls })
-        .eq('id', weavingOrder.id);
+        if (stockUpdateErr) throw stockUpdateErr;
+      } else {
+        // Read current rolls array of weaving order
+        const currentRolls = Array.isArray(weavingOrder.fabric_rolls) ? weavingOrder.fabric_rolls : [];
+        
+        // Update targeted roll values
+        const updatedRolls = currentRolls.map(r => {
+          if (r.id.toLowerCase() === matchedRoll.id.toLowerCase()) {
+            return {
+              ...r,
+              status: '4_point_inspected',
+              actual_qty: parsedActualQty,
+              actual_length: parsedActualQty, // "becomes the qty in the actual length"
+              shortage: shortage,
+              mistake: parsedMistakeQty,
+              approved_qty: approvedQty,
+              inspector_1: inspector1,
+              inspector_2: inspector2,
+              roll_ok: isRollOk,
+              warp_comments: isRollOk ? [] : selectedWarpComments,
+              weft_comments: isRollOk ? [] : selectedWeftComments,
+              attended_fitter: attendedFitter,
+              inspected_at: new Date().toISOString()
+            };
+          }
+          return r;
+        });
 
-      if (updateErr) throw updateErr;
+        // Update weaving_orders table
+        const { error: updateErr } = await supabase
+          .from('weaving_orders')
+          .update({ fabric_rolls: updatedRolls })
+          .eq('id', weavingOrder.id);
+
+        if (updateErr) throw updateErr;
+      }
 
       setSuccessMsg(`✅ Roll ID ${matchedRoll.id} inspected successfully! Status updated to "4_point_inspected".`);
       setMatchedRoll(null);

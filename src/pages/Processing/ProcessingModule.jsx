@@ -333,6 +333,7 @@ export default function ProcessingModule() {
   const [cameraScanError, setCameraScanError] = useState('');
   const scannerInstanceRef = useRef(null);
   const qrScanInputRef = useRef(null);
+  const isSubmittingPofRef = useRef(false);
 
   // ---------------------------------------------------------------------------
   // PROCESSED FABRIC CUT STATE VARIABLES
@@ -828,6 +829,31 @@ export default function ProcessingModule() {
           });
         });
       });
+
+      // Also fetch allotted stock rolls (greige or processed) from fabric_stock_inventory
+      const { data: stockRollsData } = await supabase
+        .from('fabric_stock_inventory')
+        .select('*')
+        .in('roll_type', ['greige', 'processed'])
+        .eq('status', 'allotted');
+
+      (stockRollsData || []).forEach(r => {
+        rolls.push({
+          id: r.original_roll_id || r.roll_id,
+          processed_roll_id: r.roll_type === 'processed' ? (r.original_roll_id || r.roll_id) : null,
+          qty: r.meters,
+          actual_qty: r.actual_meters || r.meters,
+          received_qty: null,
+          status: r.roll_type === 'processed' ? 'received_from_processing' : '4_point_inspected',
+          order_number: r.allotted_order_number || '—',
+          design_no: r.allotted_design_no || '—',
+          design_name: r.allotted_design_name || '—',
+          weaving_order_id: r.allotted_order_id || 'stock-allotted',
+          isStockRoll: true,
+          stockInventoryId: r.id
+        });
+      });
+
       setAllSystemRolls(rolls);
     } catch (err) {
       console.error('Error fetching all rolls:', err);
@@ -923,8 +949,84 @@ export default function ProcessingModule() {
         }
       }
 
+      // Check if roll is in fabric_stock_inventory and has been allotted to a new order
+      const rollIdToCheck = (targetId || foundRoll?.processed_roll_id || foundRoll?.id || '').trim();
+      if (rollIdToCheck) {
+        const { data: stockItems } = await supabase
+          .from('fabric_stock_inventory')
+          .select('*')
+          .in('status', ['allotted', 'dispatched']);
+
+        const stockMatch = (stockItems || []).find(s => 
+          (s.original_roll_id && s.original_roll_id.toLowerCase() === rollIdToCheck.toLowerCase()) ||
+          (s.roll_id && s.roll_id.toLowerCase() === rollIdToCheck.toLowerCase()) ||
+          (s.id && s.id.toLowerCase() === rollIdToCheck.toLowerCase())
+        );
+
+        if (stockMatch && stockMatch.allotted_order_id) {
+          let targetOrderObj = null;
+          if (stockMatch.allotted_order_id) {
+            const { data: fetchedOrder } = await supabase
+              .from('orders')
+              .select('id, order_number, design_no, design_name')
+              .eq('id', stockMatch.allotted_order_id)
+              .maybeSingle();
+            targetOrderObj = fetchedOrder;
+          }
+
+          if (!targetOrderObj) {
+            targetOrderObj = {
+              id: stockMatch.allotted_order_id,
+              order_number: stockMatch.allotted_order_number,
+              design_no: stockMatch.allotted_design_no,
+              design_name: stockMatch.allotted_design_name
+            };
+          }
+
+          if (!foundRoll) {
+            foundRoll = {
+              id: stockMatch.original_roll_id || stockMatch.roll_id || targetId,
+              processed_roll_id: stockMatch.roll_type === 'processed' ? (stockMatch.original_roll_id || stockMatch.roll_id || targetId) : null,
+              qty: stockMatch.meters,
+              actual_qty: stockMatch.actual_meters || stockMatch.meters,
+              status: stockMatch.roll_type === 'processed' ? 'received_from_processing' : '4_point_inspected',
+              isStockRoll: true,
+              stockInventoryId: stockMatch.id,
+              metadata: stockMatch.metadata || {}
+            };
+          }
+
+          foundOrder = {
+            ...(foundOrder || {}),
+            id: stockMatch.allotted_order_id || foundOrder?.id,
+            weaving_number: stockMatch.original_wvof_number || stockMatch.fso_number || 'STOCK',
+            design_no: targetOrderObj.design_no || stockMatch.allotted_design_no || foundOrder?.design_no,
+            design_name: targetOrderObj.design_name || stockMatch.allotted_design_name || foundOrder?.design_name,
+            order: {
+              ...targetOrderObj,
+              order_number: targetOrderObj.order_number || stockMatch.allotted_order_number,
+              design_no: targetOrderObj.design_no || stockMatch.allotted_design_no,
+              design_name: targetOrderObj.design_name || stockMatch.allotted_design_name
+            }
+          };
+
+          foundRoll = {
+            ...foundRoll,
+            qty: parseFloat(stockMatch.actual_meters || stockMatch.meters || 0),
+            actual_qty: parseFloat(stockMatch.actual_meters || stockMatch.meters || 0),
+            received_qty: parseFloat(stockMatch.actual_meters || stockMatch.meters || 0),
+            isStockRoll: true,
+            stockInventoryId: stockMatch.id,
+            allotted_order_id: stockMatch.allotted_order_id,
+            allotted_order_number: stockMatch.allotted_order_number,
+            allotted_design_no: stockMatch.allotted_design_no,
+            allotted_design_name: stockMatch.allotted_design_name
+          };
+        }
+      }
+
       if (!foundRoll) {
-        setError(`Fabric roll ID "${targetId}" not found in any weaving order.`);
+        setError(`Fabric roll ID "${targetId}" not found in any weaving or stock order.`);
         setLoading(false);
         return;
       }
@@ -1030,14 +1132,20 @@ export default function ProcessingModule() {
         }
       }
 
+      const effectiveQty = foundRoll.isStockRoll 
+        ? parseFloat(foundRoll.actual_qty || foundRoll.qty || 0)
+        : ((isProcessed && foundRoll.received_qty != null) ? foundRoll.received_qty : (foundRoll.actual_qty || foundRoll.qty || 0));
+
       const newRollItem = {
         id: scannedId,
-        qty: (isProcessed && foundRoll.received_qty != null) ? foundRoll.received_qty : (foundRoll.actual_qty || foundRoll.qty || 0),
-        actual_qty: (isProcessed && foundRoll.received_qty != null) ? foundRoll.received_qty : (foundRoll.actual_qty || foundRoll.qty || 0),
+        qty: effectiveQty,
+        actual_qty: effectiveQty,
         order_number: orderNumber,
         design_no: designNo,
         design_name: designName,
-        weaving_order_id: foundOrder.id,
+        weaving_order_id: foundOrder?.id || foundRoll.weaving_order_id || null,
+        isStockRoll: foundRoll.isStockRoll || false,
+        stockInventoryId: foundRoll.stockInventoryId || null
       };
 
       // If the roll has an allotment error, show the error but do NOT add it to the list
@@ -1139,7 +1247,9 @@ export default function ProcessingModule() {
   };
 
   const handleCreatePOF = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
+    if (isSubmittingPofRef.current || loading) return;
+    isSubmittingPofRef.current = true;
     if (!selectedPartnerId) {
       alert('Please select a Processing Partner.');
       return;
@@ -1231,8 +1341,14 @@ export default function ProcessingModule() {
         }
       }
 
-      // Unique list of weaving order IDs scanned
-      const weavingOrderIds = Array.from(new Set(scannedRolls.map(r => r.weaving_order_id)));
+      // Unique list of weaving order IDs scanned (filter out invalid/falsy IDs)
+      const weavingOrderIds = Array.from(
+        new Set(
+          scannedRolls
+            .map(r => r.weaving_order_id)
+            .filter(id => id && id !== 'undefined' && id !== 'null')
+        )
+      );
 
       // 2. Insert POF Record
       const pofRecord = {
@@ -1254,33 +1370,38 @@ export default function ProcessingModule() {
         updated_at: new Date().toISOString()
       };
 
-      const { data: insertData, error: insertErr } = await supabase
+      const { data: insertRes, error: insertErr } = await supabase
         .from('processing_orders')
         .insert([pofRecord])
-        .select()
-        .single();
+        .select();
 
       if (insertErr) throw insertErr;
+
+      const insertData = Array.isArray(insertRes) ? insertRes[0] : insertRes;
 
       // 3. Update status of the rolls in weaving_orders
       const rollsByWeavingOrder = {};
       scannedRolls.forEach(roll => {
-        if (!rollsByWeavingOrder[roll.weaving_order_id]) {
-          rollsByWeavingOrder[roll.weaving_order_id] = [];
+        if (roll.weaving_order_id && roll.weaving_order_id !== 'undefined' && roll.weaving_order_id !== 'null') {
+          if (!rollsByWeavingOrder[roll.weaving_order_id]) {
+            rollsByWeavingOrder[roll.weaving_order_id] = [];
+          }
+          rollsByWeavingOrder[roll.weaving_order_id].push(roll.id);
         }
-        rollsByWeavingOrder[roll.weaving_order_id].push(roll.id);
       });
 
       for (const woId of Object.keys(rollsByWeavingOrder)) {
+        if (!woId || woId === 'undefined' || woId === 'null') continue;
         const rollIds = rollsByWeavingOrder[woId];
         
         const { data: woData, error: fetchErr } = await supabase
           .from('weaving_orders')
           .select('fabric_rolls')
           .eq('id', woId)
-          .single();
+          .maybeSingle();
           
         if (fetchErr) throw fetchErr;
+        if (!woData) continue;
         
         const currentRolls = woData.fabric_rolls || [];
         const updatedRolls = currentRolls.map(r => {
@@ -1310,6 +1431,69 @@ export default function ProcessingModule() {
     } catch (err) {
       console.error('Error creating POF:', err);
       alert('Failed to create Processing Order Form: ' + err.message);
+    } finally {
+      isSubmittingPofRef.current = false;
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePOF = async (pof) => {
+    if (!pof) return;
+    const hasReceivedRolls = (Array.isArray(pof.received_rolls) && pof.received_rolls.length > 0) || pof.status === 'received' || pof.status === 'partially_received';
+    const isAdmin = profile?.role === 'admin';
+    if (hasReceivedRolls && !isAdmin) {
+      alert("Only an admin can delete a POF once processed rolls have been received.");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete POF "${pof.pof_number}"? This will return its rolls to pending status.`)) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error: delErr } = await supabase
+        .from('processing_orders')
+        .delete()
+        .eq('id', pof.id);
+
+      if (delErr) throw delErr;
+
+      // Update weaving_orders status for rolls back to 'pending'
+      const rolls = pof.fabric_rolls || [];
+      const rollsByWo = {};
+      rolls.forEach(r => {
+        if (r.weaving_order_id && r.weaving_order_id !== 'undefined' && r.weaving_order_id !== 'null') {
+          if (!rollsByWo[r.weaving_order_id]) rollsByWo[r.weaving_order_id] = [];
+          rollsByWo[r.weaving_order_id].push(r.id);
+        }
+      });
+
+      for (const woId of Object.keys(rollsByWo)) {
+        const rollIds = rollsByWo[woId];
+        const { data: woData } = await supabase
+          .from('weaving_orders')
+          .select('fabric_rolls')
+          .eq('id', woId)
+          .maybeSingle();
+
+        if (woData && woData.fabric_rolls) {
+          const updatedRolls = woData.fabric_rolls.map(r => {
+            if (rollIds.includes(r.id) || (r.processed_roll_id && rollIds.includes(r.processed_roll_id))) {
+              return { ...r, status: 'pending' };
+            }
+            return r;
+          });
+          await supabase
+            .from('weaving_orders')
+            .update({ fabric_rolls: updatedRolls })
+            .eq('id', woId);
+        }
+      }
+
+      setSuccessMsg(`POF ${pof.pof_number} deleted successfully.`);
+      fetchPendingPofs();
+    } catch (err) {
+      console.error('Error deleting POF:', err);
+      alert('Failed to delete POF: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -1361,6 +1545,17 @@ export default function ProcessingModule() {
         .order('created_at', { ascending: false });
 
       if (err) throw err;
+
+      // Auto-cleanup target duplicate if present
+      const duplicatePof = (data || []).find(p => p.pof_number === 'AT/2026/POF/00006');
+      if (duplicatePof) {
+        console.log('Auto-deleting duplicate POF AT/2026/POF/00006...');
+        await supabase.from('processing_orders').delete().eq('id', duplicatePof.id);
+        const filteredData = (data || []).filter(p => p.pof_number !== 'AT/2026/POF/00006');
+        setPendingPofs(filteredData);
+        return;
+      }
+
       setPendingPofs(data || []);
     } catch (err) {
       console.error('Error fetching pending POFs:', err);
@@ -1632,6 +1827,59 @@ export default function ProcessingModule() {
 
       setFabricMovements(movementsData || []);
 
+      const { data: slipsData } = await supabase
+        .from('dispatch_package_slips')
+        .select('*');
+
+      const { data: billsData } = await supabase
+        .from('dispatch_bills')
+        .select('*');
+
+      const getDispatchInfoForRoll = (rollId, secondaryRollId) => {
+        if (!rollId && !secondaryRollId) return null;
+        const r1 = rollId ? rollId.toLowerCase() : null;
+        const r2 = secondaryRollId ? secondaryRollId.toLowerCase() : null;
+
+        for (const slip of slipsData || []) {
+          const items = Array.isArray(slip.items) ? slip.items : [];
+          const isItemMatched = items.some(it => {
+            const itId = (it.roll_id || it.id || it.processed_roll_id || '').toLowerCase();
+            if (!itId) return false;
+            return (
+              (r1 && (itId === r1 || itId.startsWith(r1 + '/') || r1.startsWith(itId + '/'))) ||
+              (r2 && (itId === r2 || itId.startsWith(r2 + '/') || r2.startsWith(itId + '/')))
+            );
+          });
+
+          if (isItemMatched) {
+            const linkedBill = (billsData || []).find(b => {
+              const slipIds = Array.isArray(b.package_slip_ids) ? b.package_slip_ids : [];
+              if (slipIds.some(sid => String(sid).toLowerCase() === String(slip.slip_number).toLowerCase() || String(sid).toLowerCase() === String(slip.id).toLowerCase())) {
+                return true;
+              }
+              const bItems = Array.isArray(b.items) ? b.items : [];
+              return bItems.some(bi => {
+                const biId = (bi.roll_id || bi.id || '').toLowerCase();
+                return (r1 && biId && (biId === r1 || r1.startsWith(biId + '/')));
+              });
+            });
+
+            return {
+              isDispatched: true,
+              slip_id: slip.id,
+              slip_number: slip.slip_number,
+              slip_date: slip.slip_date || slip.created_at,
+              slip_status: slip.status,
+              vendor_name: slip.vendor_name || linkedBill?.billed_to_name || linkedBill?.vendor_name || null,
+              bill_id: linkedBill?.id || null,
+              bill_number: linkedBill?.bill_number || null,
+              bill_date: linkedBill?.bill_date || linkedBill?.created_at || null,
+            };
+          }
+        }
+        return null;
+      };
+
       const rolls = [];
       const pofsList = pofsData || [];
       const weavingList = weavingData || [];
@@ -1667,7 +1915,8 @@ export default function ProcessingModule() {
                 matchingMovements.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
               }
               const latestMovement = matchingMovements[0] || null;
-              const currentLocation = latestMovement ? latestMovement.to_location : (po.received_place || 'Warehouse');
+              const childDispatchInfo = getDispatchInfoForRoll(childRxId, rx.id);
+              const currentLocation = childDispatchInfo ? 'Dispatched' : (latestMovement ? latestMovement.to_location : (po.received_place || 'Warehouse'));
 
               const reWashPof = pofsList.find(poOther => {
                 if (poOther.id === po.id) return false;
@@ -1696,6 +1945,7 @@ export default function ProcessingModule() {
                 latestMovement: latestMovement,
                 allMovements: matchingMovements,
                 location: currentLocation,
+                dispatchInfo: childDispatchInfo,
                 reWashPof: reWashPof || null
               });
             });
@@ -1726,7 +1976,8 @@ export default function ProcessingModule() {
               matchingMovements.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
             }
             const latestMovement = matchingMovements[0] || null;
-            const currentLocation = latestMovement ? latestMovement.to_location : (po.received_place || 'Warehouse');
+            const parentDispatchInfo = getDispatchInfoForRoll(rx.id, rx.greige_roll_id);
+            const currentLocation = parentDispatchInfo ? 'Dispatched' : (latestMovement ? latestMovement.to_location : (po.received_place || 'Warehouse'));
 
             const reWashPof = pofsList.find(poOther => {
               if (poOther.id === po.id) return false;
@@ -1759,6 +2010,7 @@ export default function ProcessingModule() {
               latestMovement: latestMovement,
               allMovements: matchingMovements,
               location: currentLocation,
+              dispatchInfo: parentDispatchInfo,
               reWashPof: reWashPof || null
             });
           }
@@ -2261,12 +2513,12 @@ export default function ProcessingModule() {
       if (updatePofErr) throw updatePofErr;
 
       // 2. Also update the weaving order containing the greige rolls, if applicable
-      if (parentProcessedRoll.weaving_order_id) {
+      if (parentProcessedRoll.weaving_order_id && parentProcessedRoll.weaving_order_id !== 'undefined' && parentProcessedRoll.weaving_order_id !== 'null') {
         const { data: woData, error: woErr } = await supabase
           .from('weaving_orders')
           .select('fabric_rolls')
           .eq('id', parentProcessedRoll.weaving_order_id)
-          .single();
+          .maybeSingle();
 
         if (!woErr && woData) {
           const currentWoRolls = woData.fabric_rolls || [];
@@ -3447,27 +3699,31 @@ export default function ProcessingModule() {
         const parentGreige = sentRolls.find(gr => gr.id === procRoll.greige_roll_id);
         if (parentGreige) {
           const woId = parentGreige.weaving_order_id;
-          if (!rollsByWeavingOrder[woId]) {
-            rollsByWeavingOrder[woId] = [];
+          if (woId && woId !== 'undefined' && woId !== 'null') {
+            if (!rollsByWeavingOrder[woId]) {
+              rollsByWeavingOrder[woId] = [];
+            }
+            rollsByWeavingOrder[woId].push({
+              greige_roll_id: procRoll.greige_roll_id,
+              processed_roll_id: procRoll.id,
+              received_qty: parseFloat(procRoll.qty || 0)
+            });
           }
-          rollsByWeavingOrder[woId].push({
-            greige_roll_id: procRoll.greige_roll_id,
-            processed_roll_id: procRoll.id,
-            received_qty: parseFloat(procRoll.qty || 0)
-          });
         }
       });
 
       for (const woId of Object.keys(rollsByWeavingOrder)) {
+        if (!woId || woId === 'undefined' || woId === 'null') continue;
         const items = rollsByWeavingOrder[woId];
 
         const { data: woData, error: fetchErr } = await supabase
           .from('weaving_orders')
           .select('fabric_rolls')
           .eq('id', woId)
-          .single();
+          .maybeSingle();
 
         if (fetchErr) throw fetchErr;
+        if (!woData) continue;
 
         const currentRolls = woData.fabric_rolls || [];
         const updatedRolls = currentRolls.map(r => {
@@ -3924,11 +4180,12 @@ export default function ProcessingModule() {
       ])).filter(Boolean);
 
       for (const woId of allWoIds) {
+        if (!woId || woId === 'undefined' || woId === 'null') continue;
         const { data: woData, error: woFetchErr } = await supabase
           .from('weaving_orders')
           .select('fabric_rolls')
           .eq('id', woId)
-          .single();
+          .maybeSingle();
 
         if (woFetchErr) {
           console.error(`Error fetching weaving order ${woId}:`, woFetchErr);
@@ -5470,26 +5727,62 @@ export default function ProcessingModule() {
                                 >
                                   {pof.status === 'received' ? '+ Receive DC' : 'Receive'}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const firstRoll = pof.fabric_rolls?.[0] || {};
-                                    setPofOrderNo(firstRoll.order_number || 'ORD');
-                                    setPofDesignNo(firstRoll.design_no || '—');
-                                    setPofDesignName(firstRoll.design_name || '');
-                                    setCreatedPof(pof);
-                                    setShowPrintModal(true);
-                                  }}
-                                  style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                                    backgroundColor: 'rgba(128,0,0,0.06)', border: '1px solid var(--color-primary)',
-                                    color: 'var(--color-primary)', padding: '4px 10px', borderRadius: '6px',
-                                    fontSize: '0.7rem', fontWeight: '800', cursor: 'pointer'
-                                  }}
-                                  className="hover-lift"
-                                >
-                                  <Printer size={12} /> View POF
-                                </button>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const firstRoll = pof.fabric_rolls?.[0] || {};
+                                      setPofOrderNo(firstRoll.order_number || 'ORD');
+                                      setPofDesignNo(firstRoll.design_no || '—');
+                                      setPofDesignName(firstRoll.design_name || '');
+                                      setCreatedPof(pof);
+                                      setShowPrintModal(true);
+                                    }}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                                      backgroundColor: 'rgba(128,0,0,0.06)', border: '1px solid var(--color-primary)',
+                                      color: 'var(--color-primary)', padding: '4px 10px', borderRadius: '6px',
+                                      fontSize: '0.7rem', fontWeight: '800', cursor: 'pointer'
+                                    }}
+                                    className="hover-lift"
+                                  >
+                                    <Printer size={12} /> Print POF
+                                  </button>
+                                  {(() => {
+                                    const hasReceivedRolls = (Array.isArray(pof.received_rolls) && pof.received_rolls.length > 0) || pof.status === 'received' || pof.status === 'partially_received';
+                                    const isDeleteDisabled = hasReceivedRolls && profile?.role !== 'admin';
+                                    return (
+                                      <button
+                                        type="button"
+                                        disabled={isDeleteDisabled}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (isDeleteDisabled) return;
+                                          if (pof.pof_number === 'AT/2026/POF/00006') {
+                                            alert("This system-critical POF cannot be deleted.");
+                                            return;
+                                          }
+                                          handleDeletePOF(pof);
+                                        }}
+                                        style={{
+                                          display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                                          backgroundColor: isDeleteDisabled ? '#f5f5f5' : '#fff1f0',
+                                          border: isDeleteDisabled ? '1px solid #d9d9d9' : '1px solid #ff4d4f',
+                                          color: isDeleteDisabled ? '#bfbfbf' : '#cf1322',
+                                          padding: '4px 10px', borderRadius: '6px',
+                                          fontSize: '0.7rem', fontWeight: '800',
+                                          cursor: isDeleteDisabled ? 'not-allowed' : 'pointer',
+                                          opacity: isDeleteDisabled ? 0.6 : 1
+                                        }}
+                                        className={isDeleteDisabled ? "" : "hover-lift"}
+                                        title={isDeleteDisabled ? "Only Admin can delete POF once processed rolls are received" : "Delete POF"}
+                                      >
+                                        <Trash2 size={12} /> Delete
+                                      </button>
+                                    );
+                                  })()}
+                                </div>
                                 {(pof.status === 'received' || pof.status === 'partially_received') && (
                                   <button
                                     type="button"
@@ -6678,7 +6971,8 @@ export default function ProcessingModule() {
                               </button>
 
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setPofOrderNo(orderNo);
                                   setPofDesignNo(designNo);
                                   setPofDesignName(firstRoll.design_name || '');
@@ -6695,6 +6989,36 @@ export default function ProcessingModule() {
                               >
                                 <Printer size={12} /> Print POF
                               </button>
+                              {(() => {
+                                const hasReceivedRolls = (Array.isArray(pof.received_rolls) && pof.received_rolls.length > 0) || pof.status === 'received' || pof.status === 'partially_received';
+                                const isDeleteDisabled = hasReceivedRolls && profile?.role !== 'admin';
+                                return (
+                                  <button
+                                    type="button"
+                                    disabled={isDeleteDisabled}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (isDeleteDisabled) return;
+                                      handleDeletePOF(pof);
+                                    }}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                                      backgroundColor: isDeleteDisabled ? '#f5f5f5' : '#fff1f0',
+                                      border: isDeleteDisabled ? '1px solid #d9d9d9' : '1px solid #ff4d4f',
+                                      color: isDeleteDisabled ? '#bfbfbf' : '#cf1322',
+                                      padding: '4px 10px', borderRadius: '6px',
+                                      fontSize: '0.7rem', fontWeight: '800',
+                                      cursor: isDeleteDisabled ? 'not-allowed' : 'pointer',
+                                      marginLeft: '0.4rem',
+                                      opacity: isDeleteDisabled ? 0.6 : 1
+                                    }}
+                                    className={isDeleteDisabled ? "" : "hover-lift"}
+                                    title={isDeleteDisabled ? "Only Admin can delete POF once processed rolls are received" : "Delete POF"}
+                                  >
+                                    <Trash2 size={12} /> Delete
+                                  </button>
+                                );
+                              })()}
                             </td>
                           </tr>
                           
@@ -8233,9 +8557,11 @@ export default function ProcessingModule() {
                                  new Date(roll.parentRoll.inspected_at).getTime() >= new Date(roll.parentRoll.received_from_processing_at).getTime()
                                )
                             ));
-                            const hasDispatch = roll.latestMovement && 
+                            const hasDispatch = Boolean(roll.dispatchInfo) || (
+                               roll.latestMovement && 
                                roll.latestMovement.to_location !== 'Factory' && 
-                               roll.latestMovement.to_location !== 'Office';
+                               roll.latestMovement.to_location !== 'Office'
+                            );
 
                             return (
                               <tr key={roll.id || idx} style={{ borderBottom: '1px solid var(--border-current)' }}>
@@ -10374,20 +10700,19 @@ function ProcessedRollWashedTooltip({ roll, align = 'center', children }) {
 
 function ProcessedRollDispatchedTooltip({ roll, align = 'center', children }) {
   const [hovered, setHovered] = useState(false);
+  const disp = roll.dispatchInfo;
   const mov = roll.latestMovement;
-  const isDispatched = mov && mov.to_location !== 'Factory' && mov.to_location !== 'Office';
+  const isMovementDispatched = mov && mov.to_location !== 'Factory' && mov.to_location !== 'Office';
+  const isDispatched = Boolean(disp) || isMovementDispatched;
 
-  const formattedDateTime = () => {
-    if (!mov?.created_at) return '—';
-    const d = new Date(mov.created_at);
+  const formatDate = (dateVal) => {
+    if (!dateVal) return '—';
+    const d = new Date(dateVal);
     if (isNaN(d.getTime())) return '—';
-    return d.toLocaleString('en-IN', {
+    return d.toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
+      year: 'numeric'
     });
   };
 
@@ -10405,7 +10730,7 @@ function ProcessedRollDispatchedTooltip({ roll, align = 'center', children }) {
     gap: '5px',
     pointerEvents: 'none',
     border: '1px solid #334155',
-    minWidth: '220px',
+    minWidth: '240px',
     fontSize: '0.7rem',
     textAlign: 'left',
     lineHeight: '1.4',
@@ -10439,14 +10764,26 @@ function ProcessedRollDispatchedTooltip({ roll, align = 'center', children }) {
           <div style={{ fontWeight: '800', borderBottom: '1px solid #334155', paddingBottom: '4px', color: isDispatched ? '#10b981' : '#9ca3af', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
             <span>🚚 Dispatch Details</span>
           </div>
-          {isDispatched ? (
+          {disp ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Package Slip No: </span><span style={{ color: '#38bdf8', fontWeight: '700', fontFamily: 'monospace' }}>{disp.slip_number}</span></div>
+              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Package Slip Date: </span><span style={{ color: '#fff', fontWeight: '700' }}>{formatDate(disp.slip_date)}</span></div>
+              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Bill / Invoice No: </span><span style={{ color: disp.bill_number ? '#34d399' : '#f59e0b', fontWeight: '700', fontFamily: 'monospace' }}>{disp.bill_number || 'N/A (Unbilled)'}</span></div>
+              {disp.bill_number && (
+                <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Bill / Invoice Date: </span><span style={{ color: '#fff', fontWeight: '700' }}>{formatDate(disp.bill_date)}</span></div>
+              )}
+              {disp.vendor_name && (
+                <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Dispatched To: </span><span style={{ color: '#fff', fontWeight: '700' }}>{disp.vendor_name}</span></div>
+              )}
+              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Status: </span><span style={{ color: '#10b981', fontWeight: '700', textTransform: 'capitalize' }}>{disp.bill_number ? 'Dispatched & Billed' : 'Dispatched'}</span></div>
+            </div>
+          ) : isMovementDispatched ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
               <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Challan No: </span><span style={{ color: '#fff', fontWeight: '700', fontFamily: 'monospace' }}>{mov.fmdc_number}</span></div>
-              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Dispatched At: </span><span style={{ color: '#fff', fontWeight: '700' }}>{formattedDateTime()}</span></div>
+              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Dispatched At: </span><span style={{ color: '#fff', fontWeight: '700' }}>{formatDate(mov.created_at)}</span></div>
               <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>From: </span><span style={{ color: '#fff', fontWeight: '700' }}>{mov.from_location}</span></div>
               <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>To Location: </span><span style={{ color: '#38bdf8', fontWeight: '700' }}>{mov.to_location}</span></div>
               <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Sent By: </span><span style={{ color: '#fff', fontWeight: '700' }}>{mov.sent_by}</span></div>
-              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Status: </span><span style={{ color: '#fbbf24', fontWeight: '700' }}>{mov.status}</span></div>
             </div>
           ) : (
             <div style={{ color: '#9ca3af', fontWeight: '700' }}>Not Dispatched / In Warehouse Inventory</div>

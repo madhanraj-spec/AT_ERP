@@ -1593,7 +1593,9 @@ export default function DyeingFormsList() {
                       {(() => {
                         const results = forms.filter(f => {
                           const isFullyReceived = getYarnStatus(f.status) === 'fully_received';
-                          const isNotAT = f.dyeing_unit?.partner_name !== 'AT';
+                          const unitName = (f.dyeing_unit?.partner_name || '').toUpperCase();
+                          const isInternalAT = unitName === 'AT' || unitName.includes('AT DYED YARN') || unitName.includes('DYED YARN INV');
+                          const isNotAT = !isInternalAT;
                           const isPending = !f.bill_status || f.bill_status === 'pending' || (editingBill && f.bill_id === editingBill.id);
                           
                           const query = selectedDofSearch.trim().toLowerCase();
@@ -1654,7 +1656,7 @@ export default function DyeingFormsList() {
                                 <span style={{ fontWeight: '700', color: 'var(--color-primary)' }}>{r.dof_number}</span>
                                 <span style={{ fontSize: '0.75rem', fontWeight: '600' }}>{r.dyeing_unit?.partner_name}</span>
                                 <span style={{ fontSize: '0.675rem', color: '#64748b' }}>
-                                  Del: {r.delivery_date ? new Date(r.delivery_date).toLocaleDateString() : 'N/A'}
+                                  Del: {(r.expected_delivery_date || r.delivery_date) ? new Date(r.expected_delivery_date || r.delivery_date).toLocaleDateString() : 'N/A'}
                                 </span>
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', paddingRight: '0.5rem' }}>

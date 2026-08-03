@@ -211,6 +211,41 @@ export default function WashedInspection() {
         }
       }
 
+      // After finding the roll in a weaving order, check if the roll ID actually belongs to a different order
+      // e.g. roll AT/2026/B/00002/P2/00001 found in weaving order for AT/2026/B/00001 but actually belongs to AT/2026/B/00002
+      if (foundRoll && foundOrder) {
+        const rollIdStr = (targetId || '').toUpperCase().trim();
+        let extractedOrderNo = '';
+        if (rollIdStr.includes('/P')) {
+          extractedOrderNo = rollIdStr.split('/P')[0];
+        } else {
+          const parts = rollIdStr.split('/');
+          if (parts.length >= 4) {
+            extractedOrderNo = parts.slice(0, -1).join('/');
+          }
+        }
+
+        const currentOrderNo = (foundOrder.order?.order_number || foundOrder.weaving_number || '').toUpperCase().trim();
+        if (extractedOrderNo && extractedOrderNo !== currentOrderNo) {
+          // The roll ID belongs to a different order — look it up
+          const { data: correctOrder } = await supabase
+            .from('orders')
+            .select('id, order_number, design_no, design_name, season, quality, construction, buyer, stitchage')
+            .ilike('order_number', extractedOrderNo)
+            .maybeSingle();
+
+          if (correctOrder) {
+            foundOrder = {
+              ...foundOrder,
+              id: correctOrder.id,
+              design_no: correctOrder.design_no,
+              design_name: correctOrder.design_name,
+              order: correctOrder
+            };
+          }
+        }
+      }
+
       // 3. Fallback: Search processing_orders received_rolls for processed roll ID
       if (!foundRoll && !matchedByGreigeId) {
         try {
@@ -248,25 +283,59 @@ export default function WashedInspection() {
                 if (!parentGreigeRoll) {
                   const extractOrderNo = (rid) => {
                     if (!rid) return '';
-                    return rid.split('/P')[0].replace(/\/\d+$/, '');
+                    const str = String(rid).toUpperCase().trim();
+                    if (str.includes('/P')) {
+                      return str.split('/P')[0];
+                    }
+                    const parts = str.split('/');
+                    if (parts.length >= 4) {
+                      return parts.slice(0, -1).join('/');
+                    }
+                    return str;
                   };
                   const targetOrderNo = extractOrderNo(targetId);
 
                   for (const order of data || []) {
-                    const orderNo = order.order?.order_number || order.weaving_number || '';
+                    const orderNo = (order.order?.order_number || order.weaving_number || '').toUpperCase().trim();
                     const rolls = Array.isArray(order.fabric_rolls) ? order.fabric_rolls : [];
                     const match = rolls.find(r => extractOrderNo(r.id).toLowerCase() === targetOrderNo.toLowerCase());
                     
-                    if (
-                      match || 
-                      (orderNo && orderNo.toLowerCase() === targetOrderNo.toLowerCase()) || 
-                      (rolls[0] && extractOrderNo(rolls[0].id).toLowerCase() === targetOrderNo.toLowerCase())
-                    ) {
-                      parentGreigeRoll = match || rolls[0] || { id: targetId, qty: rxMatch.qty };
+                    if (match || (orderNo && orderNo.toLowerCase() === targetOrderNo.toLowerCase())) {
+                      parentGreigeRoll = match || { id: targetId, processed_roll_id: targetId, qty: rxMatch.qty };
                       parentWeavingOrder = order;
                       break;
                     }
                   }
+                }
+
+                if (!parentWeavingOrder) {
+                  const targetOrderNumber = extractOrderNo(targetId);
+                  let pofOrderObj = null;
+                  if (targetOrderNumber) {
+                    const { data: matchedOrder } = await supabase
+                      .from('orders')
+                      .select('id, order_number, design_no, design_name')
+                      .ilike('order_number', targetOrderNumber)
+                      .maybeSingle();
+                    pofOrderObj = matchedOrder;
+                  }
+
+                  parentWeavingOrder = {
+                    id: pof.id || 'pof-order',
+                    weaving_number: pof.pof_number || targetOrderNumber || 'POF-ORDER',
+                    design_no: pofOrderObj?.design_no || pof.order?.design_no || '—',
+                    design_name: pofOrderObj?.design_name || pof.order?.design_name || '—',
+                    partner_name: 'Processing Partner',
+                    machine_name: 'Processing',
+                    fabric_rolls: [],
+                    order: pofOrderObj || pof.order || {
+                      id: pof.id,
+                      order_number: targetOrderNumber,
+                      design_no: '—',
+                      design_name: '—'
+                    }
+                  };
+                  parentGreigeRoll = { id: targetId, processed_roll_id: targetId, qty: rxMatch.qty };
                 }
 
                 if (parentGreigeRoll && parentWeavingOrder) {
@@ -306,14 +375,43 @@ export default function WashedInspection() {
                     washed_no_of_tags: 0,
                     // Apply actual received roll fields
                     ...rxMatch,
-                    id: rxMatch.id || targetId,
-                    greige_roll_id: rxMatch.greige_roll_id || parentGreigeRoll.id,
+                    id: targetId,
                     processed_roll_id: targetId,
+                    greige_roll_id: rxMatch.greige_roll_id || parentGreigeRoll.id,
                     status: 'received_from_processing',
                     received_from_processing_at: parentGreigeRoll.received_from_processing_at || rxMatch.received_at || new Date().toISOString(),
                     received_qty: rxMatch.qty || parentGreigeRoll.received_qty || parentGreigeRoll.actual_qty,
                     washed_place: rxMatch.received_place || pof.received_place || parentGreigeRoll.washed_place || 'Factory'
                   };
+
+                  // Check if POF record has specific target order details (for transferred/stock rolls)
+                  const pofRolls = Array.isArray(pof.fabric_rolls) ? pof.fabric_rolls : [];
+                  const pofRollMatch = pofRolls.find(pr => 
+                    (pr.id && pr.id.toLowerCase() === greigeId) ||
+                    (pr.id && pr.id.toLowerCase() === targetId.toLowerCase())
+                  );
+
+                  const targetOrderNumber = pofRollMatch?.order_number || extractOrderNo(targetId);
+
+                  if (targetOrderNumber && targetOrderNumber.toLowerCase() !== (parentWeavingOrder.order?.order_number || parentWeavingOrder.weaving_number || '').toLowerCase()) {
+                    const { data: pofOrderObj } = await supabase
+                      .from('orders')
+                      .select('id, order_number, design_no, design_name')
+                      .ilike('order_number', targetOrderNumber)
+                      .maybeSingle();
+
+                    if (pofOrderObj) {
+                      foundOrder = {
+                        ...parentWeavingOrder,
+                        id: pofOrderObj.id,
+                        weaving_number: pof.pof_number || parentWeavingOrder.weaving_number,
+                        design_no: pofOrderObj.design_no,
+                        design_name: pofOrderObj.design_name,
+                        order: pofOrderObj
+                      };
+                    }
+                  }
+
                   break;
                 }
               }
@@ -321,6 +419,96 @@ export default function WashedInspection() {
           }
         } catch (poErr) {
           console.error('Error tracing in processing orders:', poErr);
+        }
+      }
+
+      // 4. Check if roll is in fabric_stock_inventory and has been allotted to a new order
+      const checkIds = [
+        targetId,
+        foundRoll?.greige_roll_id,
+        foundRoll?.id,
+        foundRoll?.processed_roll_id
+      ].filter(Boolean).map(x => String(x).toLowerCase().trim());
+
+      if (checkIds.length > 0) {
+        const { data: stockItems, error: stockErr } = await supabase
+          .from('fabric_stock_inventory')
+          .select('*')
+          .not('allotted_order_id', 'is', null);
+
+        if (stockErr) {
+          console.error('Error querying fabric_stock_inventory in WashedInspection:', stockErr);
+        }
+
+        const stockMatch = (stockItems || []).find(s => {
+          const orig = (s.original_roll_id || '').toLowerCase();
+          const rId = (s.roll_id || '').toLowerCase();
+          const sId = (s.id || '').toLowerCase();
+          return checkIds.includes(orig) || checkIds.includes(rId) || checkIds.includes(sId);
+        });
+
+        if (stockMatch && stockMatch.allotted_order_id) {
+          let targetOrderObj = null;
+          if (stockMatch.allotted_order_id) {
+            const { data: fetchedOrder } = await supabase
+              .from('orders')
+              .select('id, order_number, design_no, design_name')
+              .eq('id', stockMatch.allotted_order_id)
+              .maybeSingle();
+
+            targetOrderObj = fetchedOrder;
+          }
+
+          if (!targetOrderObj) {
+            targetOrderObj = {
+              id: stockMatch.allotted_order_id,
+              order_number: stockMatch.allotted_order_number,
+              design_no: stockMatch.allotted_design_no,
+              design_name: stockMatch.allotted_design_name
+            };
+          }
+
+          if (!foundRoll) {
+            const stockProcId = (stockMatch.roll_id && stockMatch.roll_id.toLowerCase() !== (stockMatch.original_roll_id || '').toLowerCase() ? stockMatch.roll_id : null) || stockMatch.metadata?.processed_roll_id;
+            const validRollId = stockProcId || stockMatch.roll_id || stockMatch.original_roll_id || targetId;
+            foundRoll = {
+              id: validRollId,
+              processed_roll_id: validRollId,
+              qty: stockMatch.meters,
+              actual_qty: stockMatch.actual_meters || stockMatch.meters,
+              status: 'received_from_processing',
+              received_from_processing_at: stockMatch.allotted_at || new Date().toISOString(),
+              isStockRoll: true,
+              stockInventoryId: stockMatch.id,
+              metadata: stockMatch.metadata || {}
+            };
+          }
+
+          foundOrder = {
+            ...(foundOrder || {}),
+            id: stockMatch.allotted_order_id || foundOrder?.id,
+            weaving_number: stockMatch.original_wvof_number || stockMatch.fso_number || 'FSO-STOCK',
+            design_no: targetOrderObj?.design_no || stockMatch.allotted_design_no || foundOrder?.design_no,
+            design_name: targetOrderObj?.design_name || stockMatch.allotted_design_name || foundOrder?.design_name,
+            order: {
+              ...targetOrderObj,
+              order_number: targetOrderObj?.order_number || stockMatch.allotted_order_number,
+              design_no: targetOrderObj?.design_no || stockMatch.allotted_design_no,
+              design_name: targetOrderObj?.design_name || stockMatch.allotted_design_name
+            }
+          };
+
+          foundRoll = {
+            ...foundRoll,
+            status: 'received_from_processing',
+            received_from_processing_at: foundRoll.received_from_processing_at || stockMatch.allotted_at || new Date().toISOString(),
+            isStockRoll: true,
+            stockInventoryId: stockMatch.id,
+            allotted_order_id: stockMatch.allotted_order_id,
+            allotted_order_number: stockMatch.allotted_order_number,
+            allotted_design_no: stockMatch.allotted_design_no,
+            allotted_design_name: stockMatch.allotted_design_name
+          };
         }
       }
 
@@ -354,7 +542,15 @@ export default function WashedInspection() {
         }
       }
 
-      setMatchedRoll(foundRoll);
+      const effectiveProcId = foundRoll.processed_roll_id || (foundRoll.id && !foundRoll.id.toLowerCase().includes('/p1/') ? foundRoll.id : (scanInput || '').trim());
+      const effectiveGreigeId = foundRoll.greige_roll_id || (foundRoll.id && foundRoll.id !== effectiveProcId ? foundRoll.id : null);
+      
+      setMatchedRoll({
+        ...foundRoll,
+        id: effectiveProcId || foundRoll.id,
+        processed_roll_id: effectiveProcId || foundRoll.processed_roll_id || foundRoll.id,
+        greige_roll_id: effectiveGreigeId
+      });
       setWeavingOrder(foundOrder);
       
       // Pre-fill form fields
@@ -523,15 +719,20 @@ export default function WashedInspection() {
       const currentRolls = Array.isArray(weavingOrder.fabric_rolls) ? weavingOrder.fabric_rolls : [];
       let rollMatchedInWeavingOrder = false;
 
+      const targetRollId = (matchedRoll.processed_roll_id || matchedRoll.id || '').toLowerCase();
+      const greigeRollId = (matchedRoll.greige_roll_id || '').toLowerCase();
       const updatedRolls = currentRolls.map(r => {
+        const rId = (r.id || '').toLowerCase();
+        const rProcId = (r.processed_roll_id || '').toLowerCase();
         if (
-          r.id.toLowerCase() === matchedRoll.id.toLowerCase() ||
-          (r.processed_roll_id && r.processed_roll_id.toLowerCase() === (matchedRoll.processed_roll_id || matchedRoll.id).toLowerCase())
+          (rProcId && rProcId === targetRollId) ||
+          (rId && rId === targetRollId && targetRollId !== '') ||
+          (greigeRollId && rId === greigeRollId)
         ) {
-          rollMatchedInWeavingOrder = true;
+          const effectiveProcId = (matchedRoll.processed_roll_id && matchedRoll.processed_roll_id.toLowerCase() !== rId ? matchedRoll.processed_roll_id : null) || (matchedRoll.id && matchedRoll.id.toLowerCase() !== rId ? matchedRoll.id : null) || (targetRollId && targetRollId !== rId ? targetRollId : null) || r.processed_roll_id || r.id;
           return {
             ...r,
-            processed_roll_id: matchedRoll.processed_roll_id || r.processed_roll_id,
+            processed_roll_id: effectiveProcId,
             // Standard QC fields for tooltip and downstream compatibility
             actual_qty: parsedActualQty,
             actual_length: parsedActualQty,
@@ -635,12 +836,14 @@ export default function WashedInspection() {
       }
 
       // Save to Database
-      const { error: updateErr } = await supabase
-        .from('weaving_orders')
-        .update({ fabric_rolls: updatedRolls })
-        .eq('id', weavingOrder.id);
+      if (weavingOrder.id && !String(weavingOrder.id).startsWith('pof-')) {
+        const { error: updateErr } = await supabase
+          .from('weaving_orders')
+          .update({ fabric_rolls: updatedRolls })
+          .eq('id', weavingOrder.id);
 
-      if (updateErr) throw updateErr;
+        if (updateErr) throw updateErr;
+      }
 
       // Sync washed inspection details to processing_orders received_rolls
       try {
@@ -649,19 +852,34 @@ export default function WashedInspection() {
           .select('id, received_rolls');
 
         if (pofsData) {
-          const targetId = (matchedRoll.processed_roll_id || matchedRoll.id).toLowerCase();
+          const targetId = (matchedRoll.processed_roll_id || matchedRoll.id || scanInput).toLowerCase().trim();
+          const greigeId = (matchedRoll.greige_roll_id || matchedRoll.id || scanInput).toLowerCase().trim();
+
           for (const pof of pofsData) {
             const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
-            const hasMatch = rxRolls.some(rx => 
-              (rx.id && rx.id.toLowerCase() === targetId) || 
-              (rx.processed_roll_id && rx.processed_roll_id.toLowerCase() === targetId)
-            );
+            const hasMatch = rxRolls.some(rx => {
+              const rxId = (rx.id || '').toLowerCase();
+              const rxProcId = (rx.processed_roll_id || '').toLowerCase();
+              const rxGId = (rx.greige_roll_id || '').toLowerCase();
+              return (
+                (rxId && (rxId === targetId || rxId === greigeId)) ||
+                (rxProcId && (rxProcId === targetId || rxProcId === greigeId)) ||
+                (rxGId && (rxGId === targetId || rxGId === greigeId))
+              );
+            });
+
             if (hasMatch) {
               const updatedRxRolls = rxRolls.map(rx => {
-                if (
-                  (rx.id && rx.id.toLowerCase() === targetId) || 
-                  (rx.processed_roll_id && rx.processed_roll_id.toLowerCase() === targetId)
-                ) {
+                const rxId = (rx.id || '').toLowerCase();
+                const rxProcId = (rx.processed_roll_id || '').toLowerCase();
+                const rxGId = (rx.greige_roll_id || '').toLowerCase();
+                const isMatch = (
+                  (rxId && (rxId === targetId || rxId === greigeId)) ||
+                  (rxProcId && (rxProcId === targetId || rxProcId === greigeId)) ||
+                  (rxGId && (rxGId === targetId || rxGId === greigeId))
+                );
+
+                if (isMatch) {
                   return {
                     ...rx,
                     washed_inspected: true,
@@ -671,6 +889,28 @@ export default function WashedInspection() {
                     washed_width: width ? parseFloat(width) : null,
                     washed_lot: lot ? lot.trim() : null,
                     washed_place: washedPlace,
+                    washed_inspector_1: inspector1,
+                    washed_inspector_2: inspector2,
+                    washed_warp_weft_breakage_1pt_count: warpWeft1pt,
+                    washed_warp_weft_breakage_2pt_count: warpWeft2pt,
+                    washed_warp_weft_breakage_3pt_count: warpWeft3pt,
+                    washed_warp_weft_breakage_4pt_count: warpWeft4pt,
+                    washed_warp_weft_breakage_total_points: warpWeftTotal,
+                    washed_warp_weft_breakage_no_of_tags: warpWeftTags,
+                    washed_weaving_defect_1pt_count: weaving1pt,
+                    washed_weaving_defect_2pt_count: weaving2pt,
+                    washed_weaving_defect_3pt_count: weaving3pt,
+                    washed_weaving_defect_4pt_count: weaving4pt,
+                    washed_weaving_defect_total_points: weavingTotal,
+                    washed_weaving_defect_no_of_tags: weavingTags,
+                    washed_yarn_defect_1pt_count: yarn1pt,
+                    washed_yarn_defect_4pt_count: yarn4pt,
+                    washed_yarn_defect_total_points: yarnTotal,
+                    washed_yarn_defect_no_of_tags: yarnTags,
+                    washed_holes_stains_2pt_count: holes2pt,
+                    washed_holes_stains_4pt_count: holes4pt,
+                    washed_holes_stains_total_points: holesStainsTotal,
+                    washed_holes_stains_no_of_tags: holesTags,
                     washed_total_defect_points: grandTotal,
                     washed_no_of_tags: totalTags
                   };
@@ -687,6 +927,73 @@ export default function WashedInspection() {
         }
       } catch (pErr) {
         console.error('Error updating processing orders for washed inspection:', pErr);
+      }
+
+      // Sync washed inspection details to fabric_stock_inventory if roll is a stock roll
+      try {
+        const { data: stockItems } = await supabase
+          .from('fabric_stock_inventory')
+          .select('id, original_roll_id, roll_id, metadata');
+        
+        const checkIds = [
+          matchedRoll.stockInventoryId,
+          matchedRoll.processed_roll_id,
+          matchedRoll.id,
+          matchedRoll.greige_roll_id,
+          scanInput.trim()
+        ].filter(Boolean).map(x => String(x).toLowerCase());
+
+        const stockMatch = (stockItems || []).find(s => {
+          const orig = (s.original_roll_id || '').toLowerCase();
+          const rId = (s.roll_id || '').toLowerCase();
+          const sId = (s.id || '').toLowerCase();
+          return checkIds.includes(orig) || checkIds.includes(rId) || checkIds.includes(sId);
+        });
+
+        if (stockMatch) {
+          await supabase
+            .from('fabric_stock_inventory')
+            .update({
+              actual_meters: parsedActualQty,
+              metadata: {
+                ...(stockMatch.metadata || {}),
+                washed_inspected: true,
+                washed_inspected_at: new Date().toISOString(),
+                washed_actual_qty: parsedActualQty,
+                washed_shortage: shortage,
+                washed_width: width ? parseFloat(width) : null,
+                washed_lot: lot ? lot.trim() : null,
+                washed_place: washedPlace,
+                washed_inspector_1: inspector1,
+                washed_inspector_2: inspector2,
+                washed_warp_weft_breakage_1pt_count: warpWeft1pt,
+                washed_warp_weft_breakage_2pt_count: warpWeft2pt,
+                washed_warp_weft_breakage_3pt_count: warpWeft3pt,
+                washed_warp_weft_breakage_4pt_count: warpWeft4pt,
+                washed_warp_weft_breakage_total_points: warpWeftTotal,
+                washed_warp_weft_breakage_no_of_tags: warpWeftTags,
+                washed_weaving_defect_1pt_count: weaving1pt,
+                washed_weaving_defect_2pt_count: weaving2pt,
+                washed_weaving_defect_3pt_count: weaving3pt,
+                washed_weaving_defect_4pt_count: weaving4pt,
+                washed_weaving_defect_total_points: weavingTotal,
+                washed_weaving_defect_no_of_tags: weavingTags,
+                washed_yarn_defect_1pt_count: yarn1pt,
+                washed_yarn_defect_4pt_count: yarn4pt,
+                washed_yarn_defect_total_points: yarnTotal,
+                washed_yarn_defect_no_of_tags: yarnTags,
+                washed_holes_stains_2pt_count: holes2pt,
+                washed_holes_stains_4pt_count: holes4pt,
+                washed_holes_stains_total_points: holesStainsTotal,
+                washed_holes_stains_no_of_tags: holesTags,
+                washed_total_defect_points: grandTotal,
+                washed_no_of_tags: totalTags
+              }
+            })
+            .eq('id', stockMatch.id);
+        }
+      } catch (sErr) {
+        console.error('Error updating fabric_stock_inventory for washed inspection:', sErr);
       }
 
       setSuccessMsg(`✅ Washed Roll ID "${matchedRoll.processed_roll_id || matchedRoll.id}" inspected successfully! Details stored.`);
