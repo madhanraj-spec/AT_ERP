@@ -8,29 +8,77 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setSession({ user: { id: '73b727b0-61cd-4325-a105-13647d69f43a' } });
-    setProfile({ id: '73b727b0-61cd-4325-a105-13647d69f43a', email: 'tharun@at.com', role: 'admin', full_name: 'Tharun' });
-    setLoading(false);
-  }, []);
-
-  const fetchProfile = async (userId) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (error) {
-      console.error('Profile fetch error:', error.message);
+  const fetchProfile = async (user) => {
+    if (!user) {
+      setProfile(null);
+      setLoading(false);
+      return;
     }
-    setProfile(data);
-    setLoading(false);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error || !data) {
+        console.error('Profile fetch error:', error?.message);
+        setProfile({
+          id: user.id,
+          email: user.email,
+          role: user.user_metadata?.role || 'admin',
+          full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'
+        });
+      } else {
+        setProfile(data);
+      }
+    } catch (err) {
+      console.error('Profile fetch exception:', err);
+      setProfile({
+        id: user.id,
+        email: user.email,
+        role: user.user_metadata?.role || 'admin',
+        full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session?.user) {
+        fetchProfile(session.user);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setSession(session);
+      if (session?.user) {
+        await fetchProfile(session.user);
+      } else {
+        setProfile(null);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
+
   const login = async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    if (data?.session) {
+      setSession(data.session);
+      if (data.session.user) {
+        await fetchProfile(data.session.user);
+      }
+    }
   };
 
   const logout = async () => {
@@ -39,7 +87,7 @@ export function AuthProvider({ children }) {
     setProfile(null);
   };
 
-  const value = { session, profile, loading, login, logout };
+  const value = { session, profile, loading, login, logout, fetchProfile };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
@@ -47,3 +95,4 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   return useContext(AuthContext);
 }
+
