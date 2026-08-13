@@ -350,11 +350,12 @@ export default function FabricCut() {
           roll_ok: child.roll_ok,
           warp_comments: child.roll_ok ? [] : child.warp_comments,
           weft_comments: child.roll_ok ? [] : child.weft_comments,
-          inspector_1: child.inspector_1,
-          inspector_2: child.inspector_2,
-          attended_fitter: child.attended_fitter,
-          status: '4_point_inspected', // Mark as inspected since parent was inspected and child parameters are entered
-          inspected_at: new Date().toISOString()
+          inspector_1: child.inspector_1 || parentRoll.inspector_1 || '',
+          inspector_2: child.inspector_2 || parentRoll.inspector_2 || '',
+          attended_fitter: child.attended_fitter || parentRoll.attended_fitter || '',
+          status: parentRoll.status === '4_point_inspected' || parentRoll.status === 'sent_to_processing' || parentRoll.status === 'received_from_processing' ? parentRoll.status : '4_point_inspected',
+          created_at: parentRoll.created_at || new Date().toISOString(),
+          inspected_at: parentRoll.inspected_at || new Date().toISOString()
         };
       });
 
@@ -494,13 +495,16 @@ export default function FabricCut() {
               }
               .label-left {
                 flex: 1;
+                min-width: 0;
                 display: flex;
                 flex-direction: column;
                 justify-content: space-between;
                 padding-right: 0.2cm;
+                overflow: hidden;
               }
               .label-right {
                 width: 2.8cm;
+                flex-shrink: 0;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
@@ -510,9 +514,9 @@ export default function FabricCut() {
               }
               .field-row {
                 display: flex;
-                align-items: baseline;
+                align-items: flex-start;
                 margin-bottom: 1px;
-                line-height: 1.1;
+                line-height: 1.15;
               }
               .field-label {
                 font-size: 6.5px;
@@ -521,6 +525,7 @@ export default function FabricCut() {
                 width: 1.8cm;
                 flex-shrink: 0;
                 letter-spacing: 0.02em;
+                padding-top: 1px;
               }
               .field-value {
                 font-size: 8px;
@@ -529,11 +534,16 @@ export default function FabricCut() {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                min-width: 0;
               }
               .field-value.roll-id {
                 font-family: monospace;
-                font-size: 8.5px;
+                font-size: 8px;
                 font-weight: 900;
+                white-space: normal;
+                word-break: break-all;
+                overflow-wrap: anywhere;
+                line-height: 1.15;
               }
               .field-value.qty-val {
                 font-size: 12px;
@@ -541,8 +551,8 @@ export default function FabricCut() {
                 color: #000;
               }
               .qr-code {
-                width: 2.2cm;
-                height: 2.2cm;
+                width: 2.3cm;
+                height: 2.3cm;
                 object-fit: contain;
               }
               .qr-placeholder {

@@ -368,6 +368,7 @@ function PackageSlipForm({ onBack, editSlipId }) {
   };
 
   const handleAddRoll = async (idToUse) => {
+    if (isLoading) return;
     if (slipStatus === 'dispatched') {
       setError('This package slip has been dispatched and cannot be edited.');
       return;
@@ -409,90 +410,160 @@ function PackageSlipForm({ onBack, editSlipId }) {
         }
       }
 
+      const isRollIdMatch = (candidateId, searchTargetId) => {
+        if (!candidateId || !searchTargetId) return false;
+        const c = String(candidateId).toLowerCase().trim();
+        const t = String(searchTargetId).toLowerCase().trim();
+        if (!c || !t) return false;
+        if (c === t) return true;
+
+        const cHasCutSuffix = /\/\d{2,3}$/.test(c);
+        const tHasCutSuffix = /\/\d{2,3}$/.test(t);
+
+        if (cHasCutSuffix && tHasCutSuffix) {
+          return c === t;
+        }
+
+        if (tHasCutSuffix && !cHasCutSuffix) {
+          const tParent = t.replace(/\/\d{2,3}$/, '');
+          if (c === tParent || t.startsWith(c + '/')) return true;
+        }
+
+        if (cHasCutSuffix && !tHasCutSuffix) {
+          const cParent = c.replace(/\/\d{2,3}$/, '');
+          if (t === cParent || c.startsWith(t + '/')) return true;
+        }
+
+        return false;
+      };
+
       let foundRoll = null;
       let foundOrder = null;
 
-      // Source 1: Search weaving_orders fabric_rolls
+      // Source 1: Search weaving_orders fabric_rolls (state + live fallback)
       for (const wo of allWeavingOrders) {
         const rolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
         const match = rolls.find(r =>
-          (r.processed_roll_id && r.processed_roll_id.trim().toLowerCase() === targetId.toLowerCase()) ||
-          (r.id && r.id.trim().toLowerCase() === targetId.toLowerCase())
+          isRollIdMatch(r.processed_roll_id, targetId) ||
+          isRollIdMatch(r.id, targetId)
         );
         if (match) {
-          foundRoll = match;
+          foundRoll = { ...match, id: targetId, processed_roll_id: targetId };
           foundOrder = wo;
           break;
         }
       }
 
-      // Source 2: Search processing_orders received_rolls
       if (!foundRoll) {
-        const { data: pofsData } = await supabase
-          .from('processing_orders')
-          .select('*, order:orders(id, order_number, design_no, design_name, buyer_po_number, avg_weight_meter, technical_specs, vendor_id)');
+        const { data: liveWo } = await supabase
+          .from('weaving_orders')
+          .select('*');
 
-        if (pofsData) {
-          for (const pof of pofsData) {
-            const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
-            const rxMatch = rxRolls.find(rx =>
-              (rx.id && rx.id.trim().toLowerCase() === targetId.toLowerCase()) ||
-              (rx.processed_roll_id && rx.processed_roll_id.trim().toLowerCase() === targetId.toLowerCase()) ||
-              (rx.roll_id && rx.roll_id.trim().toLowerCase() === targetId.toLowerCase())
+        if (liveWo) {
+          for (const wo of liveWo) {
+            const rolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
+            const match = rolls.find(r =>
+              isRollIdMatch(r.processed_roll_id, targetId) ||
+              isRollIdMatch(r.id, targetId)
             );
-            if (rxMatch) {
-              foundRoll = {
-                id: rxMatch.processed_roll_id || rxMatch.id,
-                processed_roll_id: rxMatch.processed_roll_id || rxMatch.id,
-                washed_inspected: rxMatch.washed_inspected === true || rxMatch.status === 'washed_inspected' || rxMatch.status === 'completed' || pof.status === 'completed',
-                washed_actual_qty: parseFloat(rxMatch.washed_actual_qty || rxMatch.qty || rxMatch.actual_meters || 0)
-              };
-              foundOrder = {
-                order_id: pof.order_id || pof.orders?.id,
-                order: pof.orders || {
-                  order_number: pof.order_number
-                }
-              };
+            if (match) {
+              foundRoll = { ...match, id: targetId, processed_roll_id: targetId };
+              foundOrder = wo;
               break;
             }
           }
         }
       }
 
-      // Source 3: Search fabric_stock_inventory
+      // Source 2: Search processing_orders received_rolls
       if (!foundRoll) {
-        const { data: stockMatch } = await supabase
-          .from('fabric_stock_inventory')
-          .select('*, allotted_order:orders!allotted_order_id(*)')
-          .or(`original_roll_id.ilike.${targetId},id.eq.${targetId},roll_id.ilike.${targetId}`)
-          .maybeSingle();
+        try {
+          const { data: pofsData } = await supabase
+            .from('processing_orders')
+            .select('*');
 
-        if (stockMatch) {
-          if (stockMatch.status === 'dispatched') {
-            setError(`Roll "${targetId}" is already marked as Dispatched in fabric stock inventory.`);
-            setIsLoading(false);
-            return;
-          }
-          foundRoll = {
-            id: stockMatch.original_roll_id || stockMatch.roll_id || stockMatch.id,
-            processed_roll_id: stockMatch.original_roll_id || stockMatch.roll_id || stockMatch.id,
-            washed_inspected: stockMatch.metadata?.washed_inspected === true || stockMatch.status === 'allotted' || stockMatch.status === 'available',
-            washed_actual_qty: parseFloat(stockMatch.actual_meters || stockMatch.meters || 0),
-            isStockRoll: true,
-            stockInventoryId: stockMatch.id
-          };
-          foundOrder = {
-            order_id: stockMatch.allotted_order_id,
-            order: stockMatch.allotted_order || {
-              order_number: stockMatch.allotted_order_number,
-              design_no: stockMatch.allotted_design_no,
-              design_name: stockMatch.allotted_design_name
+          if (pofsData) {
+            for (const pof of pofsData) {
+              let rxRolls = pof.received_rolls;
+              if (typeof rxRolls === 'string') { try { rxRolls = JSON.parse(rxRolls); } catch (e) {} }
+              if (!Array.isArray(rxRolls)) rxRolls = [];
+
+              const rxMatch = rxRolls.find(rx =>
+                isRollIdMatch(rx.id, targetId) ||
+                isRollIdMatch(rx.processed_roll_id, targetId) ||
+                isRollIdMatch(rx.greige_roll_id, targetId) ||
+                isRollIdMatch(rx.original_roll_id, targetId) ||
+                isRollIdMatch(rx.roll_id, targetId)
+              );
+
+              if (rxMatch) {
+                foundRoll = {
+                  ...rxMatch,
+                  id: targetId,
+                  processed_roll_id: targetId,
+                  washed_actual_qty: parseFloat(rxMatch.washed_actual_qty ?? rxMatch.actual_qty ?? rxMatch.qty ?? 0)
+                };
+                foundOrder = {
+                  order_id: pof.order_id,
+                  order: { order_number: pof.order_number }
+                };
+                break;
+              }
             }
-          };
+          }
+        } catch (pErr) {
+          console.error("Error fetching processing_orders in Dispatch:", pErr);
         }
       }
 
-      // Extract order number from roll ID (e.g. AT/2026/B/00002/P2/00016 -> AT/2026/B/00002)
+      // Source 3: Search fabric_stock_inventory
+      if (!foundRoll) {
+        try {
+          const { data: stockItems } = await supabase
+            .from('fabric_stock_inventory')
+            .select('*');
+
+          if (stockItems) {
+            const stockMatch = stockItems.find(st =>
+              isRollIdMatch(st.roll_id, targetId) ||
+              isRollIdMatch(st.original_roll_id, targetId) ||
+              isRollIdMatch(st.id, targetId) ||
+              isRollIdMatch(st.metadata?.processed_roll_id, targetId) ||
+              isRollIdMatch(st.metadata?.original_roll_id, targetId)
+            );
+
+            if (stockMatch) {
+              if (stockMatch.status === 'dispatched') {
+                setError(`Roll "${targetId}" is already marked as Dispatched in fabric stock inventory.`);
+                setIsLoading(false);
+                return;
+              }
+              const stockMeta = stockMatch.metadata || {};
+              foundRoll = {
+                ...stockMeta,
+                id: targetId,
+                processed_roll_id: targetId,
+                washed_inspected: stockMeta.washed_inspected === true || stockMatch.status === 'allotted' || stockMatch.status === 'available' || stockMatch.status === 'washed_inspected',
+                washed_actual_qty: parseFloat(stockMatch.actual_meters || stockMatch.meters || stockMeta.washed_actual_qty || 0),
+                isStockRoll: true,
+                stockInventoryId: stockMatch.id
+              };
+              foundOrder = {
+                order_id: stockMatch.allotted_order_id,
+                order: {
+                  order_number: stockMatch.allotted_order_number,
+                  design_no: stockMatch.allotted_design_no,
+                  design_name: stockMatch.allotted_design_name
+                }
+              };
+            }
+          }
+        } catch (stkErr) {
+          console.error("Error fetching fabric_stock_inventory in Dispatch:", stkErr);
+        }
+      }
+
+      // Extract order number from roll ID string if order is missing or mismatched
       const rollIdStr = targetId.toUpperCase().trim();
       let extractedOrderNo = '';
       if (rollIdStr.includes('/P')) {
@@ -502,15 +573,18 @@ function PackageSlipForm({ onBack, editSlipId }) {
         if (parts.length >= 4) extractedOrderNo = parts.slice(0, -1).join('/');
       }
 
-      if (extractedOrderNo) {
-        const currentOrderNo = (foundOrder?.order?.order_number || '').toUpperCase().trim();
-        if (!foundOrder || extractedOrderNo !== currentOrderNo) {
-          const { data: correctOrder } = await supabase
-            .from('orders')
-            .select('*, master_brands(brand_name)')
-            .ilike('order_number', extractedOrderNo)
-            .maybeSingle();
+      let targetOrderId = foundOrder?.order_id || foundOrder?.order?.id;
 
+      if (extractedOrderNo || targetOrderId) {
+        const currentOrderNo = (foundOrder?.order?.order_number || '').toUpperCase().trim();
+        if (!foundOrder || !foundOrder.order || (extractedOrderNo && extractedOrderNo !== currentOrderNo)) {
+          let orderQuery = supabase.from('orders').select('id, order_number, design_no, design_name, buyer_po_number, avg_weight_meter, technical_specs, vendor_id');
+          if (targetOrderId) {
+            orderQuery = orderQuery.eq('id', targetOrderId);
+          } else {
+            orderQuery = orderQuery.ilike('order_number', extractedOrderNo);
+          }
+          const { data: correctOrder } = await orderQuery.maybeSingle();
           if (correctOrder) {
             foundOrder = {
               order_id: correctOrder.id,
@@ -520,47 +594,77 @@ function PackageSlipForm({ onBack, editSlipId }) {
         }
       }
 
-      // Cross-check washed inspection status across processing_orders and stock inventory if needed
-      if (foundRoll && foundRoll.washed_inspected !== true) {
-        try {
-          const { data: pofsCheck } = await supabase
-            .from('processing_orders')
-            .select('received_rolls');
-          if (pofsCheck) {
-            for (const pof of pofsCheck) {
-              const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
-              const rxMatch = rxRolls.find(rx => 
-                (rx.id && rx.id.trim().toLowerCase() === targetId.toLowerCase()) ||
-                (rx.processed_roll_id && rx.processed_roll_id.trim().toLowerCase() === targetId.toLowerCase()) ||
-                (rx.roll_id && rx.roll_id.trim().toLowerCase() === targetId.toLowerCase())
-              );
-              if (rxMatch && (rxMatch.washed_inspected === true || rxMatch.status === 'washed_inspected')) {
-                foundRoll.washed_inspected = true;
-                if (!foundRoll.washed_actual_qty) {
-                  foundRoll.washed_actual_qty = parseFloat(rxMatch.washed_actual_qty || rxMatch.qty || 0);
-                }
-                break;
-              }
-            }
-          }
-        } catch (pCheckErr) {
-          console.error('Error cross-checking processing_orders in Dispatch:', pCheckErr);
-        }
+      // Always enrich foundRoll with washed inspection details and actual meters from processing_orders / fabric_stock_inventory
+      let pofRxMatch = null;
+      let stockMatchObj = null;
 
-        if (foundRoll.washed_inspected !== true) {
-          const { data: stockCheck } = await supabase
-            .from('fabric_stock_inventory')
-            .select('*')
-            .or(`original_roll_id.ilike.${targetId},id.eq.${targetId},roll_id.ilike.${targetId}`)
-            .maybeSingle();
+      try {
+        const { data: pofsCheck } = await supabase.from('processing_orders').select('*');
+        if (pofsCheck) {
+          for (const pof of pofsCheck) {
+            let rxRolls = pof.received_rolls;
+            if (typeof rxRolls === 'string') { try { rxRolls = JSON.parse(rxRolls); } catch (e) {} }
+            if (!Array.isArray(rxRolls)) rxRolls = [];
 
-          if (stockCheck && (stockCheck.metadata?.washed_inspected === true || stockCheck.status === 'allotted' || stockCheck.status === 'available')) {
-            foundRoll.washed_inspected = true;
-            if (!foundRoll.washed_actual_qty) {
-              foundRoll.washed_actual_qty = parseFloat(stockCheck.actual_meters || stockCheck.meters || 0);
+            const rxMatch = rxRolls.find(rx => 
+              isRollIdMatch(rx.id, targetId) ||
+              isRollIdMatch(rx.processed_roll_id, targetId) ||
+              isRollIdMatch(rx.greige_roll_id, targetId) ||
+              isRollIdMatch(rx.original_roll_id, targetId)
+            );
+            if (rxMatch) {
+              pofRxMatch = rxMatch;
+              break;
             }
           }
         }
+      } catch (e) {
+        console.error("Error cross-checking processing_orders in Dispatch:", e);
+      }
+
+      try {
+        const { data: stockItemsCheck } = await supabase.from('fabric_stock_inventory').select('*');
+        if (stockItemsCheck) {
+          const sCheck = stockItemsCheck.find(st => 
+            isRollIdMatch(st.roll_id, targetId) ||
+            isRollIdMatch(st.original_roll_id, targetId) ||
+            isRollIdMatch(st.id, targetId) ||
+            isRollIdMatch(st.metadata?.processed_roll_id, targetId) ||
+            isRollIdMatch(st.metadata?.original_roll_id, targetId)
+          );
+          if (sCheck) stockMatchObj = sCheck;
+        }
+      } catch (e) {
+        console.error("Error cross-checking fabric_stock_inventory in Dispatch:", e);
+      }
+
+      const rx = pofRxMatch || {};
+      const stockMeta = stockMatchObj?.metadata || {};
+      const baseRoll = foundRoll || {};
+
+      const isWashedInspected = (r) => {
+        if (!r) return false;
+        return (
+          r.washed_inspected === true ||
+          r.washed_inspected === 'true' ||
+          r.washed_inspected === 1 ||
+          Boolean(r.washed_inspector_1 || r.washed_inspected_at || r.status === 'washed_inspected')
+        );
+      };
+
+      const finalActualQty = parseFloat(rx.washed_actual_qty ?? rx.actual_qty ?? stockMatchObj?.actual_meters ?? stockMatchObj?.meters ?? stockMeta.washed_actual_qty ?? stockMeta.actual_qty ?? baseRoll.washed_actual_qty ?? baseRoll.actual_qty ?? baseRoll.qty ?? 0);
+
+      if (foundRoll) {
+        foundRoll = {
+          ...baseRoll,
+          ...stockMeta,
+          ...rx,
+          id: targetId,
+          processed_roll_id: targetId,
+          washed_inspected: baseRoll.washed_inspected || isWashedInspected(baseRoll) || isWashedInspected(rx) || isWashedInspected(stockMeta) || stockMatchObj?.status === 'allotted' || stockMatchObj?.status === 'available' || stockMatchObj?.status === 'washed_inspected',
+          washed_actual_qty: finalActualQty,
+          actual_qty: finalActualQty
+        };
       }
 
       if (!foundRoll) {
@@ -654,21 +758,33 @@ function PackageSlipForm({ onBack, editSlipId }) {
         setAvgWeightMeter(defaultAvg ? defaultAvg.toString() : '0.35');
 
         const calculatedWeight = Math.round(qtyMeters * (defaultAvg || 0.35) * 1000) / 1000;
-        setAddedRolls([{
-          roll_id: foundRoll.processed_roll_id || foundRoll.id,
-          qty_meters: qtyMeters,
-          weight: calculatedWeight,
-          isManualWeight: false
-        }]);
+        const newRollId = (foundRoll.processed_roll_id || foundRoll.id || targetId).trim();
+        setAddedRolls(prev => {
+          if (prev.some(r => r.roll_id.trim().toLowerCase() === newRollId.toLowerCase())) {
+            return prev;
+          }
+          return [{
+            roll_id: newRollId,
+            qty_meters: qtyMeters,
+            weight: calculatedWeight,
+            isManualWeight: false
+          }];
+        });
       } else {
         const currentAvg = parseFloat(avgWeightMeter) || 0.35;
         const calculatedWeight = Math.round(qtyMeters * currentAvg * 1000) / 1000;
-        setAddedRolls(prev => [...prev, {
-          roll_id: foundRoll.processed_roll_id || foundRoll.id,
-          qty_meters: qtyMeters,
-          weight: calculatedWeight,
-          isManualWeight: false
-        }]);
+        const newRollId = (foundRoll.processed_roll_id || foundRoll.id || targetId).trim();
+        setAddedRolls(prev => {
+          if (prev.some(r => r.roll_id.trim().toLowerCase() === newRollId.toLowerCase())) {
+            return prev;
+          }
+          return [...prev, {
+            roll_id: newRollId,
+            qty_meters: qtyMeters,
+            weight: calculatedWeight,
+            isManualWeight: false
+          }];
+        });
       }
 
       setSuccess(`Roll "${targetId}" successfully added.`);
@@ -684,27 +800,6 @@ function PackageSlipForm({ onBack, editSlipId }) {
   const handleInputChange = (val) => {
     if (slipStatus === 'dispatched') return;
     setScanInput(val);
-    const targetId = val.trim();
-    if (!targetId) return;
-
-    let foundRoll = null;
-    let foundOrder = null;
-    for (const wo of allWeavingOrders) {
-      const rolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
-      const match = rolls.find(r =>
-        (r.processed_roll_id && r.processed_roll_id.toLowerCase() === targetId.toLowerCase()) ||
-        (r.id && r.id.toLowerCase() === targetId.toLowerCase())
-      );
-      if (match) {
-        foundRoll = match;
-        foundOrder = wo;
-        break;
-      }
-    }
-
-    if (foundRoll && foundOrder) {
-      handleAddRoll(targetId);
-    }
   };
 
   const handleRemoveRoll = (rollId) => {
@@ -934,7 +1029,12 @@ function PackageSlipForm({ onBack, editSlipId }) {
                     placeholder="Enter processed roll ID (e.g. PR-...)"
                     value={scanInput}
                     onChange={e => handleInputChange(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleAddRoll()}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddRoll();
+                      }
+                    }}
                     style={inputStyle}
                     disabled={slipStatus === 'dispatched'}
                   />
@@ -3067,6 +3167,8 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
   const [shippedFrom, setShippedFrom] = useState('');
   const [shippedTo, setShippedTo] = useState('');
   const [fetchedPis, setFetchedPis] = useState([]);
+  const [availablePis, setAvailablePis] = useState([]);
+  const [selectedPiId, setSelectedPiId] = useState('');
 
   // Dropdown list data
   const [partners, setPartners] = useState([]);
@@ -3149,7 +3251,82 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
     supabase.from('master_partners').select('id, partner_name, address, gstin, partner_type').order('partner_name').then(({ data }) => {
       setPartners(data || []);
     });
+
+    // Fetch all Proforma Invoices for quick PI selection
+    supabase.from('proforma_invoices').select('*').order('created_at', { ascending: false }).then(({ data }) => {
+      setAvailablePis(data || []);
+    });
   }, []);
+
+  const handleSelectPi = (piId) => {
+    setSelectedPiId(piId);
+    if (!piId) return;
+
+    const piObj = availablePis.find(p => p.id === piId);
+    if (!piObj) return;
+
+    const piOrderIds = piObj.order_ids || (piObj.order_id ? [piObj.order_id] : []);
+    const matchingOrders = orders.filter(o => piOrderIds.includes(o.id));
+
+    if (matchingOrders.length > 0) {
+      setSelectedOrders(matchingOrders);
+
+      // Format Billed To & Shipped To from PI
+      const billedStr = [
+        piObj.billed_to_name,
+        piObj.billed_to_address,
+        piObj.billed_to_gstin ? `GSTIN: ${piObj.billed_to_gstin}` : null,
+        piObj.billed_to_state ? `State: ${piObj.billed_to_state} (${piObj.billed_to_state_code || ''})` : null
+      ].filter(Boolean).join('\n');
+
+      const shippedStr = [
+        piObj.shipped_to_name,
+        piObj.shipped_to_address,
+        piObj.shipped_to_gstin ? `GSTIN: ${piObj.shipped_to_gstin}` : null,
+        piObj.shipped_to_state ? `State: ${piObj.shipped_to_state} (${piObj.shipped_to_state_code || ''})` : null
+      ].filter(Boolean).join('\n');
+
+      if (billedStr) setBilledTo(billedStr);
+      if (shippedStr) setShippedTo(shippedStr);
+
+      if (piObj.uom?.toLowerCase().includes('yard')) {
+        setBillUom('Yards');
+      } else {
+        setBillUom('Meters');
+      }
+
+      // Set item details from PI
+      const newItemsDetails = {};
+      if (Array.isArray(piObj.items) && piObj.items.length > 0) {
+        piObj.items.forEach(it => {
+          newItemsDetails[it.order_id] = {
+            rate: String(it.rate || 0),
+            piRate: parseFloat(it.rate || 0),
+            hsn: it.hsn_code || '5208',
+            cgst: String(it.cgst_percent || 0),
+            sgst: String(it.sgst_percent || 0),
+            igst: String(it.igst_percent || 0),
+            piNumber: piObj.invoice_number,
+            piDate: piObj.invoice_date
+          };
+        });
+      } else {
+        matchingOrders.forEach(o => {
+          newItemsDetails[o.id] = {
+            rate: String(piObj.rate || 0),
+            piRate: parseFloat(piObj.rate || 0),
+            hsn: piObj.hsn_code || '5208',
+            cgst: String(piObj.cgst_percent || 0),
+            sgst: String(piObj.sgst_percent || 0),
+            igst: String(piObj.igst_percent || 0),
+            piNumber: piObj.invoice_number,
+            piDate: piObj.invoice_date
+          };
+        });
+      }
+      setItemsDetails(prev => ({ ...prev, ...newItemsDetails }));
+    }
+  };
 
   // Fetch Next Sequence Invoice Number
   const fetchNextInvoiceNumber = async (selectedDate) => {
@@ -3815,7 +3992,29 @@ function BillForm({ editBillId, onBack, onSaveComplete }) {
         {step === 1 && (
           <div className="fade-in" style={{ background: 'white', border: '1px solid var(--border-current)', borderRadius: '16px', padding: '1.5rem', boxShadow: 'var(--shadow-md)' }}>
             <h3 style={{ fontSize: '0.9rem', fontWeight: '850', color: 'var(--color-primary)', margin: '0 0 0.5rem 0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Step 1: Select Orders</h3>
-            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1.25rem' }}>Search and select the orders to be included in this bill/invoice.</p>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1.25rem' }}>Search and select the orders to be included in this bill/invoice, or choose a Proforma Invoice.</p>
+
+            {/* Quick PI Selector */}
+            <div style={{ marginBottom: '1.25rem', background: '#f8fafc', padding: '1rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <span style={labelStyle}>Quick Select by Proforma Invoice (PI)</span>
+              <select
+                value={selectedPiId}
+                onChange={e => handleSelectPi(e.target.value)}
+                style={{ ...inputStyle, marginTop: '0.35rem' }}
+              >
+                <option value="">-- Choose a Proforma Invoice --</option>
+                {availablePis.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.invoice_number} ({p.billed_to_name || 'Party'}) — Date: {p.invoice_date}
+                  </option>
+                ))}
+              </select>
+              {selectedPiId && (
+                <p style={{ fontSize: '0.75rem', color: '#16a34a', margin: '4px 0 0 0', fontWeight: '600' }}>
+                  ✓ Orders, party address, and rates auto-populated from selected Proforma Invoice.
+                </p>
+              )}
+            </div>
 
             <div style={{ position: 'relative', marginBottom: '1.5rem' }}>
               <span style={labelStyle}>Search & Choose Orders</span>

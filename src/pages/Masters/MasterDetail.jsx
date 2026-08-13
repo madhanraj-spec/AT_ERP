@@ -759,6 +759,10 @@ export default function MasterDetail() {
               <input type="text" name="gstin" className="input-field" value={formData.gstin || ''} onChange={handleInputChange} placeholder="e.g. 33AAACC1234A1Z1" maxLength={15} />
             </div>
             <div className="input-group">
+              <label className="input-label">District (Optional)</label>
+              <input type="text" name="district" className="input-field" value={formData.district || ''} onChange={handleInputChange} placeholder="e.g. Salem" />
+            </div>
+            <div className="input-group">
               <label className="input-label">State (Optional)</label>
               <input type="text" name="state" className="input-field" value={formData.state || ''} onChange={handleInputChange} placeholder="e.g. TAMIL NADU" />
             </div>
@@ -766,7 +770,7 @@ export default function MasterDetail() {
               <label className="input-label">State Code (Optional)</label>
               <input type="text" name="state_code" className="input-field" value={formData.state_code || ''} onChange={handleInputChange} placeholder="e.g. 33" maxLength={2} />
             </div>
-            <div className="input-group" style={{ gridColumn: 'span 2' }}>
+            <div className="input-group">
               <label className="input-label">Pincode (Optional)</label>
               <input type="text" name="pincode" className="input-field" value={formData.pincode || ''} onChange={handleInputChange} placeholder="e.g. 636001" maxLength={6} />
             </div>
@@ -977,6 +981,16 @@ export default function MasterDetail() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
               <div>
+                <label style={{ ...labelStyle, marginBottom: '0.15rem' }}>District</label>
+                <input type="text" name="district" style={{ ...inputStyle, width: '100%' }} value={editFormData.district || ''} onChange={handleEditChange} />
+              </div>
+              <div>
+                <label style={{ ...labelStyle, marginBottom: '0.15rem' }}>Pincode</label>
+                <input type="text" name="pincode" style={{ ...inputStyle, width: '100%' }} value={editFormData.pincode || ''} onChange={handleEditChange} maxLength={6} />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+              <div>
                 <label style={{ ...labelStyle, marginBottom: '0.15rem' }}>State</label>
                 <input type="text" name="state" style={{ ...inputStyle, width: '100%' }} value={editFormData.state || ''} onChange={handleEditChange} />
               </div>
@@ -984,10 +998,6 @@ export default function MasterDetail() {
                 <label style={{ ...labelStyle, marginBottom: '0.15rem' }}>State Code</label>
                 <input type="text" name="state_code" style={{ ...inputStyle, width: '100%' }} value={editFormData.state_code || ''} onChange={handleEditChange} maxLength={2} />
               </div>
-            </div>
-            <div>
-              <label style={{ ...labelStyle, marginBottom: '0.15rem' }}>Pincode</label>
-              <input type="text" name="pincode" style={{ ...inputStyle, width: '100%' }} value={editFormData.pincode || ''} onChange={handleEditChange} maxLength={6} />
             </div>
             <div>
               <label style={{ ...labelStyle, marginBottom: '0.15rem' }}>Address</label>
@@ -1511,6 +1521,12 @@ export default function MasterDetail() {
                                   <span style={{ fontWeight: '500' }}>GSTIN: </span>
                                   <span style={{ color: item.gstin ? 'var(--text-current)' : 'var(--text-muted-current)', fontFamily: item.gstin ? 'monospace' : 'inherit', letterSpacing: item.gstin ? '0.05em' : 'none' }}>
                                     {item.gstin || 'Not Provided'}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted-current)' }}>
+                                  <span style={{ fontWeight: '500' }}>District: </span>
+                                  <span style={{ color: item.district ? 'var(--text-current)' : 'var(--text-muted-current)' }}>
+                                    {item.district || '--'}
                                   </span>
                                 </div>
                                 <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted-current)' }}>

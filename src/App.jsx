@@ -31,6 +31,7 @@ import UserManagement from './pages/Admin/UserManagement';
 import DyeingFormsList from './pages/Merchandiser/DyeingFormsList';
 import CreateDyeingForm from './pages/Merchandiser/CreateDyeingForm';
 import DyeingFormView from './pages/Merchandiser/DyeingFormView';
+import ProformaInvoicesList from './pages/Orders/ProformaInvoicesList';
 import DyedYarnDashboard from './pages/DyedYarn/Dashboard';
 import ReceiveYarn from './pages/DyedYarn/ReceiveYarn';
 import DeliverDyedYarn from './pages/DyedYarn/DeliverYarn';
@@ -75,7 +76,7 @@ function AppRoutes() {
             } />
 
             {/* Merchandiser Routes */}
-            <Route path="/merchandiser">
+            <Route path="/merchandiser" element={<Outlet />}>
               <Route index element={<Navigate to="/merchandiser/orders" replace />} />
               <Route path="orders" element={<OrdersManagement />} />
               <Route path="create-order" element={<CreateOrder />} />
@@ -83,20 +84,26 @@ function AppRoutes() {
               <Route path="dyeing-forms" element={<DyeingFormsList />} />
               <Route path="create-dyeing-form" element={<CreateDyeingForm />} />
               <Route path="dyeing-forms/:id" element={<DyeingFormView />} />
+              <Route path="proforma-invoices" element={<ProformaInvoicesList />} />
             </Route>
 
             {/* Admin Routes */}
-            <Route path="/admin">
+            <Route path="/admin" element={<Outlet />}>
+              <Route index element={<Navigate to="/admin/orders" replace />} />
               <Route path="orders" element={<OrdersManagement />} />
               <Route path="create-order" element={<CreateOrder />} />
               <Route path="edit-order/:id" element={<CreateOrder />} />
               <Route path="dyeing-forms" element={<DyeingFormsList />} />
               <Route path="create-dyeing-form" element={<CreateDyeingForm />} />
               <Route path="dyeing-forms/:id" element={<DyeingFormView />} />
+              <Route path="proforma-invoices" element={<ProformaInvoicesList />} />
               <Route path="approvals" element={<AdminApprovals />} />
               <Route path="finances" element={<AdminFinances />} />
               <Route path="users" element={<UserManagement />} />
             </Route>
+
+            {/* Direct Proforma Invoice Route */}
+            <Route path="/proforma-invoices" element={<ProformaInvoicesList />} />
 
             {/* Inventory Routes */}
             <Route path="/greige-yarn">

@@ -719,16 +719,18 @@ export default function WashedInspection() {
       const currentRolls = Array.isArray(weavingOrder.fabric_rolls) ? weavingOrder.fabric_rolls : [];
       let rollMatchedInWeavingOrder = false;
 
-      const targetRollId = (matchedRoll.processed_roll_id || matchedRoll.id || '').toLowerCase();
-      const greigeRollId = (matchedRoll.greige_roll_id || '').toLowerCase();
+      const targetRollId = (matchedRoll.processed_roll_id || matchedRoll.id || '').toLowerCase().trim();
+      const greigeRollId = (matchedRoll.greige_roll_id || '').toLowerCase().trim();
       const updatedRolls = currentRolls.map(r => {
-        const rId = (r.id || '').toLowerCase();
-        const rProcId = (r.processed_roll_id || '').toLowerCase();
-        if (
+        const rId = (r.id || '').toLowerCase().trim();
+        const rProcId = (r.processed_roll_id || '').toLowerCase().trim();
+        const isMatch = (
           (rProcId && rProcId === targetRollId) ||
           (rId && rId === targetRollId && targetRollId !== '') ||
-          (greigeRollId && rId === greigeRollId)
-        ) {
+          (greigeRollId && rId === greigeRollId && (!rProcId || rProcId === targetRollId))
+        );
+        if (isMatch) {
+          rollMatchedInWeavingOrder = true;
           const effectiveProcId = (matchedRoll.processed_roll_id && matchedRoll.processed_roll_id.toLowerCase() !== rId ? matchedRoll.processed_roll_id : null) || (matchedRoll.id && matchedRoll.id.toLowerCase() !== rId ? matchedRoll.id : null) || (targetRollId && targetRollId !== rId ? targetRollId : null) || r.processed_roll_id || r.id;
           return {
             ...r,
@@ -785,58 +787,8 @@ export default function WashedInspection() {
         return r;
       });
 
-      if (!rollMatchedInWeavingOrder && matchedRoll.processed_roll_id) {
-        updatedRolls.push({
-          id: matchedRoll.processed_roll_id,
-          processed_roll_id: matchedRoll.processed_roll_id,
-          received_qty: receivedQty,
-          qty: receivedQty,
-          actual_qty: parsedActualQty,
-          actual_length: parsedActualQty,
-          shortage: shortage,
-          inspector_1: inspector1,
-          inspector_2: inspector2,
-          inspected_at: new Date().toISOString(),
-          roll_ok: grandTotal === 0,
-          status: 'received_from_processing',
-          received_from_processing_at: new Date().toISOString(),
-          washed_inspected: true,
-          washed_inspected_at: new Date().toISOString(),
-          washed_actual_qty: parsedActualQty,
-          washed_shortage: shortage,
-          washed_width: width ? parseFloat(width) : null,
-          washed_lot: lot ? lot.trim() : null,
-          lot: lot ? lot.trim() : null,
-          washed_inspector_1: inspector1,
-          washed_inspector_2: inspector2,
-          washed_place: washedPlace,
-          washed_warp_weft_breakage_1pt_count: warpWeft1pt,
-          washed_warp_weft_breakage_2pt_count: warpWeft2pt,
-          washed_warp_weft_breakage_3pt_count: warpWeft3pt,
-          washed_warp_weft_breakage_4pt_count: warpWeft4pt,
-          washed_warp_weft_breakage_total_points: warpWeftTotal,
-          washed_warp_weft_breakage_no_of_tags: warpWeftTags,
-          washed_weaving_defect_1pt_count: weaving1pt,
-          washed_weaving_defect_2pt_count: weaving2pt,
-          washed_weaving_defect_3pt_count: weaving3pt,
-          washed_weaving_defect_4pt_count: weaving4pt,
-          washed_weaving_defect_total_points: weavingTotal,
-          washed_weaving_defect_no_of_tags: weavingTags,
-          washed_yarn_defect_1pt_count: yarn1pt,
-          washed_yarn_defect_4pt_count: yarn4pt,
-          washed_yarn_defect_total_points: yarnTotal,
-          washed_yarn_defect_no_of_tags: yarnTags,
-          washed_holes_stains_2pt_count: holes2pt,
-          washed_holes_stains_4pt_count: holes4pt,
-          washed_holes_stains_total_points: holesStainsTotal,
-          washed_holes_stains_no_of_tags: holesTags,
-          washed_total_defect_points: grandTotal,
-          washed_no_of_tags: totalTags
-        });
-      }
-
       // Save to Database
-      if (weavingOrder.id && !String(weavingOrder.id).startsWith('pof-')) {
+      if (rollMatchedInWeavingOrder && weavingOrder.id && !String(weavingOrder.id).startsWith('pof-')) {
         const { error: updateErr } = await supabase
           .from('weaving_orders')
           .update({ fabric_rolls: updatedRolls })
@@ -853,30 +805,25 @@ export default function WashedInspection() {
 
         if (pofsData) {
           const targetId = (matchedRoll.processed_roll_id || matchedRoll.id || scanInput).toLowerCase().trim();
-          const greigeId = (matchedRoll.greige_roll_id || matchedRoll.id || scanInput).toLowerCase().trim();
 
           for (const pof of pofsData) {
             const rxRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
             const hasMatch = rxRolls.some(rx => {
-              const rxId = (rx.id || '').toLowerCase();
-              const rxProcId = (rx.processed_roll_id || '').toLowerCase();
-              const rxGId = (rx.greige_roll_id || '').toLowerCase();
+              const rxId = (rx.id || '').toLowerCase().trim();
+              const rxProcId = (rx.processed_roll_id || '').toLowerCase().trim();
               return (
-                (rxId && (rxId === targetId || rxId === greigeId)) ||
-                (rxProcId && (rxProcId === targetId || rxProcId === greigeId)) ||
-                (rxGId && (rxGId === targetId || rxGId === greigeId))
+                (rxId && rxId === targetId) ||
+                (rxProcId && rxProcId === targetId)
               );
             });
 
             if (hasMatch) {
               const updatedRxRolls = rxRolls.map(rx => {
-                const rxId = (rx.id || '').toLowerCase();
-                const rxProcId = (rx.processed_roll_id || '').toLowerCase();
-                const rxGId = (rx.greige_roll_id || '').toLowerCase();
+                const rxId = (rx.id || '').toLowerCase().trim();
+                const rxProcId = (rx.processed_roll_id || '').toLowerCase().trim();
                 const isMatch = (
-                  (rxId && (rxId === targetId || rxId === greigeId)) ||
-                  (rxProcId && (rxProcId === targetId || rxProcId === greigeId)) ||
-                  (rxGId && (rxGId === targetId || rxGId === greigeId))
+                  (rxId && rxId === targetId) ||
+                  (rxProcId && rxProcId === targetId)
                 );
 
                 if (isMatch) {

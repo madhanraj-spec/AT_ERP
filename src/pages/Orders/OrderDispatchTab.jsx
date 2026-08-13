@@ -118,9 +118,10 @@ export default function OrderDispatchTab({ order }) {
 
       if (billsErr) throw billsErr;
 
-      // Filter bills where this order is in the primary order_id or items array
+      // Filter bills where this order is in the primary order_id, order_ids array, or items array
       const orderBills = (billsData || []).filter(b => 
         b.order_id === order.id || 
+        (Array.isArray(b.order_ids) && b.order_ids.includes(order.id)) ||
         (Array.isArray(b.items) && b.items.some(item => item.order_id === order.id))
       );
 

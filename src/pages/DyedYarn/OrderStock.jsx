@@ -668,35 +668,109 @@ function OrderCard({
           {/* Subtle divider */}
           <div style={{ borderTop: '1px solid var(--border-current)', opacity: 0.3, margin: '0.15rem 0' }}></div>
 
-          {/* Row 2: Quantities & Constructions */}
-          <div className="order-meta-grid-row2" style={{ gap: '0.75rem' }}>
-            <div>
-              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Order Qty</label>
-              <div style={{ fontWeight: '800', fontSize: '0.8rem', color: 'var(--text-current)' }}>
-                {Number(order.total_quantity).toLocaleString()} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Mtrs</span>
+          {/* Row 2: Quantities & Constructions in high-visibility color boxes */}
+          <div className="order-meta-grid-row2" style={{ gap: '0.5rem', width: '100%', marginTop: '0.2rem' }}>
+            {/* Order Qty - Amber / Gold */}
+            <div style={{
+              backgroundColor: '#fef3c7',
+              border: '1.5px solid #f59e0b',
+              borderRadius: '8px',
+              padding: '0.4rem 0.5rem',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+              boxSizing: 'border-box',
+              boxShadow: '0 1px 3px rgba(245, 158, 11, 0.12)'
+            }}>
+              <label style={{ fontSize: '0.58rem', color: '#92400e', fontWeight: '850', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.05rem' }}>Order Qty</label>
+              <div style={{ fontWeight: '850', fontSize: '0.85rem', color: '#b45309' }}>
+                {Number(order.total_quantity).toLocaleString()} <span style={{ fontSize: '0.68rem', color: '#92400e', fontWeight: '700' }}>Mtrs</span>
               </div>
             </div>
-            <div>
-              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Weaved Qty</label>
-              <div style={{ fontWeight: '800', fontSize: '0.8rem', color: '#16a34a' }}>
-                {totalWeavedQty.toLocaleString()} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Mtrs</span>
+
+            {/* Weaved Qty - Emerald Green */}
+            <div style={{
+              backgroundColor: '#dcfce7',
+              border: '1.5px solid #22c55e',
+              borderRadius: '8px',
+              padding: '0.4rem 0.5rem',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+              boxSizing: 'border-box',
+              boxShadow: '0 1px 3px rgba(34, 197, 94, 0.12)'
+            }}>
+              <label style={{ fontSize: '0.58rem', color: '#15803d', fontWeight: '850', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.05rem' }}>Weaved Qty</label>
+              <div style={{ fontWeight: '850', fontSize: '0.85rem', color: '#16a34a' }}>
+                {totalWeavedQty.toLocaleString()} <span style={{ fontSize: '0.68rem', color: '#15803d', fontWeight: '700' }}>Mtrs</span>
               </div>
             </div>
-            <div>
-              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Greige Input Qty</label>
-              <div style={{ fontWeight: '800', fontSize: '0.8rem', color: '#0284c7' }}>
-                {totalGreigeInputQty.toLocaleString()} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Mtrs</span>
+
+            {/* Greige Input Qty - Cyan / Sky */}
+            <div style={{
+              backgroundColor: '#e0f2fe',
+              border: '1.5px solid #06b6d4',
+              borderRadius: '8px',
+              padding: '0.4rem 0.5rem',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+              boxSizing: 'border-box',
+              boxShadow: '0 1px 3px rgba(6, 182, 212, 0.12)'
+            }}>
+              <label style={{ fontSize: '0.58rem', color: '#0e7490', fontWeight: '850', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.05rem' }}>Greige Input Qty</label>
+              <div style={{ fontWeight: '850', fontSize: '0.85rem', color: '#0284c7' }}>
+                {totalGreigeInputQty.toLocaleString()} <span style={{ fontSize: '0.68rem', color: '#0e7490', fontWeight: '700' }}>Mtrs</span>
               </div>
             </div>
-            <div>
-              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Order Construction</label>
-              <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-current)' }}>
+
+            {/* Order Construction - Royal Purple */}
+            <div style={{
+              backgroundColor: '#f3e8ff',
+              border: '1.5px solid #a855f7',
+              borderRadius: '8px',
+              padding: '0.4rem 0.5rem',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+              boxSizing: 'border-box',
+              boxShadow: '0 1px 3px rgba(168, 85, 247, 0.12)'
+            }}>
+              <label style={{ fontSize: '0.58rem', color: '#6b21a8', fontWeight: '850', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.05rem' }}>Order Construction</label>
+              <div style={{ fontWeight: '850', fontSize: '0.85rem', color: '#7e22ce' }}>
                 {order.technical_specs?.order_reed || '—'} / {order.technical_specs?.order_pick || '—'}
               </div>
             </div>
-            <div>
-              <label style={{ fontSize: '0.6rem', color: 'var(--text-muted-current)', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.05rem', display: 'block', letterSpacing: '0.05em' }}>Production Construction</label>
-              <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--text-current)' }}>
+
+            {/* Production Construction - Warm Orange */}
+            <div style={{
+              backgroundColor: '#ffedd5',
+              border: '1.5px solid #f97316',
+              borderRadius: '8px',
+              padding: '0.4rem 0.5rem',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+              boxSizing: 'border-box',
+              boxShadow: '0 1px 3px rgba(249, 115, 22, 0.12)'
+            }}>
+              <label style={{ fontSize: '0.58rem', color: '#c2410c', fontWeight: '850', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.05rem' }}>Production Construction</label>
+              <div style={{ fontWeight: '850', fontSize: '0.85rem', color: '#ea580c' }}>
                 {order.technical_specs?.on_loom_reed || '—'} / {order.technical_specs?.on_loom_pick || '—'}
               </div>
             </div>
@@ -4477,8 +4551,22 @@ function POFRRModal({ data, onClose }) {
           
           {/* Print Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem', borderBottom: '2.5px solid #000', paddingBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-              <div style={{ fontSize: '2.2rem', fontWeight: '950', letterSpacing: '1px', margin: 0, color: '#000', lineHeight: '1.1' }}>ASHOK TEXTILES</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+              <img
+                src="/logo.png"
+                alt="Ashok Textiles"
+                style={{ maxHeight: '60px', objectFit: 'contain' }}
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                }}
+              />
+              <div>
+                <div style={{ fontSize: '1.9rem', fontWeight: '950', letterSpacing: '1px', margin: 0, color: '#000', lineHeight: '1.1' }}>ASHOK TEXTILES</div>
+                <div style={{ fontSize: '0.72rem', color: '#334155', fontWeight: '600', marginTop: '3px', lineHeight: '1.3' }}>
+                  6/222, SALEM MAIN ROAD, VEERAPANDI, SALEM, TAMIL NADU - 33<br />
+                  GSTIN: 33AAZFA60686D1Z6
+                </div>
+              </div>
             </div>
             <div style={{ textAlign: 'right' }}>
               <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '900', color: '#800000', letterSpacing: '0.5px' }}>FABRIC RECEIPT REGISTER</h2>
@@ -4544,9 +4632,9 @@ function POFRRModal({ data, onClose }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '2.5rem', fontSize: '0.85rem' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #000', textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2' }}>
-                <th style={{ padding: '0.6rem 0.5rem', width: '80px' }}>S.No</th>
-                <th style={{ padding: '0.6rem 0.5rem' }}>Fabric Received ID</th>
-                <th style={{ padding: '0.6rem 0.5rem', textAlign: 'right', width: '150px' }}>Received Qty (m)</th>
+                <th style={{ padding: '0.6rem 0.5rem', width: '45px', textAlign: 'center' }}>S.No</th>
+                <th style={{ padding: '0.6rem 0.5rem', whiteSpace: 'nowrap' }}>Fabric Received ID</th>
+                <th style={{ padding: '0.6rem 0.5rem', textAlign: 'right', whiteSpace: 'nowrap', width: '135px' }}>Received Qty (m)</th>
               </tr>
             </thead>
             <tbody>
@@ -4555,9 +4643,9 @@ function POFRRModal({ data, onClose }) {
 
                 return (
                   <tr key={idx} style={{ borderBottom: '1px solid #ccc' }}>
-                    <td style={{ padding: '0.6rem 0.5rem' }}>{idx + 1}</td>
-                    <td style={{ padding: '0.5rem 0.5rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{roll.id}</td>
-                    <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', fontWeight: 'bold', color: '#047857' }}>{recdQty.toFixed(2)} m</td>
+                    <td style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>{idx + 1}</td>
+                    <td style={{ padding: '0.5rem 0.5rem', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', fontSize: '0.82em' }}>{roll.id}</td>
+                    <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right', fontWeight: 'bold', color: '#047857', whiteSpace: 'nowrap', fontSize: '0.88em' }}>{recdQty.toFixed(2)} m</td>
                   </tr>
                 );
               })}

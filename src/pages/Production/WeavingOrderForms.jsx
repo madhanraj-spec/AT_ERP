@@ -3380,7 +3380,7 @@ export default function WeavingOrderForms() {
                                             </thead>
                                             <tbody>
                                               {(() => {
-                                                const rolls = (wvof.fabric_rolls || []).filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
+                                                const rolls = (wvof.fabric_rolls || []).filter(r => r && r.id && r.id.startsWith(wvof.weaving_number) && !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
                                                 if (rolls.length === 0) {
                                                   return (
                                                     <tr>
@@ -5081,7 +5081,7 @@ export default function WeavingOrderForms() {
                               </thead>
                               <tbody>
                                 {(() => {
-                                  const rolls = (selectedWvof.fabric_rolls || []).filter(r => !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
+                                  const rolls = (selectedWvof.fabric_rolls || []).filter(r => r && r.id && r.id.startsWith(selectedWvof.weaving_number) && !r.isProcessed && !(r.id && /\/P\d+/i.test(r.id)) && (r.status === 'greige received' || r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing'));
                                   if (rolls.length === 0) {
                                     return (
                                       <tr>

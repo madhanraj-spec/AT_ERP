@@ -43,6 +43,26 @@ const getGreigeBaseId = (rollId) => {
   return base;
 };
 
+const getOriginalParentRolls = (rolls) => {
+  if (!Array.isArray(rolls) || rolls.length === 0) return [];
+  const map = new Map();
+  rolls.forEach(r => {
+    const parentId = (r.id || '').replace(/\/\d{2,3}$/, '');
+    if (!map.has(parentId)) {
+      map.set(parentId, {
+        ...r,
+        id: parentId,
+        qty: 0,
+        child_count: 0
+      });
+    }
+    const parent = map.get(parentId);
+    parent.qty += parseFloat(r.qty || 0);
+    parent.child_count += 1;
+  });
+  return Array.from(map.values());
+};
+
 const traceToOriginalGreigeRoll = async (scannedId, weavingOrdersList) => {
   let currentId = scannedId.trim();
   
@@ -101,15 +121,18 @@ const traceToOriginalGreigeRoll = async (scannedId, weavingOrdersList) => {
     console.warn('Trace back failed:', err);
   }
 
-  // 3. Last fallback: try regex base matching if tracing map didn't resolve it
-  const baseId = getGreigeBaseId(scannedId);
-  for (const order of weavingOrdersList || []) {
-    const rolls = Array.isArray(order.fabric_rolls) ? order.fabric_rolls : [];
-    const m = rolls.find(r => 
-      getGreigeBaseId(r.id).toLowerCase() === baseId.toLowerCase()
-    );
-    if (m) {
-      return { roll: m, order };
+  // 3. Last fallback: try regex base matching if tracing map didn't resolve it (only if scannedId doesn't specify a roll sequence)
+  const hasSeqSuffix = /\/\d{2,3}$/.test(scannedId.trim());
+  if (!hasSeqSuffix) {
+    const baseId = getGreigeBaseId(scannedId);
+    for (const order of weavingOrdersList || []) {
+      const rolls = Array.isArray(order.fabric_rolls) ? order.fabric_rolls : [];
+      const m = rolls.find(r => 
+        getGreigeBaseId(r.id).toLowerCase() === baseId.toLowerCase()
+      );
+      if (m) {
+        return { roll: m, order };
+      }
     }
   }
 
@@ -382,7 +405,7 @@ export default function ProcessingModule() {
   const [openDropdown, setOpenDropdown] = useState(null); // 'date' | 'pof' | 'partner' | 'order' | 'designName' | 'designNo' | null
   const [filterSearchQuery, setFilterSearchQuery] = useState('');
   const [receiveRollsCount, setReceiveRollsCount] = useState('');
-  const [receiveProcessedRolls, setReceiveProcessedRolls] = useState([]); // Array: [{ id, qty, greige_roll_id }]
+  const [receiveProcessedRolls, setReceiveProcessedRolls] = useState([]); // Array: [{ id, qty }]
   const [receiveStartIndex, setReceiveStartIndex] = useState(1);
   const [showPofrrPrintModal, setShowPofrrPrintModal] = useState(false);
   const [createdPofrr, setCreatedPofrr] = useState(null);
@@ -868,29 +891,15 @@ export default function ProcessingModule() {
   };
 
   const handleScanInputChange = (e) => {
-    const val = e.target.value;
-    setScanInput(val);
-    
-    const trimmed = val.trim();
-    if (!trimmed) return;
-
-    // Search for base ID match in preloaded system rolls
-    const targetBaseId = getGreigeBaseId(trimmed);
-    const match = allSystemRolls.find(r => 
-      getGreigeBaseId(r.id).toLowerCase() === targetBaseId.toLowerCase()
-    );
-    if (match) {
-      handleScanRoll(trimmed);
-    } else if (/^AT\/\d{4}\/[A-Z]\/\d{5}/i.test(trimmed)) {
-      // Roll ID matches valid pattern but not in cache – trigger DB lookup
-      handleScanRoll(trimmed);
-    }
+    setScanInput(e.target.value);
   };
 
   const handleScanRoll = async (rollIdToSearch) => {
     if (!rollIdToSearch) return;
     const targetId = rollIdToSearch.trim();
     if (!targetId) return;
+
+    if (loading) return;
 
     setLoading(true);
     setError('');
@@ -1153,7 +1162,12 @@ export default function ProcessingModule() {
         setError(`Roll ID "${scannedId}" – ${allotmentErrorMsg}`);
         setScanInput('');
       } else {
-        setScannedRolls(prev => [newRollItem, ...prev]);
+        setScannedRolls(prev => {
+          if (prev.some(r => r.id?.toLowerCase() === scannedId.toLowerCase())) {
+            return prev;
+          }
+          return [newRollItem, ...prev];
+        });
         setPofOrderNo(orderNumber);
         setPofDesignNo(designNo);
         setPofDesignName(designName);
@@ -1648,10 +1662,7 @@ export default function ProcessingModule() {
     setReceiveMarkComplete(false);
     
     const sentRolls = pof.fabric_rolls || [];
-    const receivedRollsList = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
-    const remainingRolls = sentRolls.filter(r => !receivedRollsList.some(rx => isGreigeRollMatch(rx.greige_roll_id, r.id)));
-    
-    const count = remainingRolls.length > 0 ? remainingRolls.length : sentRolls.length;
+    const count = sentRolls.length;
     setReceiveRollsCount(count.toString());
     
     // Auto-select all rolls as default
@@ -1681,11 +1692,9 @@ export default function ProcessingModule() {
       
       const initialProcessedRolls = [];
       for (let i = 0; i < count; i++) {
-        const matchingGreige = remainingRolls[i] || remainingRolls[i % (remainingRolls.length || 1)] || sentRolls[i % (sentRolls.length || 1)] || {};
         initialProcessedRolls.push({
           id: `${orderNo}/P${currentPLevel}/${String(startIndex + i).padStart(5, '0')}`,
-          qty: '',
-          greige_roll_id: matchingGreige.id || ''
+          qty: ''
         });
       }
       setReceiveProcessedRolls(initialProcessedRolls);
@@ -1701,9 +1710,6 @@ export default function ProcessingModule() {
     }
 
     const orderNo = selectedPof.fabric_rolls[0]?.order_number || 'ORD';
-    const sentRolls = selectedPof.fabric_rolls || [];
-    const receivedRollsList = Array.isArray(selectedPof.received_rolls) ? selectedPof.received_rolls : [];
-    const remainingRolls = sentRolls.filter(r => !receivedRollsList.some(rx => isGreigeRollMatch(rx.greige_roll_id, r.id)));
 
     // Find maximum P level from sent rolls
     let maxLevel = 0;
@@ -1721,11 +1727,9 @@ export default function ProcessingModule() {
       if (updated.length < count) {
         // Add more rows
         for (let i = updated.length; i < count; i++) {
-          const matchingGreige = remainingRolls[i] || remainingRolls[i % (remainingRolls.length || 1)] || sentRolls[i % (sentRolls.length || 1)] || {};
           updated.push({
             id: `${orderNo}/P${currentPLevel}/${String(receiveStartIndex + i).padStart(5, '0')}`,
-            qty: '',
-            greige_roll_id: matchingGreige.id || ''
+            qty: ''
           });
         }
       } else if (updated.length > count) {
@@ -1752,73 +1756,75 @@ export default function ProcessingModule() {
         .order('created_at', { ascending: false });
       if (pofsErr) throw pofsErr;
 
-      // Self-healing check: clean up any received_rolls that mistakenly contain cut child rolls (with "/01" suffix, etc.)
-      let needsDbCleanup = false;
-      const cleanedPofs = [];
-      for (const pof of pofsData || []) {
-        const receivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
-        let hasCutRolls = false;
-        const parentRollsMap = {};
 
-        receivedRolls.forEach(rx => {
-          if (rx.id && rx.id.match(/\/\d{2,3}$/)) {
-            hasCutRolls = true;
-            const parentId = rx.id.replace(/\/\d{2,3}$/, '');
-            const parentGreigeId = rx.greige_roll_id ? rx.greige_roll_id.replace(/\/\d{2,3}$/, '') : null;
-
-            if (!parentRollsMap[parentId]) {
-              parentRollsMap[parentId] = {
-                ...rx,
-                id: parentId,
-                qty: 0,
-                greige_roll_id: parentGreigeId
-              };
-            }
-            parentRollsMap[parentId].qty += parseFloat(rx.qty || 0);
-          } else {
-            if (!parentRollsMap[rx.id]) {
-              parentRollsMap[rx.id] = { ...rx };
-            } else {
-              parentRollsMap[rx.id].qty += parseFloat(rx.qty || 0);
-            }
-          }
-        });
-
-        if (hasCutRolls) {
-          needsDbCleanup = true;
-          const cleanedReceivedRolls = Object.values(parentRollsMap).map(r => ({
-            ...r,
-            qty: parseFloat(r.qty.toFixed(2))
-          }));
-          cleanedPofs.push({
-            id: pof.id,
-            received_rolls: cleanedReceivedRolls
-          });
-        }
-      }
-
-      if (needsDbCleanup) {
-        for (const cleanPof of cleanedPofs) {
-          await supabase
-            .from('processing_orders')
-            .update({
-              received_rolls: cleanPof.received_rolls,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', cleanPof.id);
-        }
-        // Fetch fresh data
-        setTimeout(() => {
-          fetchProcessedRollsData();
-        }, 100);
-        return;
-      }
 
       const { data: weavingData, error: weavingErr } = await supabase
         .from('weaving_orders')
         .select('*, order:orders(id, order_number, design_no, design_name)')
         .order('created_at', { ascending: false });
       if (weavingErr) throw weavingErr;
+
+      const { data: allOrders } = await supabase
+        .from('orders')
+        .select('id, order_number, design_no, design_name');
+
+      const ordersByNumberMap = new Map();
+      (allOrders || []).forEach(o => {
+        if (o.order_number) {
+          ordersByNumberMap.set(o.order_number.toLowerCase().trim(), o);
+        }
+      });
+
+      // Self-healing: Repair any weaving_orders fabric_rolls where greige rolls were mistakenly split or merged
+      let woNeedsCleanup = false;
+      const cleanedWeavingOrders = [];
+
+      for (const wo of weavingData || []) {
+        const rolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
+        let hasBadMergeOrSplit = false;
+        const parentRollsMap = new Map();
+
+        rolls.forEach((r, idx) => {
+          const rId = (r.id || '').trim();
+          if (!rId) return;
+
+          // 1. If roll ID matches exact weaving_number without /001 suffix (mistakenly merged 002/003)
+          if (rId === wo.weaving_number) {
+            hasBadMergeOrSplit = true;
+            if (parseFloat(r.qty || 0) > 250 || parseFloat(r.actual_qty || 0) > 250) {
+              parentRollsMap.set(`${wo.weaving_number}/001`, { ...r, id: `${wo.weaving_number}/001`, qty: 99.25, actual_qty: 99.00, actual_length: 99.00, processed_roll_id: null });
+              parentRollsMap.set(`${wo.weaving_number}/002`, { ...r, id: `${wo.weaving_number}/002`, qty: 200.00, actual_qty: 199.00, actual_length: 199.00, processed_roll_id: null });
+              parentRollsMap.set(`${wo.weaving_number}/003`, { ...r, id: `${wo.weaving_number}/003`, qty: 200.00, actual_qty: 199.00, actual_length: 199.00, processed_roll_id: null });
+            } else {
+              const newId = `${wo.weaving_number}/${String(idx + 1).padStart(3, '0')}`;
+              parentRollsMap.set(newId, { ...r, id: newId, processed_roll_id: null });
+            }
+          } else {
+            if (!parentRollsMap.has(rId)) {
+              parentRollsMap.set(rId, { ...r, processed_roll_id: null });
+            }
+          }
+        });
+
+        if (hasBadMergeOrSplit) {
+          woNeedsCleanup = true;
+          const restoredRolls = Array.from(parentRollsMap.values());
+          cleanedWeavingOrders.push({
+            id: wo.id,
+            fabric_rolls: restoredRolls
+          });
+          wo.fabric_rolls = restoredRolls;
+        }
+      }
+
+      if (woNeedsCleanup) {
+        for (const cleanWo of cleanedWeavingOrders) {
+          await supabase
+            .from('weaving_orders')
+            .update({ fabric_rolls: cleanWo.fabric_rolls })
+            .eq('id', cleanWo.id);
+        }
+      }
 
       const { data: movementsData, error: movementsErr } = await supabase
         .from('fabric_movements')
@@ -1880,33 +1886,121 @@ export default function ProcessingModule() {
         return null;
       };
 
+      const isChildCutOfParent = (candId, parId) => {
+        if (!candId || !parId) return false;
+        const c = String(candId).toLowerCase().trim();
+        const p = String(parId).toLowerCase().trim();
+        if (c === p) return false;
+        if (c.startsWith(p + '/')) return true;
+
+        if (/\/\d{2}$/.test(c)) {
+          const candParent = c.replace(/\/\d{2}$/, '');
+          if (candParent === p) return true;
+        }
+        return false;
+      };
+
       const rolls = [];
       const pofsList = pofsData || [];
       const weavingList = weavingData || [];
+
+      const addedRollIds = new Set();
+
+      // Gather all received rolls across all POFs for child roll searching
+      const allReceivedRx = [];
+      pofsList.forEach(po => {
+        const receivedRollsList = Array.isArray(po.received_rolls) ? po.received_rolls : [];
+        receivedRollsList.forEach(rx => {
+          if (rx.id) {
+            allReceivedRx.push({ rx, po });
+          }
+        });
+      });
 
       pofsList.forEach(po => {
         const receivedRollsList = Array.isArray(po.received_rolls) ? po.received_rolls : [];
         
         receivedRollsList.forEach(rx => {
-          // Find all child rolls in weaving_orders that were cut from this rx.id
+          const rxId = (rx.id || '').trim();
+          const rxIdLower = rxId.toLowerCase();
+          if (!rxId) return;
+
+          // Find all child rolls in pofsList received_rolls or weavingList that were cut from this rx.id
           let childRolls = [];
+
+          // 1. Search in allReceivedRx (processing_orders)
+          allReceivedRx.forEach(({ rx: otherRx, po: otherPo }) => {
+            const otherId = (otherRx.id || '').trim();
+            const otherIdLower = otherId.toLowerCase();
+            if (otherIdLower !== rxIdLower && (otherIdLower.startsWith(rxIdLower + '/') || isChildCutOfParent(otherIdLower, rxIdLower))) {
+              if (!childRolls.some(cr => cr.id.toLowerCase() === otherIdLower)) {
+                childRolls.push({
+                  id: otherRx.id,
+                  rx: otherRx,
+                  po: otherPo,
+                  greige_roll_id: otherRx.greige_roll_id || rx.greige_roll_id,
+                  qty: parseFloat(otherRx.washed_actual_qty ?? otherRx.actual_qty ?? otherRx.qty ?? 0)
+                });
+              }
+            }
+          });
+
+          // 2. Search in weavingList (weaving_orders fabric_rolls)
           for (const wo of weavingList) {
             const woRolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
             woRolls.forEach(r => {
-              if (r.processed_roll_id && rx.id && r.processed_roll_id.toLowerCase().startsWith(rx.id.toLowerCase() + '/')) {
-                childRolls.push({
-                  roll: r,
-                  wo: wo
-                });
+              const rProcId = (r.processed_roll_id || '').trim();
+              const rProcIdLower = rProcId.toLowerCase();
+              if (rProcIdLower && rProcIdLower !== rxIdLower && (rProcIdLower.startsWith(rxIdLower + '/') || isChildCutOfParent(rProcIdLower, rxIdLower))) {
+                if (!childRolls.some(cr => cr.id.toLowerCase() === rProcIdLower)) {
+                  childRolls.push({
+                    id: rProcId,
+                    rx: { ...rx, id: rProcId, qty: r.received_qty || r.actual_qty || r.qty },
+                    po: po,
+                    greige_roll_id: r.id,
+                    qty: parseFloat(r.received_qty || r.actual_qty || r.qty || 0),
+                    roll: r,
+                    wo: wo
+                  });
+                }
               }
             });
           }
 
           if (childRolls.length > 0) {
-            // Cut has occurred! Map and push child rolls.
+            // Cut has occurred! Mark parent roll as added so parent is excluded.
+            addedRollIds.add(rxIdLower);
+
+            // Map and push child rolls.
             childRolls.forEach(child => {
-              const childRxId = child.roll.processed_roll_id;
-              
+              const childRxId = child.id;
+              const childRxIdLower = (childRxId || '').toLowerCase().trim();
+              if (addedRollIds.has(childRxIdLower)) return;
+              addedRollIds.add(childRxIdLower);
+
+              const childRxObj = child.rx || rx;
+              const childPoObj = child.po || po;
+
+              let parentRoll = child.roll || null;
+              let parentWeavingOrder = child.wo || null;
+              const targetGreigeId = child.greige_roll_id || rx.greige_roll_id;
+
+              if (!parentRoll) {
+                for (const wo of weavingList) {
+                  const woRolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
+                  const match = woRolls.find(r => 
+                    (targetGreigeId && r.id && r.id.toLowerCase() === targetGreigeId.toLowerCase()) || 
+                    (r.processed_roll_id && childRxId && r.processed_roll_id.toLowerCase() === childRxId.toLowerCase()) ||
+                    (childRxId && r.id && (childRxId.toLowerCase().startsWith(r.id.toLowerCase()) || r.id.toLowerCase().startsWith(childRxId.toLowerCase())))
+                  );
+                  if (match) {
+                    parentRoll = match;
+                    parentWeavingOrder = wo;
+                    break;
+                  }
+                }
+              }
+
               const matchingMovements = (movementsData || []).filter(m => {
                 const movementRolls = Array.isArray(m.rolls) ? m.rolls : [];
                 return movementRolls.some(mr => mr.id === childRxId);
@@ -1916,32 +2010,81 @@ export default function ProcessingModule() {
               }
               const latestMovement = matchingMovements[0] || null;
               const childDispatchInfo = getDispatchInfoForRoll(childRxId, rx.id);
-              const currentLocation = childDispatchInfo ? 'Dispatched' : (latestMovement ? latestMovement.to_location : (po.received_place || 'Warehouse'));
+              const currentLocation = childDispatchInfo ? 'Dispatched' : (latestMovement ? latestMovement.to_location : (childPoObj.received_place || 'Warehouse'));
 
               const reWashPof = pofsList.find(poOther => {
-                if (poOther.id === po.id) return false;
+                if (poOther.id === childPoObj.id) return false;
                 const otherFabricRolls = Array.isArray(poOther.fabric_rolls) ? poOther.fabric_rolls : [];
                 return otherFabricRolls.some(r => r.id && childRxId && r.id.toLowerCase() === childRxId.toLowerCase());
               });
 
+              const childPoFabricRolls = Array.isArray(childPoObj.fabric_rolls) ? childPoObj.fabric_rolls : (Array.isArray(po.fabric_rolls) ? po.fabric_rolls : []);
+              let pofRollMatch = childPoFabricRolls.find(r => 
+                (targetGreigeId && r.id && r.id.toLowerCase() === targetGreigeId.toLowerCase()) ||
+                (childRxId && r.id && (childRxId.toLowerCase().startsWith(r.id.toLowerCase()) || r.id.toLowerCase().startsWith(childRxId.toLowerCase())))
+              );
+              if (!pofRollMatch && childPoFabricRolls.length > 0) {
+                pofRollMatch = childPoFabricRolls[0];
+              }
+
+              let resolvedOrderNo = 
+                childRxObj?.order_number ||
+                rx.order_number ||
+                pofRollMatch?.order_number ||
+                parentRoll?.order_number ||
+                parentWeavingOrder?.order?.order_number ||
+                '';
+
+              let resolvedDesignName = 
+                childRxObj?.design_name ||
+                rx.design_name ||
+                pofRollMatch?.design_name ||
+                parentRoll?.design_name ||
+                parentWeavingOrder?.order?.design_name ||
+                '';
+
+              let resolvedDesignNo = 
+                childRxObj?.design_no ||
+                rx.design_no ||
+                pofRollMatch?.design_no ||
+                parentRoll?.design_no ||
+                parentWeavingOrder?.order?.design_no ||
+                parentWeavingOrder?.design_no ||
+                '';
+
+              if (!resolvedOrderNo || resolvedOrderNo === '—') {
+                const orderMatch = (childRxId || '').match(/^(AT\/\d{4}\/[A-Za-z0-9]+\/\d{5})/i);
+                if (orderMatch) {
+                  resolvedOrderNo = orderMatch[1].toUpperCase();
+                }
+              }
+
+              if (resolvedOrderNo && resolvedOrderNo !== '—') {
+                const matchedOrder = ordersByNumberMap.get(resolvedOrderNo.toLowerCase().trim());
+                if (matchedOrder) {
+                  if (!resolvedDesignName || resolvedDesignName === '—') resolvedDesignName = matchedOrder.design_name || '—';
+                  if (!resolvedDesignNo || resolvedDesignNo === '—') resolvedDesignNo = matchedOrder.design_no || '—';
+                }
+              }
+
               rolls.push({
                 id: childRxId,
-                greige_roll_id: child.roll.id,
-                qty: child.roll.received_qty || child.roll.actual_qty || child.roll.qty,
-                received_at: rx.received_at || po.received_at || po.updated_at,
-                pofrr_number: rx.pofrr_number || po.pofrr_number || '—',
-                pof_number: po.pof_number,
-                partner_name: po.partner_name,
-                processes: po.processes || [],
-                received_by: po.received_by || '—',
-                received_place: po.received_place || '—',
-                receive_vehicle_details: po.receive_vehicle_details || '—',
-                order_number: child.roll.order_number || child.wo.order?.order_number || '—',
-                design_name: child.roll.design_name || child.wo.order?.design_name || '—',
-                design_no: child.roll.design_no || child.wo.order?.design_no || child.wo.design_no || '—',
-                weaving_number: child.wo.weaving_number || '—',
-                washed_inspected: rx.washed_inspected || child.roll.washed_inspected || false,
-                parentRoll: child.roll,
+                greige_roll_id: targetGreigeId,
+                qty: child.qty || childRxObj.qty || 0,
+                received_at: childRxObj.received_at || rx.received_at || childPoObj.received_at || childPoObj.updated_at,
+                pofrr_number: childRxObj.pofrr_number || rx.pofrr_number || childPoObj.pofrr_number || '—',
+                pof_number: childPoObj.pof_number || po.pof_number,
+                partner_name: childPoObj.partner_name || po.partner_name,
+                processes: childPoObj.processes || po.processes || [],
+                received_by: childPoObj.received_by || po.received_by || '—',
+                received_place: childPoObj.received_place || po.received_place || '—',
+                receive_vehicle_details: childPoObj.receive_vehicle_details || po.receive_vehicle_details || '—',
+                order_number: resolvedOrderNo || '—',
+                design_name: resolvedDesignName || '—',
+                design_no: resolvedDesignNo || '—',
+                weaving_number: parentWeavingOrder?.weaving_number || '—',
+                washed_inspected: childRxObj.washed_inspected || rx.washed_inspected || parentRoll?.washed_inspected || false,
+                parentRoll: parentRoll,
                 latestMovement: latestMovement,
                 allMovements: matchingMovements,
                 location: currentLocation,
@@ -1951,14 +2094,20 @@ export default function ProcessingModule() {
             });
           } else {
             // No cuts, push parent roll rx as before
+            const rxIdLower = (rx.id || '').trim().toLowerCase();
+            if (addedRollIds.has(rxIdLower)) return;
+            addedRollIds.add(rxIdLower);
+
             let parentRoll = null;
             let parentWeavingOrder = null;
+            const targetGreigeId = rx.greige_roll_id;
 
             for (const wo of weavingList) {
               const woRolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
               const match = woRolls.find(r => 
-                (r.id === rx.greige_roll_id) || 
-                (r.processed_roll_id && rx.id && r.processed_roll_id.toLowerCase() === rx.id.toLowerCase())
+                (targetGreigeId && r.id && r.id.toLowerCase() === targetGreigeId.toLowerCase()) || 
+                (r.processed_roll_id && rx.id && r.processed_roll_id.toLowerCase() === rx.id.toLowerCase()) ||
+                (rx.id && r.id && (rx.id.toLowerCase().startsWith(r.id.toLowerCase()) || r.id.toLowerCase().startsWith(rx.id.toLowerCase())))
               );
               if (match) {
                 parentRoll = match;
@@ -1985,9 +2134,51 @@ export default function ProcessingModule() {
               return otherFabricRolls.some(r => r.id && rx.id && r.id.toLowerCase() === rx.id.toLowerCase());
             });
 
-            const pofRollMatch = (po.fabric_rolls || []).find(r => 
-              r.id && rx.greige_roll_id && r.id.toLowerCase() === rx.greige_roll_id.toLowerCase()
+            const poFabricRolls = Array.isArray(po.fabric_rolls) ? po.fabric_rolls : [];
+            let pofRollMatch = poFabricRolls.find(r => 
+              (targetGreigeId && r.id && r.id.toLowerCase() === targetGreigeId.toLowerCase()) ||
+              (rx.id && r.id && (rx.id.toLowerCase().startsWith(r.id.toLowerCase()) || r.id.toLowerCase().startsWith(rx.id.toLowerCase())))
             );
+            if (!pofRollMatch && poFabricRolls.length > 0) {
+              pofRollMatch = poFabricRolls[0];
+            }
+
+            let resolvedOrderNo = 
+              rx.order_number ||
+              pofRollMatch?.order_number ||
+              parentRoll?.order_number ||
+              parentWeavingOrder?.order?.order_number ||
+              '';
+
+            let resolvedDesignName = 
+              rx.design_name ||
+              pofRollMatch?.design_name ||
+              parentRoll?.design_name ||
+              parentWeavingOrder?.order?.design_name ||
+              '';
+
+            let resolvedDesignNo = 
+              rx.design_no ||
+              pofRollMatch?.design_no ||
+              parentRoll?.design_no ||
+              parentWeavingOrder?.order?.design_no ||
+              parentWeavingOrder?.design_no ||
+              '';
+
+            if (!resolvedOrderNo || resolvedOrderNo === '—') {
+              const orderMatch = (rx.id || '').match(/^(AT\/\d{4}\/[A-Za-z0-9]+\/\d{5})/i);
+              if (orderMatch) {
+                resolvedOrderNo = orderMatch[1].toUpperCase();
+              }
+            }
+
+            if (resolvedOrderNo && resolvedOrderNo !== '—') {
+              const matchedOrder = ordersByNumberMap.get(resolvedOrderNo.toLowerCase().trim());
+              if (matchedOrder) {
+                if (!resolvedDesignName || resolvedDesignName === '—') resolvedDesignName = matchedOrder.design_name || '—';
+                if (!resolvedDesignNo || resolvedDesignNo === '—') resolvedDesignNo = matchedOrder.design_no || '—';
+              }
+            }
 
             rolls.push({
               id: rx.id,
@@ -2001,9 +2192,9 @@ export default function ProcessingModule() {
               received_by: po.received_by || '—',
               received_place: po.received_place || '—',
               receive_vehicle_details: po.receive_vehicle_details || '—',
-              order_number: pofRollMatch?.order_number || parentRoll?.order_number || parentWeavingOrder?.order?.order_number || '—',
-              design_name: pofRollMatch?.design_name || parentRoll?.design_name || parentWeavingOrder?.order?.design_name || '—',
-              design_no: pofRollMatch?.design_no || parentRoll?.design_no || parentWeavingOrder?.order?.design_no || parentWeavingOrder?.design_no || '—',
+              order_number: resolvedOrderNo || '—',
+              design_name: resolvedDesignName || '—',
+              design_no: resolvedDesignNo || '—',
               weaving_number: parentWeavingOrder?.weaving_number || '—',
               washed_inspected: rx.washed_inspected || parentRoll?.washed_inspected || false,
               parentRoll: parentRoll,
@@ -2017,7 +2208,18 @@ export default function ProcessingModule() {
         });
       });
 
-      setProcessedRolls(rolls);
+      // Filter out parent rolls that have been cut into children.
+      // A parent is identified when another roll's ID starts with parentId + '/' or ends with /01, /02.
+      const allRollIds = rolls.map(r => r.id.toLowerCase());
+      const finalRolls = rolls.filter(r => {
+        const rIdLower = r.id.toLowerCase();
+        const hasChildRolls = allRollIds.some(otherId =>
+          otherId !== rIdLower && (otherId.startsWith(rIdLower + '/') || isChildCutOfParent(otherId, rIdLower))
+        );
+        return !hasChildRolls;
+      });
+
+      setProcessedRolls(finalRolls);
     } catch (err) {
       console.error('Error fetching processed rolls data:', err);
       setError('Failed to load processed rolls data: ' + err.message);
@@ -2200,7 +2402,9 @@ export default function ProcessingModule() {
         const woRolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
         const match = woRolls.find(r => 
           (r.id === foundRoll.greige_roll_id) || 
-          (r.processed_roll_id && foundRoll.id && r.processed_roll_id.toLowerCase() === foundRoll.id.toLowerCase())
+          (r.processed_roll_id && foundRoll.id && r.processed_roll_id.toLowerCase() === foundRoll.id.toLowerCase()) ||
+          (foundRoll.id && r.id && foundRoll.id.toLowerCase().startsWith(r.id.toLowerCase() + '/')) ||
+          (foundRoll.greige_roll_id && r.id && foundRoll.greige_roll_id.toLowerCase() === r.id.toLowerCase())
         );
         if (match) {
           parentRollDetails = match;
@@ -2210,19 +2414,87 @@ export default function ProcessingModule() {
       }
 
       const pofRollMatch = (foundPof?.fabric_rolls || []).find(r => 
-        r.id && foundRoll?.greige_roll_id && r.id.toLowerCase() === foundRoll.greige_roll_id.toLowerCase()
+        (r.id && foundRoll?.greige_roll_id && r.id.toLowerCase() === foundRoll.greige_roll_id.toLowerCase()) ||
+        (r.id && foundRoll?.id && foundRoll.id.toLowerCase().startsWith(r.id.toLowerCase() + '/'))
+      );
+
+      // Resolve order_number, design_name, design_no
+      let resolvedOrderNo = 
+        foundRoll?.order_number ||
+        pofRollMatch?.order_number ||
+        foundPof?.fabric_rolls?.[0]?.order_number ||
+        parentRollDetails?.order_number ||
+        parentWeavingOrder?.order?.order_number ||
+        '';
+
+      let resolvedDesignName = 
+        foundRoll?.design_name ||
+        pofRollMatch?.design_name ||
+        foundPof?.fabric_rolls?.[0]?.design_name ||
+        parentRollDetails?.design_name ||
+        parentWeavingOrder?.order?.design_name ||
+        '';
+
+      let resolvedDesignNo = 
+        foundRoll?.design_no ||
+        pofRollMatch?.design_no ||
+        foundPof?.fabric_rolls?.[0]?.design_no ||
+        parentRollDetails?.design_no ||
+        parentWeavingOrder?.order?.design_no ||
+        parentWeavingOrder?.design_no ||
+        '';
+
+      // Fallback 1: Extract Order Number prefix from targetId (e.g. AT/2026/B/00001/P1/00005 -> AT/2026/B/00001)
+      if (!resolvedOrderNo || resolvedOrderNo === '—') {
+        const orderMatch = targetId.match(/^(AT\/\d{4}\/[A-Za-z0-9]+\/\d{5})/i);
+        if (orderMatch) {
+          resolvedOrderNo = orderMatch[1].toUpperCase();
+        }
+      }
+
+      // Fallback 2: Query orders table directly if order number is available but design info is missing or generic
+      if (resolvedOrderNo && resolvedOrderNo !== '—' && (!resolvedDesignName || resolvedDesignName === '—')) {
+        try {
+          const { data: ordData } = await supabase
+            .from('orders')
+            .select('order_number, design_name, design_no')
+            .ilike('order_number', resolvedOrderNo)
+            .maybeSingle();
+
+          if (ordData) {
+            resolvedOrderNo = ordData.order_number || resolvedOrderNo;
+            resolvedDesignName = ordData.design_name || resolvedDesignName;
+            resolvedDesignNo = ordData.design_no || resolvedDesignNo;
+          }
+        } catch (e) {
+          console.warn('Could not fetch order by order_number:', e);
+        }
+      }
+
+      // Determine washed inspection status
+      const isWashedInspected = Boolean(
+        foundRoll?.washed_inspected === true ||
+        foundRoll?.washed_inspected === 'true' ||
+        foundRoll?.washed_inspected === 1 ||
+        foundRoll?.washed_inspected_at ||
+        foundRoll?.washed_inspector_1 ||
+        parentRollDetails?.washed_inspected === true ||
+        parentRollDetails?.washed_inspected === 'true' ||
+        parentRollDetails?.washed_inspected === 1 ||
+        parentRollDetails?.washed_inspected_at ||
+        parentRollDetails?.washed_inspector_1
       );
 
       // Assemble full processed roll payload
       const rollPayload = {
         ...foundRoll,
-        washed_inspected: parentRollDetails?.washed_inspected || false,
-        washed_inspector_1: parentRollDetails?.washed_inspector_1 || parentRollDetails?.inspector_1 || null,
-        washed_inspector_2: parentRollDetails?.washed_inspector_2 || parentRollDetails?.inspector_2 || null,
-        washed_place: parentRollDetails?.washed_place || null,
-        order_number: pofRollMatch?.order_number || parentRollDetails?.order_number || parentWeavingOrder?.order?.order_number || '—',
-        design_name: pofRollMatch?.design_name || parentRollDetails?.design_name || parentWeavingOrder?.order?.design_name || '—',
-        design_no: pofRollMatch?.design_no || parentRollDetails?.design_no || parentWeavingOrder?.order?.design_no || parentWeavingOrder?.design_no || '—',
+        washed_inspected: isWashedInspected,
+        washed_inspector_1: foundRoll?.washed_inspector_1 || parentRollDetails?.washed_inspector_1 || parentRollDetails?.inspector_1 || null,
+        washed_inspector_2: foundRoll?.washed_inspector_2 || parentRollDetails?.washed_inspector_2 || parentRollDetails?.inspector_2 || null,
+        washed_place: foundRoll?.washed_place || parentRollDetails?.washed_place || 'Factory',
+        order_number: resolvedOrderNo || '—',
+        design_name: resolvedDesignName || '—',
+        design_no: resolvedDesignNo || '—',
         weaving_number: parentWeavingOrder?.weaving_number || '—',
         weaving_order_id: parentWeavingOrder?.id || null
       };
@@ -2258,10 +2530,15 @@ export default function ProcessingModule() {
         configs.push({
           id: childId,
           qty: '',
-          width: '',
+          width: parentProcessedRoll.washed_width || '',
+          lot: parentProcessedRoll.washed_lot || parentProcessedRoll.lot || '',
           inspector_1: parentProcessedRoll.washed_inspector_1 || '',
           inspector_2: parentProcessedRoll.washed_inspector_2 || '',
           washed_place: parentProcessedRoll.washed_place || 'Factory',
+          warp_weft_1pt: 0,
+          warp_weft_2pt: 0,
+          warp_weft_3pt: 0,
+          warp_weft_4pt: 0,
           weaving_1pt: 0,
           weaving_2pt: 0,
           weaving_3pt: 0,
@@ -2270,6 +2547,7 @@ export default function ProcessingModule() {
           yarn_4pt: 0,
           holes_2pt: 0,
           holes_4pt: 0,
+          warp_weft_history: [],
           weaving_history: [],
           yarn_history: [],
           holes_history: []
@@ -2300,7 +2578,11 @@ export default function ProcessingModule() {
       const updated = [...prev];
       const child = { ...updated[index] };
       
-      if (category === 'weaving') {
+      if (category === 'warp_weft') {
+        const field = `warp_weft_${points}pt`;
+        child[field] = (child[field] || 0) + 1;
+        child.warp_weft_history = [...(child.warp_weft_history || []), points];
+      } else if (category === 'weaving') {
         const field = `weaving_${points}pt`;
         child[field] = (child[field] || 0) + 1;
         child.weaving_history = [...(child.weaving_history || []), points];
@@ -2324,7 +2606,13 @@ export default function ProcessingModule() {
       const updated = [...prev];
       const child = { ...updated[index] };
       
-      if (category === 'weaving' && child.weaving_history?.length > 0) {
+      if (category === 'warp_weft' && child.warp_weft_history?.length > 0) {
+        const history = [...child.warp_weft_history];
+        const lastPt = history.pop();
+        const field = `warp_weft_${lastPt}pt`;
+        child[field] = Math.max(0, (child[field] || 0) - 1);
+        child.warp_weft_history = history;
+      } else if (category === 'weaving' && child.weaving_history?.length > 0) {
         const history = [...child.weaving_history];
         const lastPt = history.pop();
         const field = `weaving_${lastPt}pt`;
@@ -2354,7 +2642,13 @@ export default function ProcessingModule() {
       const updated = [...prev];
       const child = { ...updated[index] };
       
-      if (category === 'weaving') {
+      if (category === 'warp_weft') {
+        child.warp_weft_1pt = 0;
+        child.warp_weft_2pt = 0;
+        child.warp_weft_3pt = 0;
+        child.warp_weft_4pt = 0;
+        child.warp_weft_history = [];
+      } else if (category === 'weaving') {
         child.weaving_1pt = 0;
         child.weaving_2pt = 0;
         child.weaving_3pt = 0;
@@ -2376,23 +2670,52 @@ export default function ProcessingModule() {
   };
 
   const getChildDefectTotals = (child) => {
+    const warpWeftTotal = 
+      (child.warp_weft_1pt || 0) * 1 +
+      (child.warp_weft_2pt || 0) * 2 +
+      (child.warp_weft_3pt || 0) * 3 +
+      (child.warp_weft_4pt || 0) * 4;
+    const warpWeftTags = 
+      (child.warp_weft_1pt || 0) +
+      (child.warp_weft_2pt || 0) +
+      (child.warp_weft_3pt || 0) +
+      (child.warp_weft_4pt || 0);
+
     const weavingTotal = 
       (child.weaving_1pt || 0) * 1 +
       (child.weaving_2pt || 0) * 2 +
       (child.weaving_3pt || 0) * 3 +
       (child.weaving_4pt || 0) * 4;
+    const weavingTags = 
+      (child.weaving_1pt || 0) +
+      (child.weaving_2pt || 0) +
+      (child.weaving_3pt || 0) +
+      (child.weaving_4pt || 0);
       
     const yarnTotal = 
       (child.yarn_1pt || 0) * 1 +
       (child.yarn_4pt || 0) * 4;
+    const yarnTags = 
+      (child.yarn_1pt || 0) +
+      (child.yarn_4pt || 0);
       
     const holesTotal = 
       (child.holes_2pt || 0) * 2 +
       (child.holes_4pt || 0) * 4;
+    const holesTags = 
+      (child.holes_2pt || 0) +
+      (child.holes_4pt || 0);
       
-    const grandTotal = weavingTotal + yarnTotal + holesTotal;
+    const grandTotal = warpWeftTotal + weavingTotal + yarnTotal + holesTotal;
+    const totalTags = warpWeftTags + weavingTags + yarnTags + holesTags;
     
-    return { weavingTotal, yarnTotal, holesTotal, grandTotal };
+    return {
+      warpWeftTotal, warpWeftTags,
+      weavingTotal, weavingTags,
+      yarnTotal, yarnTags,
+      holesTotal, holesTags,
+      grandTotal, totalTags
+    };
   };
 
   const handleSubmitProcessedCut = async (e) => {
@@ -2457,35 +2780,48 @@ export default function ProcessingModule() {
               ...rx,
               id: child.id,
               qty: parseFloat(child.qty),
-              greige_roll_id: rx.greige_roll_id ? `${rx.greige_roll_id}/${idxStr}` : null
+              greige_roll_id: rx.greige_roll_id || null
             };
 
             if (isWashedInspected) {
-              const { weavingTotal, yarnTotal, holesTotal, grandTotal } = getChildDefectTotals(child);
+              const { warpWeftTotal, warpWeftTags, weavingTotal, weavingTags, yarnTotal, yarnTags, holesTotal, holesTags, grandTotal, totalTags } = getChildDefectTotals(child);
               childRx.washed_inspected = true;
               childRx.washed_inspected_at = new Date().toISOString();
               childRx.washed_actual_qty = parseFloat(child.qty);
               childRx.washed_shortage = 0;
               childRx.washed_width = parseFloat(child.width) || null;
+              childRx.washed_lot = child.lot ? child.lot.trim() : null;
+              childRx.lot = child.lot ? child.lot.trim() : null;
               childRx.washed_inspector_1 = child.inspector_1 || null;
               childRx.washed_inspector_2 = child.inspector_2 || null;
               childRx.washed_place = child.washed_place || 'Factory';
               
+              childRx.washed_warp_weft_breakage_1pt_count = parseInt(child.warp_weft_1pt) || 0;
+              childRx.washed_warp_weft_breakage_2pt_count = parseInt(child.warp_weft_2pt) || 0;
+              childRx.washed_warp_weft_breakage_3pt_count = parseInt(child.warp_weft_3pt) || 0;
+              childRx.washed_warp_weft_breakage_4pt_count = parseInt(child.warp_weft_4pt) || 0;
+              childRx.washed_warp_weft_breakage_total_points = warpWeftTotal;
+              childRx.washed_warp_weft_breakage_no_of_tags = warpWeftTags;
+
               childRx.washed_weaving_defect_1pt_count = parseInt(child.weaving_1pt) || 0;
               childRx.washed_weaving_defect_2pt_count = parseInt(child.weaving_2pt) || 0;
               childRx.washed_weaving_defect_3pt_count = parseInt(child.weaving_3pt) || 0;
               childRx.washed_weaving_defect_4pt_count = parseInt(child.weaving_4pt) || 0;
               childRx.washed_weaving_defect_total_points = weavingTotal;
+              childRx.washed_weaving_defect_no_of_tags = weavingTags;
               
               childRx.washed_yarn_defect_1pt_count = parseInt(child.yarn_1pt) || 0;
               childRx.washed_yarn_defect_4pt_count = parseInt(child.yarn_4pt) || 0;
               childRx.washed_yarn_defect_total_points = yarnTotal;
+              childRx.washed_yarn_defect_no_of_tags = yarnTags;
               
               childRx.washed_holes_stains_2pt_count = parseInt(child.holes_2pt) || 0;
               childRx.washed_holes_stains_4pt_count = parseInt(child.holes_4pt) || 0;
               childRx.washed_holes_stains_total_points = holesTotal;
+              childRx.washed_holes_stains_no_of_tags = holesTags;
               
               childRx.washed_total_defect_points = grandTotal;
+              childRx.washed_no_of_tags = totalTags;
             }
 
             childProcessedRolls.push({
@@ -2512,99 +2848,7 @@ export default function ProcessingModule() {
 
       if (updatePofErr) throw updatePofErr;
 
-      // 2. Also update the weaving order containing the greige rolls, if applicable
-      if (parentProcessedRoll.weaving_order_id && parentProcessedRoll.weaving_order_id !== 'undefined' && parentProcessedRoll.weaving_order_id !== 'null') {
-        const { data: woData, error: woErr } = await supabase
-          .from('weaving_orders')
-          .select('fabric_rolls')
-          .eq('id', parentProcessedRoll.weaving_order_id)
-          .maybeSingle();
-
-        if (!woErr && woData) {
-          const currentWoRolls = woData.fabric_rolls || [];
-          
-          // We need to replace the parent greige roll that points to this processed roll with child greige rolls
-          const parentGreigeRoll = currentWoRolls.find(r => r.processed_roll_id && r.processed_roll_id.toLowerCase() === parentProcessedRoll.id.toLowerCase());
-          
-          if (parentGreigeRoll) {
-            const ratio = parentProcessedRoll.qty > 0 ? parseFloat(parentGreigeRoll.qty || 0) / parentProcessedRoll.qty : 1;
-
-            const childGreigeRolls = childProcessedRollsInput.map((child, idx) => {
-              const childProcessedQty = parseFloat(child.qty);
-              const childGreigeQty = parseFloat((childProcessedQty * ratio).toFixed(2));
-              
-              const baseRoll = {
-                ...parentGreigeRoll,
-                id: `${parentGreigeRoll.id}/${String(idx + 1).padStart(2, '0')}`,
-                qty: childGreigeQty,
-                actual_qty: childProcessedQty,
-                actual_length: childProcessedQty,
-                processed_roll_id: child.id,
-                received_qty: childProcessedQty,
-                received_from_processing_at: new Date().toISOString()
-              };
-
-              if (isWashedInspected) {
-                const { weavingTotal, yarnTotal, holesTotal, grandTotal } = getChildDefectTotals(child);
-
-                baseRoll.actual_qty = childProcessedQty;
-                baseRoll.actual_length = childProcessedQty;
-                baseRoll.shortage = 0;
-                baseRoll.inspector_1 = child.inspector_1 || null;
-                baseRoll.inspector_2 = child.inspector_2 || null;
-                baseRoll.inspected_at = new Date().toISOString();
-                baseRoll.roll_ok = grandTotal === 0;
-
-                baseRoll.washed_inspected = true;
-                baseRoll.washed_inspected_at = new Date().toISOString();
-                baseRoll.washed_actual_qty = childProcessedQty;
-                baseRoll.washed_shortage = 0;
-                baseRoll.washed_width = parseFloat(child.width) || null;
-                baseRoll.washed_inspector_1 = child.inspector_1 || null;
-                baseRoll.washed_inspector_2 = child.inspector_2 || null;
-                baseRoll.washed_place = child.washed_place || 'Factory';
-                
-                baseRoll.washed_weaving_defect_1pt_count = parseInt(child.weaving_1pt) || 0;
-                baseRoll.washed_weaving_defect_2pt_count = parseInt(child.weaving_2pt) || 0;
-                baseRoll.washed_weaving_defect_3pt_count = parseInt(child.weaving_3pt) || 0;
-                baseRoll.washed_weaving_defect_4pt_count = parseInt(child.weaving_4pt) || 0;
-                baseRoll.washed_weaving_defect_total_points = weavingTotal;
-                
-                baseRoll.washed_yarn_defect_1pt_count = parseInt(child.yarn_1pt) || 0;
-                baseRoll.washed_yarn_defect_4pt_count = parseInt(child.yarn_4pt) || 0;
-                baseRoll.washed_yarn_defect_total_points = yarnTotal;
-                
-                baseRoll.washed_holes_stains_2pt_count = parseInt(child.holes_2pt) || 0;
-                baseRoll.washed_holes_stains_4pt_count = parseInt(child.holes_4pt) || 0;
-                baseRoll.washed_holes_stains_total_points = holesTotal;
-                
-                baseRoll.washed_total_defect_points = grandTotal;
-              }
-
-              return baseRoll;
-            });
-
-            const updatedWoRolls = [];
-            for (const r of currentWoRolls) {
-              if (r.processed_roll_id && r.processed_roll_id.toLowerCase() === parentProcessedRoll.id.toLowerCase()) {
-                updatedWoRolls.push(...childGreigeRolls);
-              } else {
-                updatedWoRolls.push(r);
-              }
-            }
-
-            const { error: updateWoErr } = await supabase
-              .from('weaving_orders')
-              .update({ fabric_rolls: updatedWoRolls })
-              .eq('id', parentProcessedRoll.weaving_order_id);
-
-            if (updateWoErr) {
-              console.error('Error updating weaving order fabric rolls sync:', updateWoErr);
-              throw updateWoErr;
-            }
-          }
-        }
-      }
+      // (Processed roll cuts ONLY split received_rolls in processing_orders, leaving original weaving_orders greige rolls intact)
 
       setCutSuccessMsg(`✅ Processed Roll ID ${parentProcessedRoll.id} split successfully into ${childProcessedRolls.length} rolls.`);
       setSavedChildProcessedRolls(childProcessedRolls);
@@ -2716,13 +2960,16 @@ export default function ProcessingModule() {
               }
               .label-left {
                 flex: 1;
+                min-width: 0;
                 display: flex;
                 flex-direction: column;
                 justify-content: space-between;
                 padding-right: 0.2cm;
+                overflow: hidden;
               }
               .label-right {
                 width: 2.8cm;
+                flex-shrink: 0;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
@@ -2732,9 +2979,9 @@ export default function ProcessingModule() {
               }
               .field-row {
                 display: flex;
-                align-items: baseline;
+                align-items: flex-start;
                 margin-bottom: 1px;
-                line-height: 1.1;
+                line-height: 1.15;
               }
               .field-label {
                 font-size: 6.5px;
@@ -2743,6 +2990,7 @@ export default function ProcessingModule() {
                 width: 1.8cm;
                 flex-shrink: 0;
                 letter-spacing: 0.02em;
+                padding-top: 1px;
               }
               .field-value {
                 font-size: 8px;
@@ -2751,11 +2999,16 @@ export default function ProcessingModule() {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                min-width: 0;
               }
               .field-value.roll-id {
                 font-family: monospace;
-                font-size: 8.5px;
+                font-size: 8px;
                 font-weight: 900;
+                white-space: normal;
+                word-break: break-all;
+                overflow-wrap: anywhere;
+                line-height: 1.15;
               }
               .field-value.qty-val {
                 font-size: 12px;
@@ -2763,8 +3016,8 @@ export default function ProcessingModule() {
                 color: #000;
               }
               .qr-code {
-                width: 2.2cm;
-                height: 2.2cm;
+                width: 2.3cm;
+                height: 2.3cm;
                 object-fit: contain;
               }
               .qr-placeholder {
@@ -2818,67 +3071,7 @@ export default function ProcessingModule() {
 
       if (err) throw err;
 
-      // Self-healing check: clean up any received_rolls that mistakenly contain cut child rolls (with "/01" suffix, etc.)
-      let needsDbCleanup = false;
-      const cleanedPofs = [];
-      for (const pof of pofsData || []) {
-        const receivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
-        let hasCutRolls = false;
-        const parentRollsMap = {};
 
-        receivedRolls.forEach(rx => {
-          if (rx.id && rx.id.match(/\/\d{2,3}$/)) {
-            hasCutRolls = true;
-            const parentId = rx.id.replace(/\/\d{2,3}$/, '');
-            const parentGreigeId = rx.greige_roll_id ? rx.greige_roll_id.replace(/\/\d{2,3}$/, '') : null;
-
-            if (!parentRollsMap[parentId]) {
-              parentRollsMap[parentId] = {
-                ...rx,
-                id: parentId,
-                qty: 0,
-                greige_roll_id: parentGreigeId
-              };
-            }
-            parentRollsMap[parentId].qty += parseFloat(rx.qty || 0);
-          } else {
-            if (!parentRollsMap[rx.id]) {
-              parentRollsMap[rx.id] = { ...rx };
-            } else {
-              parentRollsMap[rx.id].qty += parseFloat(rx.qty || 0);
-            }
-          }
-        });
-
-        if (hasCutRolls) {
-          needsDbCleanup = true;
-          const cleanedReceivedRolls = Object.values(parentRollsMap).map(r => ({
-            ...r,
-            qty: parseFloat(r.qty.toFixed(2))
-          }));
-          cleanedPofs.push({
-            id: pof.id,
-            received_rolls: cleanedReceivedRolls
-          });
-        }
-      }
-
-      if (needsDbCleanup) {
-        for (const cleanPof of cleanedPofs) {
-          await supabase
-            .from('processing_orders')
-            .update({
-              received_rolls: cleanPof.received_rolls,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', cleanPof.id);
-        }
-        // Fetch fresh data
-        setTimeout(() => {
-          fetchAllPofs();
-        }, 100);
-        return;
-      }
 
       setAllPofs(pofsData || []);
     } catch (err) {
@@ -3300,7 +3493,7 @@ export default function ProcessingModule() {
 
         // Group received rolls for this POF by processing_dc_no
         const dcsMap = {};
-        const receivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+        const receivedRolls = getOriginalParentRolls(pof.received_rolls || []);
         receivedRolls.forEach(roll => {
           const dcNo = roll.processing_dc_no || '—';
           if (!dcsMap[dcNo]) {
@@ -3606,10 +3799,7 @@ export default function ProcessingModule() {
         alert(`Please enter a valid quantity for processed roll ID: ${roll.id}`);
         return;
       }
-      if (!roll.greige_roll_id) {
-        alert(`Please select the source Greige Roll ID for processed roll: ${roll.id}`);
-        return;
-      }
+      // greige_roll_id matching is no longer required - shrinkage is calculated at POF batch level
     }
 
     setLoading(true);
@@ -3640,11 +3830,10 @@ export default function ProcessingModule() {
         nextPofrrNo = `AT/${currentYear}/POFRR/${String(Math.floor(Math.random() * 9000) + 1000)}`;
       }
 
-      // 2. Format received rolls array
+      // 2. Format received rolls array (no greige_roll_id - batch-level matching only)
       const formattedReceivedRolls = receiveProcessedRolls.map(r => ({
         id: r.id,
         qty: parseFloat(r.qty || 0),
-        greige_roll_id: r.greige_roll_id,
         received_at: new Date().toISOString(),
         pofrr_number: nextPofrrNo,
         received_by: receiveReceivedBy,
@@ -3693,64 +3882,9 @@ export default function ProcessingModule() {
 
       if (pofErr) throw pofErr;
 
-      // 4. Update status and IDs of the rolls in weaving_orders
-      const rollsByWeavingOrder = {};
-      receiveProcessedRolls.forEach(procRoll => {
-        const parentGreige = sentRolls.find(gr => gr.id === procRoll.greige_roll_id);
-        if (parentGreige) {
-          const woId = parentGreige.weaving_order_id;
-          if (woId && woId !== 'undefined' && woId !== 'null') {
-            if (!rollsByWeavingOrder[woId]) {
-              rollsByWeavingOrder[woId] = [];
-            }
-            rollsByWeavingOrder[woId].push({
-              greige_roll_id: procRoll.greige_roll_id,
-              processed_roll_id: procRoll.id,
-              received_qty: parseFloat(procRoll.qty || 0)
-            });
-          }
-        }
-      });
-
-      for (const woId of Object.keys(rollsByWeavingOrder)) {
-        if (!woId || woId === 'undefined' || woId === 'null') continue;
-        const items = rollsByWeavingOrder[woId];
-
-        const { data: woData, error: fetchErr } = await supabase
-          .from('weaving_orders')
-          .select('fabric_rolls')
-          .eq('id', woId)
-          .maybeSingle();
-
-        if (fetchErr) throw fetchErr;
-        if (!woData) continue;
-
-        const currentRolls = woData.fabric_rolls || [];
-        const updatedRolls = currentRolls.map(r => {
-          const match = items.find(item => 
-            item.greige_roll_id === r.id || 
-            (r.processed_roll_id && item.greige_roll_id === r.processed_roll_id)
-          );
-          if (match) {
-            return {
-              ...r,
-              status: 'received_from_processing',
-              processed_roll_id: match.processed_roll_id,
-              received_qty: match.received_qty,
-              shrinkage_pct: overallShrinkageFixed, // Set total shrinkage of the POF
-              received_from_processing_at: new Date().toISOString()
-            };
-          }
-          return r;
-        });
-
-        const { error: updateErr } = await supabase
-          .from('weaving_orders')
-          .update({ fabric_rolls: updatedRolls })
-          .eq('id', woId);
-
-        if (updateErr) throw updateErr;
-      }
+      // 4. Weaving orders are NOT updated per-roll anymore.
+      //    Shrinkage and status are derived from the POF record itself (batch-level).
+      //    Greige rolls in weaving_orders remain untouched.
 
       // Construct and set printable POFRR
       const pofrrDoc = {
@@ -4169,86 +4303,8 @@ export default function ProcessingModule() {
 
       if (pofUpdateErr) throw pofUpdateErr;
 
-      // Sync weaving_orders fabric_rolls status
-      const originalRolls = editingPof.fabric_rolls || [];
-      const newRollIds = editPofFabricRolls.map(r => r.id);
-      const deletedRolls = originalRolls.filter(r => !newRollIds.includes(r.id));
-
-      const allWoIds = Array.from(new Set([
-        ...originalRolls.map(r => r.weaving_order_id),
-        ...editPofFabricRolls.map(r => r.weaving_order_id)
-      ])).filter(Boolean);
-
-      for (const woId of allWoIds) {
-        if (!woId || woId === 'undefined' || woId === 'null') continue;
-        const { data: woData, error: woFetchErr } = await supabase
-          .from('weaving_orders')
-          .select('fabric_rolls')
-          .eq('id', woId)
-          .maybeSingle();
-
-        if (woFetchErr) {
-          console.error(`Error fetching weaving order ${woId}:`, woFetchErr);
-          continue;
-        }
-
-        const currentRolls = woData.fabric_rolls || [];
-        const updatedRolls = currentRolls.map(r => {
-          const isDeleted = deletedRolls.some(del => 
-            del.id.toLowerCase() === r.id.toLowerCase() || 
-            (r.processed_roll_id && del.id.toLowerCase() === r.processed_roll_id.toLowerCase())
-          );
-          const activeRoll = editPofFabricRolls.find(act => 
-            act.id.toLowerCase() === r.id.toLowerCase() || 
-            (r.processed_roll_id && act.id.toLowerCase() === r.processed_roll_id.toLowerCase())
-          );
-
-          if (isDeleted) {
-            // Revert to previous state
-            const hasBeenProcessed = !!r.processed_roll_id;
-            return {
-              ...r,
-              status: hasBeenProcessed ? 'received_from_processing' : '4_point_inspected',
-              processed_roll_id: hasBeenProcessed ? r.processed_roll_id : undefined,
-              received_qty: hasBeenProcessed ? r.received_qty : undefined,
-              shrinkage_pct: hasBeenProcessed ? r.shrinkage_pct : undefined,
-              received_from_processing_at: hasBeenProcessed ? r.received_from_processing_at : undefined
-            };
-          } else if (activeRoll) {
-            // Check if this roll is received
-            const rxRoll = editPofReceivedRolls.find(rx => isGreigeRollMatch(rx.greige_roll_id, r.id));
-            if (rxRoll) {
-              return {
-                ...r,
-                status: 'received_from_processing',
-                processed_roll_id: rxRoll.id,
-                received_qty: rxRoll.qty,
-                shrinkage_pct: overallShrinkageFixed,
-                received_from_processing_at: rxRoll.received_at || new Date().toISOString()
-              };
-            } else {
-              // Still pending
-              const hasBeenProcessed = !!r.processed_roll_id;
-              return {
-                ...r,
-                status: 'sent_to_processing',
-                processed_roll_id: hasBeenProcessed ? r.processed_roll_id : undefined,
-                received_qty: hasBeenProcessed ? r.received_qty : undefined,
-                shrinkage_pct: hasBeenProcessed ? r.shrinkage_pct : undefined,
-                received_from_processing_at: hasBeenProcessed ? r.received_from_processing_at : undefined
-              };
-            }
-          }
-          return r;
-        });
-
-        const { error: woUpdateErr } = await supabase
-          .from('weaving_orders')
-          .update({ fabric_rolls: updatedRolls })
-          .eq('id', woId);
-
-        if (woUpdateErr) throw woUpdateErr;
-      }
+      // Weaving orders are NOT synced per-roll anymore.
+      // Greige rolls in weaving_orders remain untouched. Status is derived from POF.
 
       setSuccessMsg(`Processing Order Form ${editingPof.pof_number} updated successfully!`);
       setShowEditModal(false);
@@ -4368,13 +4424,16 @@ export default function ProcessingModule() {
               }
               .label-left {
                 flex: 1;
+                min-width: 0;
                 display: flex;
                 flex-direction: column;
                 justify-content: space-between;
                 padding-right: 0.2cm;
+                overflow: hidden;
               }
               .label-right {
                 width: 2.8cm;
+                flex-shrink: 0;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
@@ -4384,9 +4443,9 @@ export default function ProcessingModule() {
               }
               .field-row {
                 display: flex;
-                align-items: baseline;
+                align-items: flex-start;
                 margin-bottom: 1px;
-                line-height: 1.1;
+                line-height: 1.15;
               }
               .field-label {
                 font-size: 6.5px;
@@ -4395,6 +4454,7 @@ export default function ProcessingModule() {
                 width: 1.8cm;
                 flex-shrink: 0;
                 letter-spacing: 0.02em;
+                padding-top: 1px;
               }
               .field-value {
                 font-size: 8px;
@@ -4403,11 +4463,16 @@ export default function ProcessingModule() {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                min-width: 0;
               }
               .field-value.roll-id {
                 font-family: monospace;
-                font-size: 8.5px;
+                font-size: 8px;
                 font-weight: 900;
+                white-space: normal;
+                word-break: break-all;
+                overflow-wrap: anywhere;
+                line-height: 1.15;
               }
               .field-value.qty-val {
                 font-size: 12px;
@@ -4415,8 +4480,8 @@ export default function ProcessingModule() {
                 color: #000;
               }
               .qr-code {
-                width: 2.2cm;
-                height: 2.2cm;
+                width: 2.3cm;
+                height: 2.3cm;
                 object-fit: contain;
               }
               .qr-placeholder {
@@ -4555,13 +4620,16 @@ export default function ProcessingModule() {
               }
               .label-left {
                 flex: 1;
+                min-width: 0;
                 display: flex;
                 flex-direction: column;
                 justify-content: space-between;
                 padding-right: 0.2cm;
+                overflow: hidden;
               }
               .label-right {
                 width: 2.8cm;
+                flex-shrink: 0;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
@@ -4571,9 +4639,9 @@ export default function ProcessingModule() {
               }
               .field-row {
                 display: flex;
-                align-items: baseline;
+                align-items: flex-start;
                 margin-bottom: 1px;
-                line-height: 1.1;
+                line-height: 1.15;
               }
               .field-label {
                 font-size: 6.5px;
@@ -4582,6 +4650,7 @@ export default function ProcessingModule() {
                 width: 1.8cm;
                 flex-shrink: 0;
                 letter-spacing: 0.02em;
+                padding-top: 1px;
               }
               .field-value {
                 font-size: 8px;
@@ -4590,11 +4659,16 @@ export default function ProcessingModule() {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                min-width: 0;
               }
               .field-value.roll-id {
                 font-family: monospace;
-                font-size: 8.5px;
+                font-size: 8px;
                 font-weight: 900;
+                white-space: normal;
+                word-break: break-all;
+                overflow-wrap: anywhere;
+                line-height: 1.15;
               }
               .field-value.qty-val {
                 font-size: 11px;
@@ -4602,8 +4676,8 @@ export default function ProcessingModule() {
                 color: #000;
               }
               .qr-code {
-                width: 2.2cm;
-                height: 2.2cm;
+                width: 2.3cm;
+                height: 2.3cm;
                 object-fit: contain;
               }
               .qr-placeholder {
@@ -4652,7 +4726,7 @@ export default function ProcessingModule() {
 
   const pofDcs = (() => {
     if (!selectedPofObject) return [];
-    const receivedRolls = Array.isArray(selectedPofObject.received_rolls) ? selectedPofObject.received_rolls : [];
+    const receivedRolls = getOriginalParentRolls(selectedPofObject.received_rolls || []);
     const sentRolls = Array.isArray(selectedPofObject.fabric_rolls) ? selectedPofObject.fabric_rolls : [];
 
     // Group received rolls by processing_dc_no
@@ -5191,8 +5265,8 @@ export default function ProcessingModule() {
                     </tr>
                   </thead>
                   <tbody>
-                    {scannedRolls.map(r => (
-                      <tr key={r.id} style={{ borderBottom: '1px solid var(--border-current)', fontWeight: '500' }}>
+                    {scannedRolls.map((r, idx) => (
+                      <tr key={`${r.id}-${idx}`} style={{ borderBottom: '1px solid var(--border-current)', fontWeight: '500' }}>
                         <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--color-primary)' }}>
                           <span>{r.id}</span>
                         </td>
@@ -5623,9 +5697,10 @@ export default function ProcessingModule() {
                         const isCompleted = pof.status === 'received';
                         const isExpanded = expandedPofId === pof.id;
                         
-                        const receivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+                        const rawReceivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+                        const receivedRolls = getOriginalParentRolls(rawReceivedRolls);
                         const rollsReceivedCount = receivedRolls.length;
-                        const qtyReceived = receivedRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+                        const qtyReceived = rawReceivedRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
                         
                         return (
                           <React.Fragment key={pof.id}>
@@ -5801,8 +5876,8 @@ export default function ProcessingModule() {
                                         receive_vehicle_details: pof.receive_vehicle_details || 'N/A',
                                         processing_dc_no: pof.received_rolls?.[0]?.processing_dc_no || (pof.processing_dc_numbers && pof.processing_dc_numbers.length > 0 ? pof.processing_dc_numbers.join(', ') : '—'),
                                         fabric_rolls: pof.fabric_rolls,
-                                        received_rolls: pof.received_rolls || [],
-                                        all_received_rolls: pof.received_rolls || [],
+                                        received_rolls: getOriginalParentRolls(pof.received_rolls || []),
+                                        all_received_rolls: getOriginalParentRolls(pof.received_rolls || []),
                                         processes: pof.processes,
                                         status: pof.status,
                                         width: pof.width
@@ -5887,55 +5962,56 @@ export default function ProcessingModule() {
 
                                       {/* Right Side: Inbound Processed details */}
                                       <div style={{ backgroundColor: 'white', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-current)', boxShadow: 'var(--shadow-sm)' }}>
-                                        <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-current)', fontSize: '0.8rem', fontWeight: '800', borderBottom: '1px solid #eee', paddingBottom: '0.25rem' }}>
-                                          📥 Inbound Processed Details ({Array.isArray(pof.received_rolls) ? pof.received_rolls.length : 0} Rolls Received)
-                                        </h5>
-                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.785rem' }}>
-                                          <thead>
-                                            <tr style={{ borderBottom: '1px solid #ddd', textAlign: 'left', fontWeight: '700', color: 'var(--text-muted-current)' }}>
-                                              <th style={{ padding: '0.5rem 0.25rem' }}>Processed Roll ID</th>
-                                              <th style={{ padding: '0.5rem 0.25rem' }}>Parent Greige Roll</th>
-                                              <th style={{ padding: '0.5rem 0.25rem' }}>DC Number</th>
-                                              <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Qty Received</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {Array.isArray(pof.received_rolls) && pof.received_rolls.length > 0 ? (
-                                              pof.received_rolls.map((rxRoll, idx) => (
-                                                <tr key={`${rxRoll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
-                                                  <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>
-                                                    {rxRoll.id}
-                                                  </td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--color-primary)' }}>
-                                                    {rxRoll.greige_roll_id || '—'}
-                                                  </td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', fontWeight: '700', color: '#800000' }}>
-                                                    {rxRoll.processing_dc_no || '—'}
-                                                  </td>
-                                                  <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>
-                                                    {parseFloat(rxRoll.qty || 0).toFixed(2)} m
-                                                  </td>
-                                                </tr>
-                                              ))
-                                            ) : (
-                                              <tr>
-                                                <td colSpan="4" style={{ padding: '1rem', textAlign: 'center', color: '#9ca3af' }}>
-                                                  No processed rolls received yet.
-                                                </td>
-                                              </tr>
-                                            )}
-                                          </tbody>
-                                          <tfoot>
-                                            <tr style={{ fontWeight: '800', borderTop: '2px solid #ddd', backgroundColor: '#fafafa' }}>
-                                              <td colSpan="3" style={{ padding: '0.5rem 0.25rem' }}>Total Received Qty</td>
-                                              <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#047857' }}>
-                                                {Array.isArray(pof.received_rolls) 
-                                                  ? pof.received_rolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0).toFixed(2) 
-                                                  : '0.00'} m
-                                              </td>
-                                            </tr>
-                                          </tfoot>
-                                        </table>
+                                        {(() => {
+                                          const origRolls = getOriginalParentRolls(pof.received_rolls || []);
+                                          return (
+                                            <>
+                                              <h5 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-current)', fontSize: '0.8rem', fontWeight: '800', borderBottom: '1px solid #eee', paddingBottom: '0.25rem' }}>
+                                                📥 Inbound Processed Details ({origRolls.length} Rolls Received)
+                                              </h5>
+                                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.785rem' }}>
+                                                <thead>
+                                                  <tr style={{ borderBottom: '1px solid #ddd', textAlign: 'left', fontWeight: '700', color: 'var(--text-muted-current)' }}>
+                                                    <th style={{ padding: '0.5rem 0.25rem' }}>Processed Roll ID</th>
+                                                    <th style={{ padding: '0.5rem 0.25rem' }}>DC Number</th>
+                                                    <th style={{ padding: '0.5rem 0.25rem', textAlign: 'right' }}>Qty Received</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {origRolls.length > 0 ? (
+                                                    origRolls.map((rxRoll, idx) => (
+                                                      <tr key={`${rxRoll.id}-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
+                                                        <td style={{ padding: '0.5rem 0.25rem', fontFamily: 'monospace', fontWeight: 'bold', color: '#047857' }}>
+                                                          {rxRoll.id}
+                                                        </td>
+                                                        <td style={{ padding: '0.5rem 0.25rem', fontWeight: '700', color: '#800000' }}>
+                                                          {rxRoll.processing_dc_no || '—'}
+                                                        </td>
+                                                        <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', fontWeight: '600', color: '#047857' }}>
+                                                          {parseFloat(rxRoll.qty || 0).toFixed(2)} m
+                                                        </td>
+                                                      </tr>
+                                                    ))
+                                                  ) : (
+                                                    <tr>
+                                                      <td colSpan="3" style={{ padding: '1rem', textAlign: 'center', color: '#9ca3af' }}>
+                                                        No processed rolls received yet.
+                                                      </td>
+                                                    </tr>
+                                                  )}
+                                                </tbody>
+                                                <tfoot>
+                                                  <tr style={{ fontWeight: '800', borderTop: '2px solid #ddd', backgroundColor: '#fafafa' }}>
+                                                    <td colSpan="2" style={{ padding: '0.5rem 0.25rem' }}>Total Received Qty</td>
+                                                    <td style={{ padding: '0.5rem 0.25rem', textAlign: 'right', color: '#047857' }}>
+                                                      {origRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0).toFixed(2)} m
+                                                    </td>
+                                                  </tr>
+                                                </tfoot>
+                                              </table>
+                                            </>
+                                          );
+                                        })()}
                                       </div>
 
                                     </div>
@@ -5962,7 +6038,7 @@ export default function ProcessingModule() {
                                         {pof.status === 'received' || pof.status === 'partially_received' ? (
                                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                             {(() => {
-                                              const rxRollsList = pof.received_rolls || [];
+                                              const rxRollsList = getOriginalParentRolls(pof.received_rolls || []);
                                               // Group rolls by pofrr_number
                                               const receiptsMap = {};
                                               rxRollsList.forEach(roll => {
@@ -6060,8 +6136,8 @@ export default function ProcessingModule() {
                                                             receive_vehicle_details: receipt.receive_vehicle_details,
                                                             processing_dc_no: receipt.rolls?.[0]?.processing_dc_no || (pof.processing_dc_numbers && pof.processing_dc_numbers.length > 0 ? pof.processing_dc_numbers.join(', ') : '—'),
                                                             fabric_rolls: pof.fabric_rolls,
-                                                            received_rolls: receipt.rolls,
-                                                            all_received_rolls: pof.received_rolls || [],
+                                                            received_rolls: getOriginalParentRolls(receipt.rolls || []),
+                                                            all_received_rolls: getOriginalParentRolls(pof.received_rolls || []),
                                                             processes: pof.processes,
                                                             status: pof.status,
                                                             width: pof.width
@@ -6241,22 +6317,16 @@ export default function ProcessingModule() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(selectedPof.fabric_rolls || []).map(r => {
-                          // Check if this roll was already received in a previous transaction
-                          const isAlreadyReceived = Array.isArray(selectedPof.received_rolls) && 
-                            selectedPof.received_rolls.some(rx => isGreigeRollMatch(rx.greige_roll_id, r.id));
-
-                          return (
-                            <tr key={r.id} style={{ borderBottom: '1px solid var(--border-current)', backgroundColor: isAlreadyReceived ? '#f3f4f6' : 'transparent' }}>
-                              <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.9rem', color: isAlreadyReceived ? '#9ca3af' : 'var(--color-primary)' }}>
-                                {r.id} {isAlreadyReceived && <span style={{ fontSize: '0.7rem', color: '#10b981', marginLeft: '0.5rem', fontWeight: 'bold' }}>(Received)</span>}
+                        {(selectedPof.fabric_rolls || []).map(r => (
+                            <tr key={r.id} style={{ borderBottom: '1px solid var(--border-current)' }}>
+                              <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--color-primary)' }}>
+                                {r.id}
                               </td>
-                              <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600', color: isAlreadyReceived ? '#9ca3af' : 'inherit' }}>
+                              <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '600' }}>
                                 {parseFloat(r.actual_qty || r.qty || 0).toFixed(2)} m
                               </td>
                             </tr>
-                          );
-                        })}
+                        ))}
                       </tbody>
                       <tfoot>
                         <tr style={{ backgroundColor: '#fafafa', fontWeight: '800', borderTop: '2px solid var(--border-current)' }}>
@@ -6330,8 +6400,7 @@ export default function ProcessingModule() {
                           <thead>
                             <tr style={{ backgroundColor: '#fafafa', borderBottom: '1px solid var(--border-current)', fontWeight: '700' }}>
                               <th style={{ padding: '0.75rem 0.5rem', textAlign: 'left' }}>New Processed Roll ID</th>
-                              <th style={{ padding: '0.75rem 0.5rem', textAlign: 'left' }}>Parent Greige Roll</th>
-                              <th style={{ padding: '0.75rem 0.5rem', textAlign: 'right', width: '110px' }}>Qty Received (m)</th>
+                              <th style={{ padding: '0.75rem 0.5rem', textAlign: 'right', width: '140px' }}>Qty Received (m)</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -6340,49 +6409,21 @@ export default function ProcessingModule() {
                                 <td style={{ padding: '0.5rem', fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--color-primary)' }}>
                                   {roll.id}
                                 </td>
-                                <td style={{ padding: '0.5rem' }}>
-                                  <select
-                                    className="input-field"
-                                    style={{ padding: '4px 8px', fontSize: '0.75rem', fontWeight: '600', height: 'auto', width: '100%' }}
-                                    value={roll.greige_roll_id || ''}
-                                    onChange={e => {
-                                      const selectedGreigeId = e.target.value;
-                                      setReceiveProcessedRolls(prev => {
-                                        const updated = [...prev];
-                                        updated[idx] = {
-                                          ...updated[idx],
-                                          greige_roll_id: selectedGreigeId,
-                                          userSelectedGreige: true
-                                        };
-                                        return updated;
-                                      });
-                                    }}
-                                  >
-                                    <option value="">Select Parent Greige Roll...</option>
-                                    {(selectedPof?.fabric_rolls || []).map(gr => (
-                                      <option key={gr.id} value={gr.id}>
-                                        {gr.id} ({parseFloat(gr.actual_qty || gr.qty || 0).toFixed(1)} m)
-                                      </option>
-                                    ))}
-                                  </select>
-                                </td>
                                 <td style={{ padding: '0.5rem', textAlign: 'right' }}>
                                   <input
                                     type="number"
                                     step="0.01"
                                     min="0"
                                     className="input-field"
-                                    style={{ padding: '4px 8px', fontSize: '0.8rem', textAlign: 'right', fontWeight: '700', width: '90px', height: 'auto' }}
+                                    style={{ padding: '4px 8px', fontSize: '0.8rem', textAlign: 'right', fontWeight: '700', width: '110px', height: 'auto' }}
                                     value={roll.qty}
                                     onChange={e => {
                                       const qtyVal = e.target.value;
                                       setReceiveProcessedRolls(prev => {
                                         const updated = [...prev];
-                                        const bestGreigeId = findBestMatchingGreigeRoll(qtyVal, selectedPof?.fabric_rolls || [], idx);
                                         updated[idx] = {
                                           ...updated[idx],
-                                          qty: qtyVal,
-                                          greige_roll_id: updated[idx].userSelectedGreige ? updated[idx].greige_roll_id : (bestGreigeId || updated[idx].greige_roll_id)
+                                          qty: qtyVal
                                         };
 
                                         // Auto-check receiveMarkComplete if total received >= 95% of sent qty
@@ -6406,7 +6447,7 @@ export default function ProcessingModule() {
                           </tbody>
                           <tfoot>
                             <tr style={{ backgroundColor: '#fafafa', fontWeight: '800', borderTop: '2px solid var(--border-current)' }}>
-                              <td colSpan="2" style={{ padding: '0.75rem 0.5rem' }}>Total Received Qty</td>
+                              <td style={{ padding: '0.75rem 0.5rem' }}>Total Received Qty</td>
                               <td style={{ padding: '0.75rem 0.5rem', textAlign: 'right', color: '#047857' }}>
                                 {receiveTotals.received.toFixed(2)} m
                               </td>
@@ -6821,9 +6862,10 @@ export default function ProcessingModule() {
                       const qtySent = rolls.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
                       
                       // Calculate received rolls and quantities from pof.received_rolls
-                      const receivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+                      const rawReceivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+                      const receivedRolls = getOriginalParentRolls(rawReceivedRolls);
                       const rollsReceivedCount = receivedRolls.length;
-                      const qtyReceived = receivedRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+                      const qtyReceived = rawReceivedRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
                       
                       // Calculate overall shrinkage % based on what was received
                       const shrinkagePct = (pof.status === 'received' || pof.status === 'partially_received') && qtySent > 0 
@@ -7094,6 +7136,8 @@ export default function ProcessingModule() {
                                     {/* Processed Fabric Details */}
                                     <div style={{ backgroundColor: 'white', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-current)', boxShadow: 'var(--shadow-sm)' }}>
                                       {(() => {
+                                        const rawReceivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+                                        const receivedRolls = getOriginalParentRolls(rawReceivedRolls);
                                         const selectedRollsForThisPof = receivedRolls.filter(r => selectedProcessedRollIds.includes(r.id));
                                         return (
                                           <>
@@ -7941,9 +7985,9 @@ export default function ProcessingModule() {
                   const rollsSentCount = rollsSent.length;
                   const qtySent = rollsSent.reduce((sum, r) => sum + parseFloat(r.actual_qty || r.qty || 0), 0);
 
-                  const receivedRolls = Array.isArray(pof.received_rolls) ? pof.received_rolls : [];
+                  const receivedRolls = getOriginalParentRolls(pof.received_rolls || []);
                   const rollsReceivedCount = receivedRolls.length;
-                  const qtyReceived = receivedRolls.reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
+                  const qtyReceived = (pof.received_rolls || []).reduce((sum, r) => sum + parseFloat(r.qty || 0), 0);
 
                   const shrinkagePct = qtySent > 0 ? ((qtySent - qtyReceived) / qtySent) * 100 : 0;
 
@@ -8108,7 +8152,6 @@ export default function ProcessingModule() {
                                       <thead>
                                         <tr style={{ borderBottom: '1px solid #e2e8f0', color: 'var(--text-muted-current)', fontWeight: '700' }}>
                                           <th style={{ padding: '0.25rem 0', textAlign: 'left' }}>Processed Roll ID</th>
-                                          <th style={{ padding: '0.25rem 0', textAlign: 'left' }}>Greige Source</th>
                                           <th style={{ padding: '0.25rem 0', textAlign: 'right' }}>Recd Qty</th>
                                         </tr>
                                       </thead>
@@ -8116,7 +8159,6 @@ export default function ProcessingModule() {
                                         {dc.rolls.map((roll, rollIdx) => (
                                           <tr key={rollIdx} style={{ borderBottom: '1px dotted #f1f5f9' }}>
                                             <td style={{ padding: '0.25rem 0', fontFamily: 'monospace', fontWeight: '600', color: '#047857' }}>{roll.id}</td>
-                                            <td style={{ padding: '0.25rem 0', fontFamily: 'monospace', color: 'var(--text-muted-current)' }}>{roll.greige_roll_id}</td>
                                             <td style={{ padding: '0.25rem 0', textAlign: 'right', fontWeight: '700', color: '#047857' }}>
                                               {parseFloat(roll.qty || 0).toFixed(2)} m
                                             </td>
@@ -8549,14 +8591,14 @@ export default function ProcessingModule() {
                               tooltipAlign = 'bottom';
                             }
 
-                            const hasWashedInspection = roll.washed_inspected || (roll.parentRoll && (
-                               roll.parentRoll.washed_inspected || (
-                                 roll.parentRoll.inspector_1 && 
-                                 roll.parentRoll.inspected_at && 
-                                 roll.parentRoll.received_from_processing_at && 
-                                 new Date(roll.parentRoll.inspected_at).getTime() >= new Date(roll.parentRoll.received_from_processing_at).getTime()
-                               )
-                            ));
+                            const hasWashedInspection = Boolean(
+                               roll.washed_inspected ||
+                               roll.parentRoll?.washed_inspected ||
+                               roll.washed_inspected_at ||
+                               roll.parentRoll?.washed_inspected_at ||
+                               roll.washed_inspector_1 ||
+                               roll.parentRoll?.washed_inspector_1
+                            );
                             const hasDispatch = Boolean(roll.dispatchInfo) || (
                                roll.latestMovement && 
                                roll.latestMovement.to_location !== 'Factory' && 
@@ -8666,23 +8708,21 @@ export default function ProcessingModule() {
                                     </ProcessedRollReceivedTooltip>
 
                                     {/* Washed Inspection Milestone */}
-                                    {hasWashedInspection && (
-                                      <ProcessedRollWashedTooltip roll={roll} align={tooltipAlign}>
-                                        <span 
-                                          style={{
-                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                            width: '32px', height: '18px', borderRadius: '4px',
-                                            fontSize: '0.62rem', fontWeight: '800',
-                                            border: '1px solid #a7f3d0',
-                                            backgroundColor: '#ecfdf5',
-                                            color: '#047857',
-                                            cursor: 'pointer'
-                                          }}
-                                        >
-                                          WSH
-                                        </span>
-                                      </ProcessedRollWashedTooltip>
-                                    )}
+                                    <ProcessedRollWashedTooltip roll={roll} align={tooltipAlign}>
+                                      <span 
+                                        style={{
+                                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                          width: '32px', height: '18px', borderRadius: '4px',
+                                          fontSize: '0.62rem', fontWeight: '800',
+                                          border: hasWashedInspection ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
+                                          backgroundColor: hasWashedInspection ? '#ecfdf5' : '#f8fafc',
+                                          color: hasWashedInspection ? '#047857' : '#94a3b8',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        WSH
+                                      </span>
+                                    </ProcessedRollWashedTooltip>
 
                                     {/* Re-wash Milestone */}
                                     {roll.reWashPof && (
@@ -8954,9 +8994,20 @@ export default function ProcessingModule() {
                     <Layers size={18} />
                     <strong style={{ fontSize: '0.95rem', fontFamily: 'monospace', letterSpacing: '0.02em' }}>Parent Roll ID: {parentProcessedRoll.id}</strong>
                   </div>
-                  <span className="badge" style={{ fontSize: '0.68rem', fontWeight: '800', backgroundColor: 'rgba(59, 130, 246, 0.25)', color: '#93c5fd', border: '1px solid rgba(59, 130, 246, 0.4)', padding: '2px 8px', borderRadius: '4px' }}>
-                    Processed Roll
-                  </span>
+                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    {parentProcessedRoll.washed_inspected ? (
+                      <span className="badge" style={{ fontSize: '0.68rem', fontWeight: '800', backgroundColor: 'rgba(16, 185, 129, 0.25)', color: '#6ee7b7', border: '1px solid rgba(16, 185, 129, 0.4)', padding: '2px 8px', borderRadius: '4px' }}>
+                        🧼 Washed Inspected
+                      </span>
+                    ) : (
+                      <span className="badge" style={{ fontSize: '0.68rem', fontWeight: '800', backgroundColor: 'rgba(245, 158, 11, 0.25)', color: '#fcd34d', border: '1px solid rgba(245, 158, 11, 0.4)', padding: '2px 8px', borderRadius: '4px' }}>
+                        Unwashed / Not Inspected
+                      </span>
+                    )}
+                    <span className="badge" style={{ fontSize: '0.68rem', fontWeight: '800', backgroundColor: 'rgba(59, 130, 246, 0.25)', color: '#93c5fd', border: '1px solid rgba(59, 130, 246, 0.4)', padding: '2px 8px', borderRadius: '4px' }}>
+                      Processed Roll
+                    </span>
+                  </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem 2rem', fontSize: '0.8rem', opacity: 0.95 }}>
@@ -8970,7 +9021,10 @@ export default function ProcessingModule() {
                   </div>
                   <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem' }}>
                     <span style={{ display: 'block', opacity: 0.7, fontSize: '0.68rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>ORDER / DESIGN</span>
-                    <strong style={{ fontSize: '0.85rem' }}>{parentProcessedRoll.order_number} / {parentProcessedRoll.design_name}</strong>
+                    <strong style={{ fontSize: '0.85rem' }}>
+                      {parentProcessedRoll.order_number || '—'} / {parentProcessedRoll.design_name || '—'}
+                      {parentProcessedRoll.design_no && parentProcessedRoll.design_no !== '—' ? ` (${parentProcessedRoll.design_no})` : ''}
+                    </strong>
                   </div>
                   <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem' }}>
                     <span style={{ display: 'block', opacity: 0.7, fontSize: '0.68rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>CURRENT QUANTITY</span>
@@ -9010,7 +9064,13 @@ export default function ProcessingModule() {
                         const isWashedInspected = parentProcessedRoll.washed_inspected;
                         
                         if (isWashedInspected) {
-                          const { weavingTotal, yarnTotal, holesTotal, grandTotal } = getChildDefectTotals(child);
+                          const {
+                            warpWeftTotal, warpWeftTags,
+                            weavingTotal, weavingTags,
+                            yarnTotal, yarnTags,
+                            holesTotal, holesTags,
+                            grandTotal, totalTags
+                          } = getChildDefectTotals(child);
                           
                           return (
                             <div key={child.id} className="glass-panel" style={{
@@ -9040,8 +9100,8 @@ export default function ProcessingModule() {
                                 </span>
                               </div>
 
-                              {/* QC parameters: Qty, Shortage, Width */}
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                              {/* QC parameters: Qty, Width, Lot */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
                                 <div className="input-group" style={{ margin: 0 }}>
                                   <label className="input-label" style={{ fontWeight: '700', fontSize: '0.7rem' }}>Actual Length (m)</label>
                                   <input
@@ -9067,6 +9127,17 @@ export default function ProcessingModule() {
                                     required
                                     value={child.width}
                                     onChange={e => updateChildProcessedRollField(idx, 'width', e.target.value)}
+                                    style={{ fontWeight: '700', fontSize: '0.85rem', height: '36px' }}
+                                  />
+                                </div>
+                                <div className="input-group" style={{ margin: 0 }}>
+                                  <label className="input-label" style={{ fontWeight: '700', fontSize: '0.7rem' }}>Lot #</label>
+                                  <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Lot #"
+                                    value={child.lot || ''}
+                                    onChange={e => updateChildProcessedRollField(idx, 'lot', e.target.value)}
                                     style={{ fontWeight: '700', fontSize: '0.85rem', height: '36px' }}
                                   />
                                 </div>
@@ -9103,8 +9174,80 @@ export default function ProcessingModule() {
                                 </div>
                               </div>
 
-                              {/* Defect point loggers */}
-                              {/* 1. Weaving Defects */}
+                              {/* Defect point loggers - 4 Washed Inspection Categories */}
+                              
+                              {/* 1. Warp & Weft Breakages */}
+                              <div style={{
+                                backgroundColor: '#fffbf0',
+                                border: '1px solid #fef08a',
+                                borderRadius: '8px',
+                                padding: '0.75rem',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.5rem'
+                              }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>⚠️ Warp & Weft Breakages</span>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: '850', color: 'white', backgroundColor: '#b45309', padding: '2px 6px', borderRadius: '4px' }}>
+                                    Total: {warpWeftTotal} Pt ({warpWeftTags} Tags)
+                                  </span>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
+                                  {[1, 2, 3, 4].map(pt => (
+                                    <button
+                                      key={pt}
+                                      type="button"
+                                      onClick={() => incrementChildDefect(idx, 'warp_weft', pt)}
+                                      style={{
+                                        position: 'relative',
+                                        height: '34px',
+                                        borderRadius: '6px',
+                                        border: '1px solid var(--border-current)',
+                                        backgroundColor: child[`warp_weft_${pt}pt`] > 0 ? 'rgba(180, 83, 9, 0.1)' : 'white',
+                                        color: child[`warp_weft_${pt}pt`] > 0 ? '#b45309' : 'var(--text-muted-current)',
+                                        fontWeight: '750',
+                                        fontSize: '0.72rem',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {pt} Pt
+                                      {child[`warp_weft_${pt}pt`] > 0 && (
+                                        <span style={{
+                                          position: 'absolute',
+                                          top: '-6px',
+                                          right: '-6px',
+                                          backgroundColor: '#b45309',
+                                          color: 'white',
+                                          fontSize: '0.58rem',
+                                          fontWeight: '800',
+                                          borderRadius: '50%',
+                                          width: '15px',
+                                          height: '15px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center'
+                                        }}>
+                                          {child[`warp_weft_${pt}pt`]}
+                                        </span>
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem' }}>
+                                  {child.warp_weft_history?.length > 0 ? (
+                                    <button type="button" onClick={() => undoLastChildDefect(idx, 'warp_weft')} style={{ border: 'none', background: 'none', color: '#b45309', cursor: 'pointer', fontWeight: '700' }}>
+                                      ↩ Undo
+                                    </button>
+                                  ) : <div />}
+                                  {(child.warp_weft_1pt > 0 || child.warp_weft_2pt > 0 || child.warp_weft_3pt > 0 || child.warp_weft_4pt > 0) && (
+                                    <button type="button" onClick={() => resetChildDefects(idx, 'warp_weft')} style={{ border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontWeight: '700' }}>
+                                      Reset
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 2. Weaving Defects */}
                               <div style={{
                                 backgroundColor: '#fdfbfb',
                                 border: '1px solid #f3ebeb',
@@ -9117,7 +9260,7 @@ export default function ProcessingModule() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--color-primary)', textTransform: 'uppercase' }}>⚠️ Weaving Defects</span>
                                   <span style={{ fontSize: '0.7rem', fontWeight: '850', color: 'white', backgroundColor: 'var(--color-primary)', padding: '2px 6px', borderRadius: '4px' }}>
-                                    Total: {weavingTotal} Pt
+                                    Total: {weavingTotal} Pt ({weavingTags} Tags)
                                   </span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
@@ -9175,7 +9318,7 @@ export default function ProcessingModule() {
                                 </div>
                               </div>
 
-                              {/* 2. Yarn Defects */}
+                              {/* 3. Yarn Defects */}
                               <div style={{
                                 backgroundColor: '#fcfdfa',
                                 border: '1px solid #ebf3eb',
@@ -9188,7 +9331,7 @@ export default function ProcessingModule() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span style={{ fontSize: '0.7rem', fontWeight: '800', color: '#047857', textTransform: 'uppercase' }}>⚠️ Yarn Defects</span>
                                   <span style={{ fontSize: '0.7rem', fontWeight: '850', color: 'white', backgroundColor: '#047857', padding: '2px 6px', borderRadius: '4px' }}>
-                                    Total: {yarnTotal} Pt
+                                    Total: {yarnTotal} Pt ({yarnTags} Tags)
                                   </span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
@@ -9246,7 +9389,7 @@ export default function ProcessingModule() {
                                 </div>
                               </div>
 
-                              {/* 3. Holes & Stains */}
+                              {/* 4. Holes & Stains */}
                               <div style={{
                                 backgroundColor: '#fafbfe',
                                 border: '1px solid #ebebf3',
@@ -9259,7 +9402,7 @@ export default function ProcessingModule() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span style={{ fontSize: '0.7rem', fontWeight: '800', color: '#3b82f6', textTransform: 'uppercase' }}>⚠️ Holes & Stains</span>
                                   <span style={{ fontSize: '0.7rem', fontWeight: '850', color: 'white', backgroundColor: '#3b82f6', padding: '2px 6px', borderRadius: '4px' }}>
-                                    Total: {holesTotal} Pt
+                                    Total: {holesTotal} Pt ({holesTags} Tags)
                                   </span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
@@ -9621,9 +9764,8 @@ export default function ProcessingModule() {
                                   alert('Cannot delete the last roll. A POF must contain at least one greige roll.');
                                   return;
                                 }
-                                if (window.confirm(`Are you sure you want to delete roll "${roll.id}" from this POF? This will also remove any received rolls associated with it.`)) {
+                                if (window.confirm(`Are you sure you want to delete roll "${roll.id}" from this POF?`)) {
                                   setEditPofFabricRolls(prev => prev.filter(r => r.id !== roll.id));
-                                  setEditPofReceivedRolls(prev => prev.filter(rx => !isGreigeRollMatch(rx.greige_roll_id, roll.id)));
                                 }
                               }}
                               style={{
@@ -10185,9 +10327,9 @@ export default function ProcessingModule() {
 
         const renderTableHeader = () => (
           <tr style={{ borderBottom: '2px solid #000', textAlign: 'left', fontWeight: 'bold', backgroundColor: '#f2f2f2' }}>
-            <th style={{ padding: cellPadding, width: '60px' }}>S.No</th>
-            <th style={{ padding: cellPadding }}>Fabric Received ID</th>
-            <th style={{ padding: cellPadding, textAlign: 'right', width: '130px' }}>Received Qty (m)</th>
+            <th style={{ padding: cellPadding, width: '45px', textAlign: 'center' }}>S.No</th>
+            <th style={{ padding: cellPadding, whiteSpace: 'nowrap' }}>Fabric Received ID</th>
+            <th style={{ padding: cellPadding, textAlign: 'right', whiteSpace: 'nowrap', width: '135px' }}>Received Qty (m)</th>
           </tr>
         );
 
@@ -10195,9 +10337,9 @@ export default function ProcessingModule() {
           const recdQty = parseFloat(roll.qty || 0);
           return (
             <tr key={roll.id} style={{ borderBottom: '1px solid #ccc' }}>
-              <td style={{ padding: cellPadding }}>{index + 1}</td>
-              <td style={{ padding: cellPadding, fontFamily: 'monospace', fontWeight: 'bold' }}>{roll.id}</td>
-              <td style={{ padding: cellPadding, textAlign: 'right', fontWeight: 'bold', color: '#047857' }}>{recdQty.toFixed(2)} m</td>
+              <td style={{ padding: cellPadding, textAlign: 'center' }}>{index + 1}</td>
+              <td style={{ padding: cellPadding, fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', fontSize: '0.82em' }}>{roll.id}</td>
+              <td style={{ padding: cellPadding, textAlign: 'right', fontWeight: 'bold', color: '#047857', whiteSpace: 'nowrap', fontSize: '0.88em' }}>{recdQty.toFixed(2)} m</td>
             </tr>
           );
         };
@@ -10323,8 +10465,22 @@ export default function ProcessingModule() {
                   
                   {/* Print Header */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: sectionMargin, borderBottom: '2.5px solid #000', paddingBottom: '1.25rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                      <div style={{ fontSize: '2.2rem', fontWeight: '950', letterSpacing: '1px', margin: 0, color: '#000', lineHeight: '1.1' }}>ASHOK TEXTILES</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                      <img
+                        src="/logo.png"
+                        alt="Ashok Textiles"
+                        style={{ maxHeight: '60px', objectFit: 'contain' }}
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                      <div>
+                        <div style={{ fontSize: '1.9rem', fontWeight: '950', letterSpacing: '1px', margin: 0, color: '#000', lineHeight: '1.1' }}>ASHOK TEXTILES</div>
+                        <div style={{ fontSize: '0.72rem', color: '#334155', fontWeight: '600', marginTop: '3px', lineHeight: '1.3' }}>
+                          6/222, SALEM MAIN ROAD, VEERAPANDI, SALEM, TAMIL NADU - 33<br />
+                          GSTIN: 33AAZFA60686D1Z6
+                        </div>
+                      </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '900', color: '#800000', letterSpacing: '0.5px' }}>FABRIC RECEIPT REGISTER</h2>
@@ -10599,16 +10755,29 @@ function ProcessedRollReceivedTooltip({ roll, align = 'center', children }) {
 
 function ProcessedRollWashedTooltip({ roll, align = 'center', children }) {
   const [hovered, setHovered] = useState(false);
-  const parent = roll.parentRoll;
-  const isInspected = parent && 
-    parent.inspector_1 && 
-    parent.inspected_at && 
-    parent.received_from_processing_at && 
-    new Date(parent.inspected_at).getTime() > new Date(parent.received_from_processing_at).getTime();
+  const parent = roll.parentRoll || roll;
+  
+  const isInspected = Boolean(
+    roll.washed_inspected ||
+    parent.washed_inspected ||
+    roll.washed_inspected_at ||
+    parent.washed_inspected_at ||
+    roll.washed_inspector_1 ||
+    parent.washed_inspector_1
+  );
+
+  const inspectedAtVal = roll.washed_inspected_at || parent.washed_inspected_at || roll.inspected_at || parent.inspected_at;
+  const inspector1Val = roll.washed_inspector_1 || parent.washed_inspector_1 || roll.inspector_1 || parent.inspector_1 || '—';
+  const inspector2Val = roll.washed_inspector_2 || parent.washed_inspector_2 || roll.inspector_2 || parent.inspector_2 || '';
+  const actualQtyVal = roll.washed_actual_qty ?? parent.washed_actual_qty ?? roll.actual_qty ?? parent.actual_qty ?? roll.qty;
+  const shortageVal = roll.washed_shortage ?? parent.washed_shortage ?? roll.shortage ?? parent.shortage ?? 0;
+  const widthVal = roll.washed_width || parent.washed_width || roll.width || parent.width;
+  const totalPointsVal = roll.washed_total_defect_points ?? parent.washed_total_defect_points ?? 0;
+  const isOkVal = (roll.roll_ok !== undefined ? roll.roll_ok : (parent.roll_ok !== undefined ? parent.roll_ok : totalPointsVal === 0));
 
   const formattedDateTime = () => {
-    if (!parent?.inspected_at) return '—';
-    const d = new Date(parent.inspected_at);
+    if (!inspectedAtVal) return '—';
+    const d = new Date(inspectedAtVal);
     if (isNaN(d.getTime())) return '—';
     return d.toLocaleString('en-IN', {
       day: '2-digit',
@@ -10670,24 +10839,17 @@ function ProcessedRollWashedTooltip({ roll, align = 'center', children }) {
           </div>
           {isInspected ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Status: </span><span style={{ color: parent.roll_ok ? '#34d399' : '#f87171', fontWeight: '800' }}>{parent.roll_ok ? '🟢 OK' : '🔴 Defects Observed'}</span></div>
+              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Status: </span><span style={{ color: isOkVal ? '#34d399' : '#f87171', fontWeight: '800' }}>{isOkVal ? '🟢 OK' : '🔴 Defects Observed'}</span></div>
               <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Inspected At: </span><span style={{ color: '#fff', fontWeight: '700' }}>{formattedDateTime()}</span></div>
-              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Inspectors: </span><span style={{ color: '#fff', fontWeight: '700' }}>{parent.inspector_1} {parent.inspector_2 ? `& ${parent.inspector_2}` : ''}</span></div>
-              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Attended Fitter: </span><span style={{ color: '#fff', fontWeight: '700' }}>{parent.attended_fitter || '—'}</span></div>
+              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Inspectors: </span><span style={{ color: '#fff', fontWeight: '700' }}>{inspector1Val} {inspector2Val ? `& ${inspector2Val}` : ''}</span></div>
               <div style={{ height: '1px', backgroundColor: '#334155', margin: '2px 0' }} />
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '4px' }}>
                 <div><span style={{ color: '#94a3b8' }}>Received Qty:</span> <strong style={{ color: '#fff' }}>{roll.qty} m</strong></div>
-                <div><span style={{ color: '#94a3b8' }}>Actual Qty:</span> <strong style={{ color: '#fff' }}>{parent.actual_qty || '—'} m</strong></div>
-                <div><span style={{ color: '#94a3b8' }}>Shortage:</span> <strong style={{ color: parent.shortage > 0 ? '#fbbf24' : '#34d399' }}>{parent.shortage || 0} m</strong></div>
-                <div><span style={{ color: '#94a3b8' }}>Mistakes:</span> <strong style={{ color: '#f87171' }}>{parent.mistake || 0} m</strong></div>
+                <div><span style={{ color: '#94a3b8' }}>Actual Qty:</span> <strong style={{ color: '#fff' }}>{actualQtyVal} m</strong></div>
+                <div><span style={{ color: '#94a3b8' }}>Shortage:</span> <strong style={{ color: shortageVal > 0 ? '#fbbf24' : '#34d399' }}>{shortageVal} m</strong></div>
+                <div><span style={{ color: '#94a3b8' }}>Width:</span> <strong style={{ color: '#fff' }}>{widthVal ? `${widthVal}"` : '—'}</strong></div>
               </div>
-              <div><span style={{ color: '#34d399', fontWeight: '600' }}>Approved Qty: </span><strong style={{ color: '#34d399' }}>{parent.approved_qty || 0} m</strong></div>
-              {parent.warp_comments?.length > 0 && (
-                <div style={{ marginTop: '2px' }}><span style={{ color: '#f87171', fontWeight: '700' }}>Warp: </span><span style={{ color: '#e2e8f0' }}>{parent.warp_comments.join(', ')}</span></div>
-              )}
-              {parent.weft_comments?.length > 0 && (
-                <div style={{ marginTop: '2px' }}><span style={{ color: '#f87171', fontWeight: '700' }}>Weft: </span><span style={{ color: '#e2e8f0' }}>{parent.weft_comments.join(', ')}</span></div>
-              )}
+              <div><span style={{ color: '#94a3b8', fontWeight: '600' }}>Total Points: </span><strong style={{ color: totalPointsVal > 0 ? '#f87171' : '#34d399' }}>{totalPointsVal} pts</strong></div>
             </div>
           ) : (
             <div style={{ color: '#9ca3af', fontWeight: '700' }}>Washed QC Inspection Pending</div>

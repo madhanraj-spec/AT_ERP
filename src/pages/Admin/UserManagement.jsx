@@ -25,6 +25,8 @@ const ALL_SIDEBAR_ITEMS = [
   { group: 'Orders', name: 'Orders (Merchandiser)', path: '/merchandiser/orders' },
   { group: 'Dyeing', name: 'Dyeing Order Forms (Admin)', path: '/admin/dyeing-forms' },
   { group: 'Dyeing', name: 'Dyeing Order Forms (Merchandiser)', path: '/merchandiser/dyeing-forms' },
+  { group: 'Dyeing', name: 'Proforma Invoice (Admin)', path: '/admin/proforma-invoices' },
+  { group: 'Dyeing', name: 'Proforma Invoice (Merchandiser)', path: '/merchandiser/proforma-invoices' },
   { group: 'Finance & Approvals', name: 'Approvals', path: '/admin/approvals' },
   { group: 'Finance & Approvals', name: 'Finances', path: '/admin/finances' },
   { group: 'Yarn', name: 'Greige Yarn', path: '/greige-yarn' },

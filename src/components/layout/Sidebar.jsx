@@ -18,7 +18,8 @@ import {
   X,
   Coins,
   Users,
-  Truck
+  Truck,
+  FileText
 } from 'lucide-react';
 import { Archive } from 'lucide-react';
 
@@ -28,6 +29,8 @@ const MASTER_LINKS = [
   { name: 'Orders', path: '/merchandiser/orders', icon: ShoppingCart },
   { name: 'Dyeing Order Forms', path: '/admin/dyeing-forms', icon: Droplet },
   { name: 'Dyeing Order Forms', path: '/merchandiser/dyeing-forms', icon: Droplet },
+  { name: 'Proforma Invoice', path: '/admin/proforma-invoices', icon: FileText },
+  { name: 'Proforma Invoice', path: '/merchandiser/proforma-invoices', icon: FileText },
   { name: 'Approvals', path: '/admin/approvals', icon: CheckSquare },
   { name: 'Finances', path: '/admin/finances', icon: Coins },
   { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch },
@@ -86,6 +89,7 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
             { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
             { name: 'Orders', path: '/admin/orders', icon: ShoppingCart },
             { name: 'Dyeing Order Forms', path: '/admin/dyeing-forms', icon: Droplet },
+            { name: 'Proforma Invoice', path: '/admin/proforma-invoices', icon: FileText },
             { name: 'Approvals', path: '/admin/approvals', icon: CheckSquare },
             { name: 'Finances', path: '/admin/finances', icon: Coins },
             { name: 'Greige Yarn', path: '/greige-yarn', icon: PackageSearch },
@@ -114,6 +118,7 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
           return [
             { name: 'Orders', path: '/merchandiser/orders', icon: ShoppingCart },
             { name: 'Dyeing Order Forms', path: '/merchandiser/dyeing-forms', icon: Droplet },
+            { name: 'Proforma Invoice', path: '/merchandiser/proforma-invoices', icon: FileText },
             { name: 'Fabric Stock Inventory', path: '/fabric-stock', icon: Archive },
             { name: 'Masters', path: '/masters', icon: Settings }
           ];
@@ -186,7 +191,12 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
         }
         return null;
       }
-      return allowedPaths.includes(link.path) ? link : null;
+      
+      const isAllowed = allowedPaths.includes(link.path) ||
+        (link.path === '/admin/proforma-invoices' && (allowedPaths.includes('/admin/orders') || allowedPaths.includes('/admin/dyeing-forms'))) ||
+        (link.path === '/merchandiser/proforma-invoices' && (allowedPaths.includes('/merchandiser/orders') || allowedPaths.includes('/merchandiser/dyeing-forms')));
+
+      return isAllowed ? link : null;
     }).filter(Boolean);
   };
 

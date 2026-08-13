@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Loader, Search, RefreshCw, ChevronDown, ChevronRight, Calendar, AlertCircle, Layers, ChevronLeft, CheckCircle, Info, QrCode, ClipboardList, Droplet, Plus, Trash2, Play, Printer, X
+  ArrowLeft, Loader, Search, RefreshCw, ChevronDown, ChevronRight, Calendar, AlertCircle, Layers, ChevronLeft, CheckCircle, Info, QrCode, ClipboardList, Droplet, Plus, Trash2, Play, Printer, X, Edit2
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { supabase } from '../../lib/supabase';
@@ -1176,10 +1176,9 @@ export default function FabricInput({ defaultView = 'menu' }) {
     }
   };
 
-  const handleManualAdd = (e) => {
-    if (e) e.preventDefault();
-    const cleanedInput = cleanScannerInput(scanInput).toLowerCase();
-    if (!cleanedInput) return;
+  const addRollToScannedQueue = (inputVal) => {
+    const cleanedInput = cleanScannerInput(inputVal).toLowerCase();
+    if (!cleanedInput) return false;
 
     const match = allAvailableRolls.find(
       r => cleanScannerInput(r.id).toLowerCase() === cleanedInput
@@ -1187,25 +1186,43 @@ export default function FabricInput({ defaultView = 'menu' }) {
     if (match) {
       const isAlreadyReceived = match.status === 'greige received' || match.status === '4_point_inspected' || match.status === 'sent_to_processing' || match.status === 'received_from_processing';
       if (isAlreadyReceived) {
-        alert(`Roll ID "${scanInput}" is already greige input scanned.`);
+        alert(`Roll ID "${inputVal}" is already greige input scanned.`);
         setScanInput('');
-        return;
+        return true;
       }
 
-      const alreadyScanned = scannedRolls.some(r => r.id === match.id);
-      if (!alreadyScanned) {
-        const factoryLoc = locations.find(l => l.location_name && l.location_name.trim().toLowerCase() === 'factory');
-        const defaultLocId = factoryLoc?.id || locations[0]?.id || null;
-        const defaultLocName = factoryLoc?.location_name || locations[0]?.location_name || '';
+      const alreadyInQueue = scannedRolls.some(r => r.id === match.id);
+      if (alreadyInQueue) {
+        alert(`Roll ID "${inputVal}" is already in the scan queue.`);
+        setScanInput('');
+        return true;
+      }
 
-        setScannedRolls(prev => [...prev, {
+      const factoryLoc = locations.find(l => l.location_name && l.location_name.trim().toLowerCase() === 'factory');
+      const defaultLocId = factoryLoc?.id || locations[0]?.id || null;
+      const defaultLocName = factoryLoc?.location_name || locations[0]?.location_name || '';
+
+      setScannedRolls(prev => {
+        if (prev.some(r => r.id === match.id)) {
+          return prev;
+        }
+        return [...prev, {
           ...match,
           location_id: defaultLocId,
           location_name: defaultLocName
-        }]);
-      }
+        }];
+      });
       setScanInput('');
-    } else {
+      return true;
+    }
+    return false;
+  };
+
+  const handleManualAdd = (e) => {
+    if (e) e.preventDefault();
+    if (!scanInput) return;
+    const handled = addRollToScannedQueue(scanInput);
+    if (!handled) {
       alert(`Roll ID "${scanInput}" not found in any weaving order!`);
     }
   };
@@ -2035,38 +2052,8 @@ export default function FabricInput({ defaultView = 'menu' }) {
   }, [processingOrders]);
 
   useEffect(() => {
-    const cleanedInput = cleanScannerInput(scanInput).toLowerCase();
-    if (!cleanedInput) return;
-    
-    // Find matching roll in allAvailableRolls
-    const match = allAvailableRolls.find(
-      r => cleanScannerInput(r.id).toLowerCase() === cleanedInput
-    );
-    
-    if (match) {
-      // Check if it's already scanned/received in the database
-      const isAlreadyReceived = match.status === 'greige received' || match.status === '4_point_inspected' || match.status === 'sent_to_processing' || match.status === 'received_from_processing';
-      if (isAlreadyReceived) {
-        alert(`Roll ID "${scanInput}" is already greige input scanned.`);
-        setScanInput('');
-        return;
-      }
-
-      // Check if it's already in scannedRolls
-      const alreadyScanned = scannedRolls.some(r => r.id === match.id);
-      if (!alreadyScanned) {
-        const factoryLoc = locations.find(l => l.location_name && l.location_name.trim().toLowerCase() === 'factory');
-        const defaultLocId = factoryLoc?.id || locations[0]?.id || null;
-        const defaultLocName = factoryLoc?.location_name || locations[0]?.location_name || '';
-
-        setScannedRolls(prev => [...prev, {
-          ...match,
-          location_id: defaultLocId,
-          location_name: defaultLocName
-        }]);
-      }
-      setScanInput(''); // Clear input for next scan
-    }
+    if (!scanInput) return;
+    addRollToScannedQueue(scanInput);
   }, [scanInput, allAvailableRolls, scannedRolls, locations]);
 
   const handleUpdateStatus = async (orderId, currentStatus, newStatus, plannedEndDate) => {
@@ -2221,13 +2208,16 @@ export default function FabricInput({ defaultView = 'menu' }) {
               }
               .label-left {
                 flex: 1;
+                min-width: 0;
                 display: flex;
                 flex-direction: column;
                 justify-content: space-between;
                 padding-right: 0.2cm;
+                overflow: hidden;
               }
               .label-right {
                 width: 2.8cm;
+                flex-shrink: 0;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
@@ -2237,9 +2227,9 @@ export default function FabricInput({ defaultView = 'menu' }) {
               }
               .field-row {
                 display: flex;
-                align-items: baseline;
+                align-items: flex-start;
                 margin-bottom: 1px;
-                line-height: 1.1;
+                line-height: 1.15;
               }
               .field-label {
                 font-size: 6.5px;
@@ -2248,6 +2238,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                 width: 1.8cm;
                 flex-shrink: 0;
                 letter-spacing: 0.02em;
+                padding-top: 1px;
               }
               .field-value {
                 font-size: 8px;
@@ -2256,11 +2247,16 @@ export default function FabricInput({ defaultView = 'menu' }) {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                min-width: 0;
               }
               .field-value.roll-id {
                 font-family: monospace;
-                font-size: 8.5px;
+                font-size: 8px;
                 font-weight: 900;
+                white-space: normal;
+                word-break: break-all;
+                overflow-wrap: anywhere;
+                line-height: 1.15;
               }
               .field-value.qty-val {
                 font-size: 12px;
@@ -2268,8 +2264,8 @@ export default function FabricInput({ defaultView = 'menu' }) {
                 color: #000;
               }
               .qr-code {
-                width: 2.2cm;
-                height: 2.2cm;
+                width: 2.3cm;
+                height: 2.3cm;
                 object-fit: contain;
               }
               .qr-placeholder {
@@ -2437,6 +2433,49 @@ export default function FabricInput({ defaultView = 'menu' }) {
     } catch (err) {
       console.error('Error deleting fabric roll:', err);
       alert('Failed to delete fabric roll: ' + err.message);
+    }
+  };
+
+  const handleEditRollQty = async (roll) => {
+    const currentQty = roll.qty;
+    const input = window.prompt(`Enter correct quantity (meters) for roll ${roll.id}:`, currentQty);
+    if (input === null) return;
+    const newQty = parseFloat(input);
+    if (isNaN(newQty) || newQty <= 0) {
+      alert('Please enter a valid positive number for quantity.');
+      return;
+    }
+
+    const totalProduced = (selectedWvof.production_logs || []).reduce((sum, log) => sum + (parseFloat(log.qty) || 0), 0);
+    const currentRolls = Array.isArray(selectedWvof.fabric_rolls) ? selectedWvof.fabric_rolls : [];
+    const otherRollsQty = currentRolls.filter(r => r.id !== roll.id).reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
+
+    if (totalProduced > 0 && (otherRollsQty + newQty > totalProduced)) {
+      alert(`Cannot update quantity: Total QR quantity (${(otherRollsQty + newQty).toFixed(2)} m) would exceed Weaving Production Logs (${totalProduced.toFixed(2)} m).`);
+      return;
+    }
+
+    try {
+      const updatedRolls = currentRolls.map(r => {
+        if (r.id === roll.id) {
+          return { ...r, qty: newQty };
+        }
+        return r;
+      });
+
+      const { error } = await supabase
+        .from('weaving_orders')
+        .update({ fabric_rolls: updatedRolls })
+        .eq('id', selectedWvof.id);
+
+      if (error) throw error;
+
+      alert(`✅ Roll ${roll.id} quantity updated to ${newQty} m successfully!`);
+      setSelectedWvof(prev => ({ ...prev, fabric_rolls: updatedRolls }));
+      await fetchData();
+    } catch (err) {
+      console.error('Error updating fabric roll quantity:', err);
+      alert('Failed to update roll quantity: ' + err.message);
     }
   };
 
@@ -3095,7 +3134,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                     </thead>
                     <tbody>
                       {scannedRolls.map((roll, idx) => (
-                        <tr key={roll.id || idx}>
+                        <tr key={`${roll.id}-${idx}`}>
                           <td style={{ padding: '0.5rem', verticalAlign: 'middle' }}>
                             <div style={{ fontWeight: '800', fontFamily: 'monospace', color: '#1e293b', wordBreak: 'break-all', whiteSpace: 'normal', lineHeight: '1.2' }}>
                               {roll.id}
@@ -3621,17 +3660,18 @@ export default function FabricInput({ defaultView = 'menu' }) {
                   </div>
                 ) : (
                   (() => {
+                    const wvofRolls = (selectedWv.fabric_rolls || []).filter(roll => roll && roll.id && roll.id.startsWith(selectedWv.weaving_number));
                     const wvofQty = Number(selectedWv.qty || 0);
                     const weavedQty = (selectedWv.production_logs || []).reduce((sum, log) => sum + Number(log.qty || 0), 0);
-                    const qrGeneratedQty = (selectedWv.fabric_rolls || []).reduce((sum, roll) => sum + Number(roll.qty || 0), 0);
-                    const numQrGenerated = selectedWv.fabric_rolls?.length || 0;
+                    const qrGeneratedQty = wvofRolls.reduce((sum, roll) => sum + Number(roll.qty || 0), 0);
+                    const numQrGenerated = wvofRolls.length;
                     
-                    const greigeInputRolls = (selectedWv.fabric_rolls || []).filter(roll => roll.status === 'greige received' || roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing');
+                    const greigeInputRolls = wvofRolls.filter(roll => roll.status === 'greige received' || roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing');
                     const greigeInputQty = greigeInputRolls.reduce((sum, roll) => sum + Number(roll.qty || 0), 0);
                     const numScannedGreige = greigeInputRolls.length;
 
                     // 4-Point Inspection Qty calculations
-                    const inspectedRolls = (selectedWv.fabric_rolls || []).filter(roll => roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing');
+                    const inspectedRolls = wvofRolls.filter(roll => roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing');
                     const totalInspectedQty = inspectedRolls.reduce((sum, roll) => sum + Number(roll.actual_qty || roll.actual_length || 0), 0);
                     const numInspected = inspectedRolls.length;
 
@@ -3697,7 +3737,7 @@ export default function FabricInput({ defaultView = 'menu' }) {
                         {(() => {
                           const receivedGfrrs = {};
                           if (selectedWv.fabric_rolls) {
-                            selectedWv.fabric_rolls.forEach(roll => {
+                            wvofRolls.forEach(roll => {
                               if ((roll.status === 'greige received' || roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing') && roll.gfrr_no) {
                                 if (!receivedGfrrs[roll.gfrr_no]) {
                                   receivedGfrrs[roll.gfrr_no] = [];
@@ -3772,16 +3812,34 @@ export default function FabricInput({ defaultView = 'menu' }) {
                                 </tr>
                               </thead>
                               <tbody>
-                                {!selectedWv.fabric_rolls || selectedWv.fabric_rolls.length === 0 ? (
+                                {!wvofRolls || wvofRolls.length === 0 ? (
                                   <tr>
                                     <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
                                       No rolls generated for this weaving order yet. Go to Loom QR Generator to create rolls.
                                     </td>
                                   </tr>
                                 ) : (
-                                  [...selectedWv.fabric_rolls]
-                                    .sort((a, b) => a.roll_no - b.roll_no)
-                                    .map(roll => {
+                                  (() => {
+                                    const map = new Map();
+                                    wvofRolls.forEach(r => {
+                                      let rId = (r.id || '').trim();
+                                      if (!rId) return;
+                                      if (!map.has(rId)) {
+                                        map.set(rId, { ...r, id: rId, qty: parseFloat(r.qty || 0) });
+                                      } else {
+                                        const existing = map.get(rId);
+                                        existing.qty = parseFloat((existing.qty + parseFloat(r.qty || 0)).toFixed(2));
+                                        if (r.status === '4_point_inspected' || r.status === 'sent_to_processing' || r.status === 'received_from_processing') {
+                                          existing.status = r.status;
+                                        }
+                                      }
+                                    });
+                                    return Array.from(map.values()).sort((a, b) => {
+                                      const numA = parseInt((a.id.split('/').pop() || '').replace(/\D/g, ''), 10) || a.roll_no || 0;
+                                      const numB = parseInt((b.id.split('/').pop() || '').replace(/\D/g, ''), 10) || b.roll_no || 0;
+                                      return numA - numB;
+                                    });
+                                  })().map(roll => {
                                       const isReceived = roll.status === 'greige received' || roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing';
                                       const isInspected = roll.status === '4_point_inspected' || roll.status === 'sent_to_processing' || roll.status === 'received_from_processing';
                                       return (
@@ -4124,12 +4182,77 @@ export default function FabricInput({ defaultView = 'menu' }) {
     return roll.location_name || 'Factory';
   };
 
+  // Helper to check if a roll is a parent roll that has been cut into child rolls
+  const isParentCutRoll = (roll, allRollsInOrder) => {
+    if (!roll || !roll.id) return false;
+    if (roll.is_cut || roll.isCut || roll.status === 'cut') return true;
+    const rollId = String(roll.id).trim().toLowerCase();
+
+    return (allRollsInOrder || []).some(other => {
+      if (!other || !other.id) return false;
+      const otherId = String(other.id).trim().toLowerCase();
+      if (otherId === rollId) return false;
+
+      if (other.parent_roll_id && String(other.parent_roll_id).trim().toLowerCase() === rollId) return true;
+      if (other.greige_roll_id && String(other.greige_roll_id).trim().toLowerCase() === rollId) return true;
+
+      if (otherId.startsWith(rollId + '/')) return true;
+
+      if (/\/\d{2,3}$/.test(otherId)) {
+        const parentCandidate = otherId.replace(/\/\d{2,3}$/, '');
+        if (parentCandidate === rollId) return true;
+      }
+
+      return false;
+    });
+  };
+
   // ── Greige Rolls Details: computed values (hooks must be at top level) ──
   const allRolls = useMemo(() => {
+    // Gather all candidate rolls across weavingOrders and processingOrders for cut detection
+    const candidateRolls = [];
+    weavingOrders.forEach(wo => {
+      const orderRolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
+      orderRolls.forEach(roll => {
+        candidateRolls.push({ ...roll, wo });
+      });
+    });
+
+    processingOrders.forEach(po => {
+      const poFabricRolls = Array.isArray(po.fabric_rolls) ? po.fabric_rolls : [];
+      poFabricRolls.forEach(r => {
+        candidateRolls.push({ ...r, po });
+      });
+      const poReceivedRolls = Array.isArray(po.received_rolls) ? po.received_rolls : [];
+      poReceivedRolls.forEach(rx => {
+        candidateRolls.push({ ...rx, po });
+      });
+    });
+
     const rolls = [];
     weavingOrders.forEach(wo => {
       const orderRolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
       orderRolls.forEach(roll => {
+        if (isParentCutRoll(roll, candidateRolls)) {
+          return;
+        }
+
+        let parentRoll = null;
+        if (roll.id) {
+          const rIdLower = String(roll.id).trim().toLowerCase();
+          parentRoll = candidateRolls.find(c => {
+            if (!c || !c.id) return false;
+            const cIdLower = String(c.id).trim().toLowerCase();
+            if (cIdLower === rIdLower) return false;
+            return (
+              rIdLower.startsWith(cIdLower + '/') ||
+              (roll.parent_roll_id && String(roll.parent_roll_id).trim().toLowerCase() === cIdLower) ||
+              (roll.greige_roll_id && String(roll.greige_roll_id).trim().toLowerCase() === cIdLower) ||
+              rIdLower.replace(/\/\d{2,3}$/, '') === cIdLower
+            );
+          });
+        }
+
         const isSentToProcessing = processingRollIds.has(roll.id);
         const latestMovement = (fabricMovements || []).find(m =>
           Array.isArray(m.rolls) && m.rolls.some(r => r.id === roll.id)
@@ -4138,6 +4261,17 @@ export default function FabricInput({ defaultView = 'menu' }) {
         
         rolls.push({
           ...roll,
+          created_at: roll.created_at || roll.inspected_at || parentRoll?.created_at || parentRoll?.inspected_at || wo.created_at,
+          status: roll.status || parentRoll?.status || (parentRoll ? '4_point_inspected' : 'greige received'),
+          inspector_1: roll.inspector_1 || parentRoll?.inspector_1 || '—',
+          inspector_2: roll.inspector_2 || parentRoll?.inspector_2 || '',
+          attended_fitter: roll.attended_fitter || parentRoll?.attended_fitter || '',
+          inspected_at: roll.inspected_at || parentRoll?.inspected_at || roll.created_at || parentRoll?.created_at || wo.created_at,
+          shortage: roll.shortage !== undefined ? roll.shortage : (parentRoll?.shortage || 0),
+          mistake: roll.mistake !== undefined ? roll.mistake : (parentRoll?.mistake || 0),
+          warp_comments: (roll.warp_comments && roll.warp_comments.length > 0) ? roll.warp_comments : (parentRoll?.warp_comments || []),
+          weft_comments: (roll.weft_comments && roll.weft_comments.length > 0) ? roll.weft_comments : (parentRoll?.weft_comments || []),
+          roll_ok: roll.roll_ok !== undefined ? roll.roll_ok : (parentRoll?.roll_ok !== undefined ? parentRoll.roll_ok : true),
           weavingOrder: wo,
           weaving_number: wo.weaving_number,
           weaving_type: wo.weaving_type === 'job_work' ? 'Job Work' : 'In-House',
@@ -4149,6 +4283,69 @@ export default function FabricInput({ defaultView = 'menu' }) {
           design_no: wo.order?.design_no || wo.design_no || '—',
           design_name: wo.order?.design_name || '—',
           movement_qty: Number(roll.actual_qty || roll.actual_length || roll.qty || 0),
+          location_name: currentLoc
+        });
+      });
+    });
+
+    // Also check processingOrders fabric_rolls for cut child rolls sent to processing
+    processingOrders.forEach(po => {
+      const poFabricRolls = Array.isArray(po.fabric_rolls) ? po.fabric_rolls : [];
+      poFabricRolls.forEach(r => {
+        if (!r || !r.id) return;
+        const rId = String(r.id).trim();
+        if (isParentCutRoll(r, candidateRolls)) return;
+        if (rolls.some(existing => existing.id === rId)) return;
+
+        let weavingOrder = null;
+        let parentRoll = null;
+        for (const wo of weavingOrders) {
+          const orderRolls = Array.isArray(wo.fabric_rolls) ? wo.fabric_rolls : [];
+          const match = orderRolls.find(o => o.id === r.id || rId.startsWith(o.id + '/') || o.id.startsWith(rId + '/'));
+          if (match) {
+            weavingOrder = wo;
+            parentRoll = orderRolls.find(o => rId.startsWith(o.id + '/') || rId.replace(/\/\d{2,3}$/, '') === String(o.id).trim());
+            break;
+          }
+        }
+        if (!parentRoll) {
+          parentRoll = candidateRolls.find(c => {
+            if (!c || !c.id) return false;
+            const cId = String(c.id).trim();
+            return cId !== rId && (rId.startsWith(cId + '/') || rId.replace(/\/\d{2,3}$/, '') === cId);
+          });
+        }
+
+        const latestMovement = (fabricMovements || []).find(m =>
+          Array.isArray(m.rolls) && m.rolls.some(mr => mr.id === rId)
+        );
+        const currentLoc = latestMovement ? latestMovement.to_location : (r.location_name || 'Factory');
+
+        rolls.push({
+          ...r,
+          id: rId,
+          created_at: r.created_at || r.inspected_at || parentRoll?.created_at || parentRoll?.inspected_at || weavingOrder?.created_at || po.created_at,
+          status: r.status || parentRoll?.status || (parentRoll ? '4_point_inspected' : 'sent_to_processing'),
+          inspector_1: r.inspector_1 || parentRoll?.inspector_1 || '—',
+          inspector_2: r.inspector_2 || parentRoll?.inspector_2 || '',
+          attended_fitter: r.attended_fitter || parentRoll?.attended_fitter || '',
+          inspected_at: r.inspected_at || parentRoll?.inspected_at || r.created_at || parentRoll?.created_at || weavingOrder?.created_at,
+          shortage: r.shortage !== undefined ? r.shortage : (parentRoll?.shortage || 0),
+          mistake: r.mistake !== undefined ? r.mistake : (parentRoll?.mistake || 0),
+          warp_comments: (r.warp_comments && r.warp_comments.length > 0) ? r.warp_comments : (parentRoll?.warp_comments || []),
+          weft_comments: (r.weft_comments && r.weft_comments.length > 0) ? r.weft_comments : (parentRoll?.weft_comments || []),
+          roll_ok: r.roll_ok !== undefined ? r.roll_ok : (parentRoll?.roll_ok !== undefined ? parentRoll.roll_ok : true),
+          weavingOrder,
+          weaving_number: weavingOrder?.weaving_number || r.weaving_number || '—',
+          weaving_type: weavingOrder?.weaving_type === 'job_work' ? 'Job Work' : 'In-House',
+          partner_name: weavingOrder?.weaving_type === 'job_work' ? (weavingOrder.partner_name || 'Job Work Partner') : (po.partner_name || 'In-House'),
+          machine_name: weavingOrder?.weaving_type === 'job_work' ? 'Job Work' : (weavingOrder?.machine_name || '—'),
+          isProcessed: false,
+          isSentToProcessing: true,
+          order_number: r.order_number || weavingOrder?.order?.order_number || '—',
+          design_no: r.design_no || weavingOrder?.order?.design_no || weavingOrder?.design_no || '—',
+          design_name: r.design_name || weavingOrder?.order?.design_name || '—',
+          movement_qty: Number(r.actual_qty || r.actual_length || r.qty || 0),
           location_name: currentLoc
         });
       });
@@ -7868,6 +8065,20 @@ export default function FabricInput({ defaultView = 'menu' }) {
                                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white'; }}
                                       >
                                         <Printer size={9} /> Print
+                                      </button>
+                                      <button
+                                        onClick={() => handleEditRollQty(roll)}
+                                        style={{
+                                          padding: '2px 5px', borderRadius: '4px', border: '1px solid #cbd5e1',
+                                          background: 'white', color: '#0284c7',
+                                          fontSize: '0.6rem', fontWeight: '700', cursor: 'pointer',
+                                          display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+                                          transition: 'all 0.15s'
+                                        }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f0f9ff'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'white'; }}
+                                      >
+                                        <Edit2 size={9} /> Edit
                                       </button>
                                       <button
                                         onClick={() => handleDeleteRoll(roll.id)}

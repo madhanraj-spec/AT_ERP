@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS master_partners (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     partner_name TEXT NOT NULL,
     partner_type TEXT NOT NULL, -- e.g. 'Spinning', 'Weaving', 'Dyeing'
+    district TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     UNIQUE(partner_name, partner_type)
 );
