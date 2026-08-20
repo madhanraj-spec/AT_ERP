@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, ChevronRight, Loader } from 'lucide-react';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { ArrowLeft, ChevronDown, ChevronRight, Loader, X, Filter } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 export default function StockManagement() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
 
   const [receipts, setReceipts] = useState([]);
   const [deliveryItems, setDeliveryItems] = useState([]); // GYDR items for stock deduction
@@ -21,6 +23,15 @@ export default function StockManagement() {
   // Accordion & Tabs State
   const [expandedCountId, setExpandedCountId] = useState(null);
   const [expandedCombos, setExpandedCombos] = useState({}); // { [combKey]: boolean }
+
+  // Check URL params for countId on load / change
+  useEffect(() => {
+    const countParam = searchParams.get('countId') || searchParams.get('count') || location.state?.selectedCountId;
+    if (countParam) {
+      setFilterCount([countParam]);
+      setExpandedCountId(countParam);
+    }
+  }, [searchParams, location.state]);
 
   useEffect(() => {
     fetchData();
@@ -262,8 +273,15 @@ export default function StockManagement() {
     }));
   };
 
+  const handleClearFilters = () => {
+    setFilterCount([]);
+    setFilterMill([]);
+    setFilterLocation([]);
+    setSearchParams({});
+  };
+
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1rem' }} className="fade-in">
+    <div style={{ width: '100%', maxWidth: '100%', padding: '1rem 1.5rem', boxSizing: 'border-box' }} className="fade-in">
       
       {/* Header */}
       <div style={{ marginBottom: '1.5rem' }}>
@@ -274,9 +292,12 @@ export default function StockManagement() {
           <ArrowLeft size={16} />
           Back to Dashboard
         </button>
-        <h1 style={{ fontSize: '1.75rem', margin: '0', color: 'var(--text-current)', fontWeight: 'bold' }}>
+        <h1 style={{ fontSize: '1.75rem', margin: '0', color: 'var(--text-current)', fontWeight: 'bold', letterSpacing: '-0.02em' }}>
           Greige Yarn Stock Management
         </h1>
+        <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-muted-current)', fontSize: '0.875rem' }}>
+          Real-time count-wise stock balances, mill breakdown, and individual receipt logs
+        </p>
       </div>
 
       {loading ? (
@@ -288,31 +309,37 @@ export default function StockManagement() {
         <>
           {/* Filters Section */}
           <div className="glass-panel" style={{ marginBottom: '1rem' }}>
-            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: 'var(--text-current)', display: 'flex', justifyContent: 'space-between' }}>
-              <span>Filters (Multiple Selection)</span>
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', color: 'var(--text-current)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Filter size={16} color="var(--color-primary)" />
+                Filters (Multiple Selection)
+              </span>
               {(filterCount.length > 0 || filterMill.length > 0 || filterLocation.length > 0) && (
                 <button 
-                  onClick={() => { setFilterCount([]); setFilterMill([]); setFilterLocation([]); }} 
-                  style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 'bold' }}
+                  onClick={handleClearFilters} 
+                  style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}
                 >
                   Clear All Filters
                 </button>
               )}
             </h3>
             
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
               <div>
-                <label className="input-label" style={{ fontSize: '0.8rem' }}>Yarn Count</label>
+                <label className="input-label" style={{ fontSize: '0.8rem', marginBottom: '0.35rem', display: 'block' }}>Yarn Count</label>
                 <MultiSelectDropdown 
                   options={counts.map(c => ({ value: c.id, label: [c.count_value, c.spec, c.spec1, c.product_type, c.content].filter(Boolean).join(' ') }))}
                   selected={filterCount}
-                  onChange={setFilterCount}
+                  onChange={(selected) => {
+                    setFilterCount(selected);
+                    if (selected.length === 0) setSearchParams({});
+                  }}
                   placeholder="All Counts"
                 />
               </div>
               
               <div>
-                <label className="input-label" style={{ fontSize: '0.8rem' }}>Spinning Mill</label>
+                <label className="input-label" style={{ fontSize: '0.8rem', marginBottom: '0.35rem', display: 'block' }}>Spinning Mill</label>
                 <MultiSelectDropdown 
                   options={mills.map(m => ({ value: m.id, label: m.partner_name }))}
                   selected={filterMill}
@@ -322,7 +349,7 @@ export default function StockManagement() {
               </div>
               
               <div>
-                <label className="input-label" style={{ fontSize: '0.8rem' }}>Location (Bay)</label>
+                <label className="input-label" style={{ fontSize: '0.8rem', marginBottom: '0.35rem', display: 'block' }}>Location (Bay)</label>
                 <MultiSelectDropdown 
                   options={locations.map(l => ({ value: l.id, label: l.location_name }))}
                   selected={filterLocation}
@@ -331,30 +358,64 @@ export default function StockManagement() {
                 />
               </div>
             </div>
+
+            {/* Active Count Filter Pills */}
+            {filterCount.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.85rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-current)' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', fontWeight: '600' }}>Active Count Filter:</span>
+                {filterCount.map(cid => {
+                  const cObj = counts.find(c => c.id === cid);
+                  const label = cObj ? [cObj.count_value, cObj.spec, cObj.spec1, cObj.product_type, cObj.content].filter(Boolean).join(' ') : cid;
+                  return (
+                    <span key={cid} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', backgroundColor: 'rgba(128, 0, 0, 0.08)', color: 'var(--color-primary)', border: '1px solid rgba(128, 0, 0, 0.2)', padding: '3px 9px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '600' }}>
+                      {label}
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          const updated = filterCount.filter(v => v !== cid);
+                          setFilterCount(updated);
+                          if (updated.length === 0) setSearchParams({});
+                        }}
+                        style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                        title="Remove this count filter"
+                      >
+                        <X size={13} />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Highlights Banner */}
-          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 'var(--radius-md)', padding: '1.5rem', marginBottom: '1rem' }}>
-            <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.875rem', fontWeight: 'bold', color: '#16a34a' }}>Total Available Stock</p>
-            <h2 style={{ margin: '0', fontSize: '2.5rem', fontWeight: 'bold', color: '#15803d' }}>
-              {totalStock.toLocaleString('en-IN', { minimumFractionDigits: 2 })} <span style={{ fontSize: '1.25rem' }}>kg</span>
-            </h2>
+          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 'var(--radius-md)', padding: '1.25rem 1.5rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.8rem', fontWeight: 'bold', color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Available Stock</p>
+              <h2 style={{ margin: '0', fontSize: '2.25rem', fontWeight: 'bold', color: '#15803d' }}>
+                {totalStock.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ fontSize: '1.15rem' }}>kg</span>
+              </h2>
+            </div>
+            <div style={{ color: '#15803d', fontSize: '0.85rem', fontWeight: '600' }}>
+              Showing {groupedData.length} {groupedData.length === 1 ? 'Count Group' : 'Count Groups'}
+            </div>
           </div>
 
           {/* Grouped Accordion List */}
-          <div className="glass-panel" style={{ padding: 0 }}>
-            <table className="table" style={{ fontSize: '0.875rem', border: 'none' }}>
-              <thead>
-                <tr>
-                  <th style={{ width: '40px' }}></th>
-                  <th>Yarn Count</th>
-                  <th style={{ textAlign: 'center' }}>Total Received (kg)</th>
-                  <th style={{ textAlign: 'center', color: '#dc2626' }}>Delivered Out (kg)</th>
-                  <th style={{ textAlign: 'center', color: '#16a34a' }}>Net Available (kg)</th>
-                  <th style={{ textAlign: 'right' }}>Receipts</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
+            <div className="table-container" style={{ border: 'none', overflowX: 'auto' }}>
+              <table className="table" style={{ fontSize: '0.875rem', border: 'none', width: '100%', minWidth: '600px' }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: '40px' }}></th>
+                    <th>Yarn Count</th>
+                    <th style={{ textAlign: 'center' }}>Total Received (kg)</th>
+                    <th style={{ textAlign: 'center', color: '#dc2626' }}>Delivered Out (kg)</th>
+                    <th style={{ textAlign: 'center', color: '#16a34a' }}>Net Available (kg)</th>
+                    <th style={{ textAlign: 'right' }}>Receipts</th>
+                  </tr>
+                </thead>
+                <tbody>
                 {groupedData.length === 0 ? (
                   <tr>
                     <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted-current)' }}>
@@ -471,8 +532,9 @@ export default function StockManagement() {
               </tbody>
             </table>
           </div>
-        </>
-      )}
+        </div>
+      </>
+    )}
 
     </div>
   );

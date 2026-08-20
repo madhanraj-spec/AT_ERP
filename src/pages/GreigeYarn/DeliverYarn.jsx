@@ -1031,7 +1031,7 @@ export default function DeliverYarn() {
   );
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem' }} className="fade-in">
+    <div style={{ width: '100%', maxWidth: '100%', padding: '1rem 1.5rem', boxSizing: 'border-box' }} className="fade-in">
       {view === 'summary' ? (
         <>
           {/* Header */}

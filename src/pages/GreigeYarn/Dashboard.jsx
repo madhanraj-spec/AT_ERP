@@ -98,14 +98,18 @@ export default function GreigeYarnDashboard() {
     receiptsClone.forEach(r => {
       const cid = r.yarn_count_id || 'unknown';
       if (!groups[cid]) {
+        const myc = r.master_yarn_counts;
         groups[cid] = {
           id: cid,
-          yarn_count: r.master_yarn_counts
-            ? `${r.master_yarn_counts.count_value} ${r.master_yarn_counts.material}`
+          yarn_count: myc
+            ? [myc.count_value, myc.spec, myc.spec1, myc.product_type, myc.material, myc.content].filter(Boolean).join(' ')
             : 'Unknown Count',
-          count_value: r.master_yarn_counts?.count_value || '',
-          material: r.master_yarn_counts?.material || '',
-          product_type: r.master_yarn_counts?.product_type || '',
+          count_value: myc?.count_value || 'Unknown Count',
+          spec: myc?.spec || '',
+          spec1: myc?.spec1 || '',
+          material: myc?.material || '',
+          product_type: myc?.product_type || '',
+          content: myc?.content || '',
           available_weight: 0,
           mill_weights: {}
         };
@@ -179,10 +183,10 @@ export default function GreigeYarnDashboard() {
   ];
 
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '1rem' }}>
+    <div style={{ width: '100%', maxWidth: '100%', padding: '1rem 1.5rem', boxSizing: 'border-box' }} className="fade-in">
       
       {/* Top Header Section */}
-      <div style={{ marginBottom: '2rem' }}>
+      <div style={{ marginBottom: '1.75rem' }}>
         <button 
           onClick={() => navigate(basePath)} 
           style={{ 
@@ -202,18 +206,18 @@ export default function GreigeYarnDashboard() {
           <ArrowLeft size={16} />
           Back to Main Dashboard
         </button>
-        <h1 style={{ fontSize: '1.75rem', margin: '0 0 0.5rem 0', color: 'var(--text-current)', fontWeight: 'bold' }}>
+        <h1 style={{ fontSize: '1.75rem', margin: '0 0 0.35rem 0', color: 'var(--text-current)', fontWeight: 'bold', letterSpacing: '-0.02em' }}>
           Greige Yarn Management
         </h1>
         <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.875rem' }}>
-          Manage yarn receipts, deliveries, stock, and track movements
+          Manage yarn receipts, deliveries, stock levels, and real-time movement logs
         </p>
       </div>
 
       {/* Grid Cards Section */}
       <div style={{ 
         display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', 
         gap: '1.25rem', 
         marginBottom: '2rem' 
       }}>
@@ -225,37 +229,39 @@ export default function GreigeYarnDashboard() {
             style={{ 
               backgroundColor: 'var(--surface-current)', 
               border: '1px solid var(--border-current)', 
-              borderRadius: 'var(--radius-md)', 
+              borderRadius: 'var(--radius-lg)', 
               padding: '1.5rem',
               display: 'flex',
               flexDirection: 'column',
               cursor: 'pointer',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s',
+              boxShadow: 'var(--shadow-sm)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
               <div style={{ 
-                width: '48px', 
-                height: '48px', 
-                borderRadius: '50%', 
+                width: '46px', 
+                height: '46px', 
+                borderRadius: '12px', 
                 backgroundColor: card.iconBg, 
                 display: 'flex', 
                 alignItems: 'center', 
-                justifyContent: 'center' 
+                justifyContent: 'center',
+                flexShrink: 0
               }}>
                 {card.icon}
               </div>
-              <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 'bold', color: 'var(--text-current)' }}>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold', color: 'var(--text-current)' }}>
                 {card.title}
               </h3>
             </div>
             
             <p style={{ 
               color: 'var(--text-muted-current)', 
-              fontSize: '0.875rem', 
+              fontSize: '0.85rem', 
               lineHeight: '1.5',
               flex: 1,
-              marginBottom: '1.5rem'
+              marginBottom: '1.25rem'
             }}>
               {card.description}
             </p>
@@ -263,18 +269,18 @@ export default function GreigeYarnDashboard() {
             <div style={{ 
               color: 'var(--color-primary)', 
               fontWeight: '600', 
-              fontSize: '0.875rem',
+              fontSize: '0.85rem',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.25rem'
+              gap: '0.35rem'
             }}>
-              {card.linkText} <ArrowRight size={16} />
+              {card.linkText} <ArrowRight size={15} />
             </div>
           </div>
         ))}
       </div>
 
-      {/* CSS Styles for Tooltips and Cards */}
+      {/* CSS Styles for Tooltips, Responsive Grids, and Cards */}
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
@@ -292,6 +298,8 @@ export default function GreigeYarnDashboard() {
           box-shadow: var(--shadow-sm);
           position: relative;
           overflow: visible;
+          width: 100%;
+          box-sizing: border-box;
         }
         .stock-header {
           display: flex;
@@ -300,6 +308,8 @@ export default function GreigeYarnDashboard() {
           margin-bottom: 1.5rem;
           border-bottom: 1px solid var(--border-current);
           padding-bottom: 1rem;
+          gap: 1rem;
+          flex-wrap: wrap;
         }
         .stock-title {
           font-size: 1.25rem;
@@ -310,104 +320,177 @@ export default function GreigeYarnDashboard() {
           gap: 0.5rem;
         }
         .stock-subtitle {
-          font-size: 0.875rem;
+          font-size: 0.85rem;
           color: var(--text-muted-current);
           margin-top: 0.25rem;
         }
         .stock-summary-card {
-          background: linear-gradient(135deg, rgba(128, 0, 0, 0.06) 0%, rgba(128, 0, 0, 0.01) 100%);
-          border: 1px solid rgba(128, 0, 0, 0.15);
+          background: linear-gradient(135deg, rgba(128, 0, 0, 0.07) 0%, rgba(128, 0, 0, 0.02) 100%);
+          border: 1px solid rgba(128, 0, 0, 0.18);
           border-radius: var(--radius-md);
-          padding: 1rem 1.5rem;
+          padding: 1.25rem 1.5rem;
           margin-bottom: 1.5rem;
           display: flex;
           align-items: center;
           justify-content: space-between;
+          gap: 1rem;
+          flex-wrap: wrap;
         }
         .stock-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 1rem;
+          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+          gap: 1.25rem;
+          width: 100%;
+        }
+        @media (max-width: 640px) {
+          .stock-grid {
+            grid-template-columns: 1fr;
+          }
+          .stock-section {
+            padding: 1rem;
+          }
+          .stock-summary-card {
+            padding: 1rem;
+          }
         }
         .stock-item-card {
-          background: rgba(255, 255, 255, 0.6);
+          background: var(--surface-current);
           border: 1px solid var(--border-current);
           border-radius: var(--radius-md);
           padding: 1.25rem;
           display: flex;
+          flex-direction: column;
           justify-content: space-between;
-          align-items: center;
+          gap: 1rem;
           position: relative;
-          transition: all var(--transition-fast);
-          cursor: default;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          cursor: pointer;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
         .stock-item-card:hover {
-          transform: translateY(-2px);
-          box-shadow: var(--shadow-md);
+          transform: translateY(-3px);
+          box-shadow: 0 8px 20px -4px rgba(128, 0, 0, 0.12), 0 4px 8px -2px rgba(0, 0, 0, 0.06);
           border-color: var(--color-primary);
-          background: rgba(255, 255, 255, 0.9);
+          background: #ffffff;
         }
-        .stock-item-info {
+        .stock-item-card:hover .stock-item-action-link {
+          color: var(--color-primary);
+          transform: translateX(3px);
+        }
+        .stock-item-top {
           display: flex;
-          flex-direction: column;
-          gap: 0.35rem;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 0.75rem;
         }
         .stock-item-count {
-          font-size: 1.125rem;
-          font-weight: 700;
+          font-size: 1.25rem;
+          font-weight: 800;
           color: var(--text-current);
+          letter-spacing: -0.01em;
+        }
+        .stock-item-action-link {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--text-muted-current);
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          transition: all 0.2s;
+          white-space: nowrap;
         }
         .stock-item-badges {
           display: flex;
-          gap: 0.35rem;
+          gap: 0.4rem;
           flex-wrap: wrap;
+          margin-top: 0.35rem;
         }
         .stock-badge {
-          font-size: 0.7rem;
+          font-size: 0.72rem;
           font-weight: 600;
-          padding: 2px 6px;
-          border-radius: 4px;
-          text-transform: uppercase;
+          padding: 3px 8px;
+          border-radius: 6px;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25rem;
+          letter-spacing: 0.02em;
+        }
+        .stock-badge-spec {
+          background-color: #eff6ff;
+          color: #1d4ed8;
+          border: 1px solid #bfdbfe;
+        }
+        .stock-badge-spec1 {
+          background-color: #f5f3ff;
+          color: #6d28d9;
+          border: 1px solid #ddd6fe;
         }
         .stock-badge-material {
           background-color: rgba(128, 0, 0, 0.08);
           color: var(--color-primary);
-          border: 1px solid rgba(128, 0, 0, 0.15);
+          border: 1px solid rgba(128, 0, 0, 0.18);
         }
         .stock-badge-type {
-          background-color: #f1f5f9;
-          color: #475569;
-          border: 1px solid #e2e8f0;
+          background-color: #f0fdf4;
+          color: #15803d;
+          border: 1px solid #bbf7d0;
+        }
+        .stock-item-bottom {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-end;
+          border-top: 1px solid #f1f5f9;
+          padding-top: 0.75rem;
+          margin-top: 0.25rem;
         }
         .stock-item-qty-container {
           display: flex;
-          align-items: center;
-          gap: 0.4rem;
-          position: relative;
-          cursor: help;
+          flex-direction: column;
         }
-        .stock-item-qty {
-          font-size: 1.25rem;
-          font-weight: 700;
+        .stock-item-qty-label {
+          font-size: 0.7rem;
+          font-weight: 600;
+          color: var(--text-muted-current);
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          margin-bottom: 2px;
+        }
+        .stock-item-qty-val {
+          font-size: 1.35rem;
+          font-weight: 800;
           color: var(--color-primary);
+          line-height: 1.1;
         }
         .stock-item-unit {
           font-size: 0.85rem;
+          font-weight: 600;
           color: var(--text-muted-current);
-          font-weight: 500;
+          margin-left: 0.25rem;
+        }
+        .stock-item-mill-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          font-size: 0.75rem;
+          color: #64748b;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          padding: 4px 8px;
+          border-radius: 6px;
+          position: relative;
         }
         .stock-tooltip {
           visibility: hidden;
           opacity: 0;
           position: absolute;
-          bottom: calc(100% + 10px);
+          bottom: calc(100% + 8px);
           right: 0;
           background-color: #1e293b;
           border: 1px solid #334155;
           border-radius: 8px;
           width: 250px;
           padding: 0.75rem;
-          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.25), 0 4px 6px -4px rgba(0, 0, 0, 0.25);
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.2);
           z-index: 100;
           transition: opacity 0.2s, visibility 0.2s;
           pointer-events: none;
@@ -415,7 +498,7 @@ export default function GreigeYarnDashboard() {
           line-height: 1.4;
           color: #f8fafc;
         }
-        .stock-item-qty-container:hover .stock-tooltip,
+        .stock-item-mill-btn:hover .stock-tooltip,
         .stock-item-card:hover .stock-tooltip {
           visibility: visible;
           opacity: 1;
@@ -423,7 +506,7 @@ export default function GreigeYarnDashboard() {
         .stock-tooltip-arrow {
           position: absolute;
           top: 100%;
-          right: 15px;
+          right: 20px;
           border-width: 6px;
           border-style: solid;
           border-color: #1e293b transparent transparent transparent;
@@ -465,7 +548,7 @@ export default function GreigeYarnDashboard() {
               Greige Yarn Stock Availability
             </h2>
             <p className="stock-subtitle">
-              Live available stock count and mill breakdown
+              Live available stock count, specifications, and mill breakdown. Click any count to manage in stock inventory.
             </p>
           </div>
           <button 
@@ -482,7 +565,7 @@ export default function GreigeYarnDashboard() {
               transition: 'all 0.2s',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.25rem'
+              gap: '0.35rem'
             }}
             onMouseOver={(e) => {
               e.currentTarget.style.backgroundColor = 'rgba(128, 0, 0, 0.05)';
@@ -514,56 +597,112 @@ export default function GreigeYarnDashboard() {
             {/* Summary card */}
             <div className="stock-summary-card">
               <div>
-                <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Total Raw Inventory
+                <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted-current)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Total Available Greige Inventory
                 </span>
-                <h3 style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--color-primary)', marginTop: '0.25rem' }}>
-                  {totalStockKg.toLocaleString('en-IN', { minimumFractionDigits: 2 })} <span style={{ fontSize: '1rem', fontWeight: '600' }}>kg</span>
+                <h3 style={{ fontSize: '1.85rem', fontWeight: '800', color: 'var(--color-primary)', margin: '0.25rem 0 0 0' }}>
+                  {totalStockKg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span style={{ fontSize: '1.1rem', fontWeight: '600' }}>kg</span>
                 </h3>
               </div>
-              <div style={{ backgroundColor: 'rgba(128, 0, 0, 0.1)', padding: '0.75rem', borderRadius: '50%', color: 'var(--color-primary)' }}>
-                <Layers size={24} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted-current)', fontWeight: '500' }}>
+                  {stockByCount.length} Active {stockByCount.length === 1 ? 'Count' : 'Counts'} in Stock
+                </span>
+                <div style={{ backgroundColor: 'rgba(128, 0, 0, 0.1)', padding: '0.75rem', borderRadius: '50%', color: 'var(--color-primary)' }}>
+                  <Layers size={22} />
+                </div>
               </div>
             </div>
 
             {/* Grid of stock cards */}
             <div className="stock-grid">
               {stockByCount.map((item) => (
-                <div key={item.id} className="stock-item-card">
-                  <div className="stock-item-info">
-                    <span className="stock-item-count">{item.count_value}</span>
+                <div 
+                  key={item.id} 
+                  className="stock-item-card"
+                  onClick={() => navigate(`/greige-yarn/stock?countId=${item.id}`, { state: { selectedCountId: item.id } })}
+                  title="Click to view and manage this count in Stock Management"
+                >
+                  <div>
+                    <div className="stock-item-top">
+                      <div>
+                        <span className="stock-item-count">{item.count_value}</span>
+                      </div>
+                      <span className="stock-item-action-link">
+                        Stock Details <ArrowRight size={13} />
+                      </span>
+                    </div>
+
+                    {/* Specification Badges (Spec, Spec1, Cotton/Material, Conventional/Product Type) */}
                     <div className="stock-item-badges">
-                      {item.material && <span className="stock-badge stock-badge-material">{item.material}</span>}
-                      {item.product_type && <span className="stock-badge stock-badge-type">{item.product_type}</span>}
+                      {item.spec && (
+                        <span className="stock-badge stock-badge-spec" title={`Spec: ${item.spec}`}>
+                          {item.spec}
+                        </span>
+                      )}
+                      {item.spec1 && (
+                        <span className="stock-badge stock-badge-spec1" title={`Spec 1: ${item.spec1}`}>
+                          {item.spec1}
+                        </span>
+                      )}
+                      {item.material && (
+                        <span className="stock-badge stock-badge-material" title={`Material: ${item.material}`}>
+                          {item.material}
+                        </span>
+                      )}
+                      {item.product_type && (
+                        <span className="stock-badge stock-badge-type" title={`Product Type: ${item.product_type}`}>
+                          {item.product_type}
+                        </span>
+                      )}
+                      {item.content && item.content !== item.material && (
+                        <span className="stock-badge stock-badge-material" title={`Content: ${item.content}`}>
+                          {item.content}
+                        </span>
+                      )}
                     </div>
                   </div>
                   
-                  <div className="stock-item-qty-container">
-                    <span className="stock-item-qty">
-                      {item.available_weight.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                    </span>
-                    <span className="stock-item-unit">kg</span>
-                    <HelpCircle size={14} style={{ color: 'var(--text-muted-current)', opacity: 0.7 }} />
-
-                    {/* Mill Breakdown Tooltip */}
-                    <div className="stock-tooltip">
-                      <div className="stock-tooltip-arrow"></div>
-                      <div className="stock-tooltip-header">
-                        <span>Mill Availability</span>
-                        <span>Weight (kg)</span>
+                  <div className="stock-item-bottom">
+                    <div className="stock-item-qty-container">
+                      <span className="stock-item-qty-label">Available Qty</span>
+                      <div style={{ display: 'flex', alignItems: 'baseline' }}>
+                        <span className="stock-item-qty-val">
+                          {item.available_weight.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                        <span className="stock-item-unit">kg</span>
                       </div>
-                      {item.mills.length === 0 ? (
-                        <div style={{ color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '0.25rem 0' }}>
-                          No mill logs found
+                    </div>
+
+                    <div 
+                      className="stock-item-mill-btn"
+                      onClick={(e) => {
+                        // Allow clicking mill badge without interrupting card navigation if desired
+                      }}
+                    >
+                      <span>{item.mills.length} {item.mills.length === 1 ? 'Mill' : 'Mills'}</span>
+                      <HelpCircle size={13} style={{ color: '#64748b' }} />
+
+                      {/* Mill Breakdown Tooltip */}
+                      <div className="stock-tooltip">
+                        <div className="stock-tooltip-arrow"></div>
+                        <div className="stock-tooltip-header">
+                          <span>Mill Availability</span>
+                          <span>Weight (kg)</span>
                         </div>
-                      ) : (
-                        item.mills.map((mill, idx) => (
-                          <div key={idx} className="stock-tooltip-row">
-                            <span className="stock-tooltip-mill" title={mill.name}>{mill.name}</span>
-                            <span className="stock-tooltip-weight">{mill.weight.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                        {item.mills.length === 0 ? (
+                          <div style={{ color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', padding: '0.25rem 0' }}>
+                            No mill logs found
                           </div>
-                        ))
-                      )}
+                        ) : (
+                          item.mills.map((mill, idx) => (
+                            <div key={idx} className="stock-tooltip-row">
+                              <span className="stock-tooltip-mill" title={mill.name}>{mill.name}</span>
+                              <span className="stock-tooltip-weight">{mill.weight.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -578,12 +717,13 @@ export default function GreigeYarnDashboard() {
         backgroundColor: 'var(--surface-current)', 
         border: '1px solid var(--border-current)', 
         borderRadius: 'var(--radius-lg)', 
-        padding: '1.5rem'
+        padding: '1.5rem',
+        boxShadow: 'var(--shadow-sm)'
       }}>
         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: 'bold', color: 'var(--text-current)' }}>
           Quick Actions
         </h3>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.85rem' }}>
           <button 
             onClick={() => navigate('/greige-yarn/receipt')}
             className="btn btn-primary" 

@@ -8,6 +8,74 @@ import ReceiptPrintModal from '../GreigeYarn/ReceiptPrintModal';
 export default function AdminApprovals() {
   const [activeTab, setActiveTab] = useState('dyeing');
   const { profile } = useAuth();
+  const [pendingCounts, setPendingCounts] = useState({
+    greige: 0,
+    dyeing: 0,
+    warping: 0,
+    sizing: 0,
+    weaving: 0,
+    processing: 0,
+    dof: 0
+  });
+
+  const fetchPendingCounts = async () => {
+    try {
+      const [
+        { count: greigeCount },
+        { count: dyeingBillCount },
+        { count: warpingCount },
+        { count: sizingCount },
+        { count: weavingCount },
+        { count: procCount },
+        { count: dofCount }
+      ] = await Promise.all([
+        supabase.from('greige_yarn_receipts').select('*', { count: 'exact', head: true }).eq('finance_approval_status', 'pending'),
+        supabase.from('dof_bills').select('*', { count: 'exact', head: true }).eq('status', 'submitted'),
+        supabase.from('production_finance_bills').select('*', { count: 'exact', head: true }).eq('form_type', 'warping').eq('status', 'awaiting_approval'),
+        supabase.from('production_finance_bills').select('*', { count: 'exact', head: true }).eq('form_type', 'sizing').eq('status', 'awaiting_approval'),
+        supabase.from('production_finance_bills').select('*', { count: 'exact', head: true }).eq('form_type', 'weaving').eq('status', 'awaiting_approval'),
+        supabase.from('processing_bills').select('*', { count: 'exact', head: true }).eq('status', 'awaiting_approval'),
+        supabase.from('dyeing_order_forms').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      ]);
+
+      setPendingCounts({
+        greige: greigeCount || 0,
+        dyeing: dyeingBillCount || 0,
+        warping: warpingCount || 0,
+        sizing: sizingCount || 0,
+        weaving: weavingCount || 0,
+        processing: procCount || 0,
+        dof: dofCount || 0
+      });
+    } catch (err) {
+      console.error('Error fetching pending counts:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPendingCounts();
+
+    const channel = supabase
+      .channel('admin_approvals_counts_channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'greige_yarn_receipts' }, () => fetchPendingCounts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dof_bills' }, () => fetchPendingCounts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_finance_bills' }, () => fetchPendingCounts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'processing_bills' }, () => fetchPendingCounts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dyeing_order_forms' }, () => fetchPendingCounts())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const totalProdPending =
+    pendingCounts.greige +
+    pendingCounts.dyeing +
+    pendingCounts.warping +
+    pendingCounts.sizing +
+    pendingCounts.weaving +
+    pendingCounts.processing;
 
   return (
     <div style={{ width: '100%', maxWidth: '100%', margin: '0', padding: '0 0.25rem' }}>
@@ -158,26 +226,44 @@ export default function AdminApprovals() {
       {/* Tab Bar */}
       <div className="main-tabs-container">
         {[
-          { key: 'dyeing', label: '🎨 Dyeing Order Forms' },
-          { key: 'production', label: '🏭 Production Forms' },
+          { key: 'dyeing', label: '🎨 Dyeing Order Forms', count: pendingCounts.dof },
+          { key: 'production', label: '🏭 Production Forms', count: totalProdPending },
         ].map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className="main-tab-btn"
             style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
               borderBottom: activeTab === tab.key ? '2px solid var(--color-primary)' : '2px solid transparent',
               color: activeTab === tab.key ? 'var(--color-primary)' : 'var(--text-muted-current)',
               fontWeight: activeTab === tab.key ? '700' : '500',
             }}
           >
-            {tab.label}
+            <span>{tab.label}</span>
+            {tab.count > 0 && (
+              <span
+                style={{
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  fontSize: '0.7rem',
+                  fontWeight: '700',
+                  padding: '2px 7px',
+                  borderRadius: '9999px',
+                  lineHeight: 1
+                }}
+              >
+                {tab.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      {activeTab === 'dyeing' && <DyeingFormApprovals adminProfile={profile} />}
-      {activeTab === 'production' && <ProductionFormApprovals adminProfile={profile} />}
+      {activeTab === 'dyeing' && <DyeingFormApprovals adminProfile={profile} onStatusChange={fetchPendingCounts} />}
+      {activeTab === 'production' && <ProductionFormApprovals adminProfile={profile} pendingCounts={pendingCounts} onStatusChange={fetchPendingCounts} />}
     </div>
   );
 }
@@ -589,44 +675,66 @@ function DyeingFormApprovals({ adminProfile }) {
 }
 
 // ── Production Form Approvals with 6 sub-tabs ──────────────────
-function ProductionFormApprovals({ adminProfile }) {
+function ProductionFormApprovals({ adminProfile, pendingCounts = {}, onStatusChange }) {
   const [subTab, setSubTab] = useState('greige');
 
   const subTabs = [
-    { key: 'greige', label: '🧶 Greige', icon: '🧶' },
-    { key: 'dyeing', label: '🎨 Dyeing', icon: '🎨' },
-    { key: 'warping', label: '🔧 Warping', icon: '🔧' },
-    { key: 'sizing', label: '📏 Sizing', icon: '📏' },
-    { key: 'weaving', label: '🏭 Weaving', icon: '🏭' },
-    { key: 'processing', label: '⚙️ Processing', icon: '⚙️' },
+    { key: 'greige', label: '🧶 Greige', icon: '🧶', count: pendingCounts.greige || 0 },
+    { key: 'dyeing', label: '🎨 Dyeing', icon: '🎨', count: pendingCounts.dyeing || 0 },
+    { key: 'warping', label: '🔧 Warping', icon: '🔧', count: pendingCounts.warping || 0 },
+    { key: 'sizing', label: '📏 Sizing', icon: '📏', count: pendingCounts.sizing || 0 },
+    { key: 'weaving', label: '🏭 Weaving', icon: '🏭', count: pendingCounts.weaving || 0 },
+    { key: 'processing', label: '⚙️ Processing', icon: '⚙️', count: pendingCounts.processing || 0 },
   ];
 
   return (
     <div>
       {/* Sub-tab bar */}
       <div className="scrollable-tabs-container">
-        {subTabs.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setSubTab(tab.key)}
-            className="scrollable-tab-btn"
-            style={{
-              backgroundColor: subTab === tab.key ? 'var(--color-primary)' : 'transparent',
-              color: subTab === tab.key ? 'white' : 'var(--text-muted-current)',
-              fontWeight: subTab === tab.key ? '700' : '500',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {subTabs.map(tab => {
+          const isCurrent = subTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setSubTab(tab.key)}
+              className="scrollable-tab-btn"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.45rem',
+                backgroundColor: isCurrent ? 'var(--color-primary)' : 'transparent',
+                color: isCurrent ? 'white' : 'var(--text-muted-current)',
+                fontWeight: isCurrent ? '700' : '500',
+              }}
+            >
+              <span>{tab.label}</span>
+              {tab.count > 0 && (
+                <span
+                  style={{
+                    backgroundColor: isCurrent ? '#ffffff' : '#ef4444',
+                    color: isCurrent ? 'var(--color-primary)' : '#ffffff',
+                    fontSize: '0.68rem',
+                    fontWeight: '800',
+                    padding: '1px 6px',
+                    borderRadius: '9999px',
+                    lineHeight: 1.2
+                  }}
+                >
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {subTab === 'greige' && <GreigeApprovals />}
-      {subTab === 'dyeing' && <DyeingFinanceApprovals />}
-      {subTab === 'warping' && <WarpingBillApprovals adminProfile={adminProfile} />}
-      {subTab === 'sizing' && <SizingBillApprovals adminProfile={adminProfile} />}
-      {subTab === 'weaving' && <WeavingBillApprovals adminProfile={adminProfile} />}
-      {subTab === 'processing' && <ProcessingBillApprovals adminProfile={adminProfile} />}
+      {subTab === 'greige' && <GreigeApprovals onStatusChange={onStatusChange} />}
+      {subTab === 'dyeing' && <DyeingFinanceApprovals onStatusChange={onStatusChange} />}
+      {subTab === 'warping' && <WarpingBillApprovals adminProfile={adminProfile} onStatusChange={onStatusChange} />}
+      {subTab === 'sizing' && <SizingBillApprovals adminProfile={adminProfile} onStatusChange={onStatusChange} />}
+      {subTab === 'weaving' && <WeavingBillApprovals adminProfile={adminProfile} onStatusChange={onStatusChange} />}
+      {subTab === 'processing' && <ProcessingBillApprovals adminProfile={adminProfile} onStatusChange={onStatusChange} />}
     </div>
   );
 }

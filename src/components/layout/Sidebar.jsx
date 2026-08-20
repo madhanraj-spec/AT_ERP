@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { supabase } from '../../lib/supabase';
 import { 
   LayoutDashboard, 
@@ -59,6 +60,7 @@ const MASTER_LINKS = [
 export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const { getBadgeCount } = useNotifications();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [rolePermissions, setRolePermissions] = useState(null);
 
@@ -315,6 +317,10 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
             const hasSubLinks = !!link.subLinks;
             const isExpanded = expandedMenus[link.name.toLowerCase()];
             const isSubPathActive = hasSubLinks && link.subLinks.some(sub => sub.path === location.pathname);
+            const badgeCount = getBadgeCount ? getBadgeCount(link.path, link.name) : 0;
+            const parentSubBadge = hasSubLinks
+              ? (link.subLinks || []).reduce((sum, sub) => sum + (getBadgeCount ? getBadgeCount(sub.path, sub.name) : 0), 0)
+              : 0;
 
             if (hasSubLinks) {
               return (
@@ -341,37 +347,103 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
                       fontSize: '0.875rem'
                     }}
                     className="hover-lift"
-                    title={isCollapsed ? link.name : ""}
+                    title={isCollapsed ? `${link.name}${parentSubBadge > 0 ? ` (${parentSubBadge})` : ''}` : ""}
                   >
-                    <link.icon size={18} />
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <link.icon size={18} />
+                      {isCollapsed && parentSubBadge > 0 && (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            top: '-6px',
+                            right: '-8px',
+                            backgroundColor: '#ef4444',
+                            color: '#ffffff',
+                            fontSize: '0.62rem',
+                            fontWeight: '700',
+                            padding: '1px 4px',
+                            borderRadius: '9999px',
+                            minWidth: '15px',
+                            height: '15px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                            lineHeight: 1
+                          }}
+                        >
+                          {parentSubBadge > 99 ? '99+' : parentSubBadge}
+                        </span>
+                      )}
+                    </div>
                     {!isCollapsed && <span style={{ flex: 1 }}>{link.name}</span>}
+                    {!isCollapsed && parentSubBadge > 0 && (
+                      <span
+                        style={{
+                          backgroundColor: '#ef4444',
+                          color: '#ffffff',
+                          fontSize: '0.7rem',
+                          fontWeight: '700',
+                          padding: '2px 7px',
+                          borderRadius: '9999px',
+                          minWidth: '18px',
+                          height: '18px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 1px 4px rgba(239, 68, 68, 0.4)',
+                          lineHeight: 1,
+                          marginRight: '0.35rem'
+                        }}
+                      >
+                        {parentSubBadge > 99 ? '99+' : parentSubBadge}
+                      </span>
+                    )}
                     {!isCollapsed && (isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
                   </button>
                   {isExpanded && !isCollapsed && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem', paddingLeft: '1rem', borderLeft: '1px solid rgba(255,255,255,0.15)', marginLeft: '1.5rem' }}>
-                      {link.subLinks.map((sub) => (
-                        <NavLink
-                          key={sub.path}
-                          to={sub.path}
-                          onClick={() => setMobileMenuOpen && setMobileMenuOpen(false)}
-                          style={({ isActive }) => ({
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.75rem',
-                            padding: '0.5rem 1rem 0.5rem 1.25rem',
-                            borderRadius: 'var(--radius-md)',
-                            color: isActive ? 'white' : 'rgba(255,255,255,0.75)',
-                            backgroundColor: isActive ? 'rgba(255,255,255,0.15)' : 'transparent',
-                            fontWeight: isActive ? '600' : '400',
-                            fontSize: '0.875rem',
-                            transition: 'all var(--transition-fast)',
-                          })}
-                          className="hover-lift"
-                        >
-                          <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.6)' }} />
-                          <span>{sub.name}</span>
-                        </NavLink>
-                      ))}
+                      {link.subLinks.map((sub) => {
+                        const subBadge = getBadgeCount ? getBadgeCount(sub.path, sub.name) : 0;
+                        return (
+                          <NavLink
+                            key={sub.path}
+                            to={sub.path}
+                            onClick={() => setMobileMenuOpen && setMobileMenuOpen(false)}
+                            style={({ isActive }) => ({
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.75rem',
+                              padding: '0.5rem 1rem 0.5rem 1.25rem',
+                              borderRadius: 'var(--radius-md)',
+                              color: isActive ? 'white' : 'rgba(255,255,255,0.75)',
+                              backgroundColor: isActive ? 'rgba(255,255,255,0.15)' : 'transparent',
+                              fontWeight: isActive ? '600' : '400',
+                              fontSize: '0.875rem',
+                              transition: 'all var(--transition-fast)',
+                            })}
+                            className="hover-lift"
+                          >
+                            <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.6)' }} />
+                            <span style={{ flex: 1 }}>{sub.name}</span>
+                            {subBadge > 0 && (
+                              <span
+                                style={{
+                                  backgroundColor: '#ef4444',
+                                  color: '#ffffff',
+                                  fontSize: '0.65rem',
+                                  fontWeight: '700',
+                                  padding: '1px 6px',
+                                  borderRadius: '9999px',
+                                  lineHeight: 1
+                                }}
+                              >
+                                {subBadge > 99 ? '99+' : subBadge}
+                              </span>
+                            )}
+                          </NavLink>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -397,13 +469,61 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
                   width: isCollapsed ? 'max-content' : 'auto',
                   borderLeft: isActive ? '3px solid white' : '3px solid transparent',
                   paddingLeft: isActive ? (isCollapsed ? '0.75rem' : 'calc(1rem - 3px)') : (isCollapsed ? '0.75rem' : '1rem'),
-                  fontSize: '0.875rem'
+                  fontSize: '0.875rem',
+                  position: 'relative'
                 })}
                 className="hover-lift"
-                title={isCollapsed ? link.name : ""}
+                title={isCollapsed ? `${link.name}${badgeCount > 0 ? ` (${badgeCount})` : ''}` : ""}
               >
-                <link.icon size={18} />
-                {!isCollapsed && <span>{link.name}</span>}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <link.icon size={18} />
+                  {isCollapsed && badgeCount > 0 && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '-6px',
+                        right: '-8px',
+                        backgroundColor: '#ef4444',
+                        color: '#ffffff',
+                        fontSize: '0.62rem',
+                        fontWeight: '700',
+                        padding: '1px 4px',
+                        borderRadius: '9999px',
+                        minWidth: '15px',
+                        height: '15px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                        lineHeight: 1
+                      }}
+                    >
+                      {badgeCount > 99 ? '99+' : badgeCount}
+                    </span>
+                  )}
+                </div>
+                {!isCollapsed && <span style={{ flex: 1 }}>{link.name}</span>}
+                {!isCollapsed && badgeCount > 0 && (
+                  <span
+                    style={{
+                      backgroundColor: '#ef4444',
+                      color: '#ffffff',
+                      fontSize: '0.7rem',
+                      fontWeight: '700',
+                      padding: '2px 7px',
+                      borderRadius: '9999px',
+                      minWidth: '18px',
+                      height: '18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 1px 4px rgba(239, 68, 68, 0.4)',
+                      lineHeight: 1
+                    }}
+                  >
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                  </span>
+                )}
               </NavLink>
             );
           })}

@@ -1,9 +1,41 @@
 import React, { useState } from 'react';
 import Sidebar from './Sidebar';
-import { Menu } from 'lucide-react';
+import { Menu, Calendar, ShieldCheck, User } from 'lucide-react';
+import NotificationBell from '../notifications/NotificationBell';
 
 export default function AppLayout({ children, user }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const getRoleLabel = (role) => {
+    switch (role) {
+      case 'admin':
+        return { label: 'Admin', icon: '👑', className: 'badge-role-admin' };
+      case 'merchandiser':
+        return { label: 'Merchandiser', icon: '🛍️', className: 'badge-role-merchandiser' };
+      case 'yarn':
+      case 'greige_yarn':
+      case 'dyed_yarn':
+        return { label: 'Yarn Manager', icon: '🧶', className: 'badge-role-yarn' };
+      case 'production':
+      case 'warping_sizing':
+      case 'weaving':
+        return { label: 'Production Manager', icon: '🏭', className: 'badge-role-production' };
+      case 'inspection':
+        return { label: 'Quality & Inspection', icon: '🔍', className: 'badge-role-inspection' };
+      case 'dispatch':
+        return { label: 'Dispatch Dept', icon: '🚚', className: 'badge-role-dispatch' };
+      default:
+        return { label: role || 'Portal', icon: '👤', className: 'badge-role-default' };
+    }
+  };
+
+  const roleInfo = getRoleLabel(user?.role);
+  const todayFormatted = new Date().toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
 
   return (
     <div className="app-layout-container">
@@ -26,7 +58,9 @@ export default function AppLayout({ children, user }) {
             }} 
           />
         </div>
-        <div style={{ width: 36 }}></div> {/* Spacer to balance layout */}
+        <div className="mobile-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <NotificationBell />
+        </div>
       </header>
 
       {/* Sidebar Backdrop Overlay on Mobile */}
@@ -45,6 +79,29 @@ export default function AppLayout({ children, user }) {
       />
 
       <div className="main-content-wrapper">
+        {/* Desktop Top Navigation Bar */}
+        <header className="desktop-top-header">
+          <div className="desktop-header-left">
+            <div className="user-welcome-info">
+              <span className="welcome-greeting">Welcome back,</span>
+              <span className="user-display-name">{user?.full_name || 'User'}</span>
+            </div>
+            <span className={`topbar-role-badge ${roleInfo.className}`}>
+              <span className="role-icon">{roleInfo.icon}</span>
+              <span>{roleInfo.label}</span>
+            </span>
+          </div>
+
+          <div className="desktop-header-right">
+            <div className="header-date-badge">
+              <Calendar size={14} className="date-icon" />
+              <span>{todayFormatted}</span>
+            </div>
+            <div className="header-separator-line" />
+            <NotificationBell />
+          </div>
+        </header>
+
         <main className="main-content">
           <div className="fade-in">
             {children}
@@ -54,4 +111,3 @@ export default function AppLayout({ children, user }) {
     </div>
   );
 }
-
