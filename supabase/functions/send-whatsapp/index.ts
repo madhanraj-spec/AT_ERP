@@ -24,7 +24,62 @@ serve(async (req) => {
   }
 
   try {
-    const { record } = await req.json(); // { record: DOF record object }
+    const body = await req.json();
+
+    // ── OpenWA Relay Dispatch ──
+    if (body.phone && body.message) {
+      const botUrl = (body.botUrl || "https://openwa-attendance-bot.onrender.com").replace(/\/+$/, "");
+      const apiKey = body.apiKey || "FacPassAttendanceOpenWaMasterKey2026";
+      let cleanPhone = body.phone.toString().replace(/\D/g, "");
+      if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
+      const chatId = cleanPhone.includes("@") ? cleanPhone : `${cleanPhone}@c.us`;
+
+      // 1. Discover or use active session
+      let sessionId = "55581c43-9848-48ed-884d-bce4dac1a28b";
+      try {
+        const sessRes = await fetch(`${botUrl}/api/sessions`, {
+          headers: { "X-API-Key": apiKey }
+        });
+        if (sessRes.ok) {
+          const sessions = await sessRes.json();
+          if (Array.isArray(sessions) && sessions.length > 0) {
+            const ready = sessions.find((s: any) => s.status === "ready" || s.engineLoaded) || sessions[0];
+            if (ready?.id) sessionId = ready.id;
+          }
+        }
+      } catch (e) {
+        console.warn("Session lookup warning:", e);
+      }
+
+      // 2. Dispatch to OpenWA REST endpoint
+      const targetUrl = `${botUrl}/api/sessions/${sessionId}/messages/send-text`;
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+        },
+        body: JSON.stringify({
+          chatId,
+          text: body.message,
+        }),
+      });
+
+      const resData = await response.json().catch(() => ({}));
+      if (response.ok) {
+        return new Response(JSON.stringify({ success: true, ...resData }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } else {
+        return new Response(JSON.stringify({ success: false, error: resData }), {
+          status: response.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    const { record } = body; // { record: DOF record object }
 
     if (!record) {
       return new Response(JSON.stringify({ error: "No record provided" }), {
@@ -40,17 +95,32 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-    // 1. Fetch all Admins with WhatsApp phone numbers
-    const { data: admins, error: appErr } = await supabaseAdmin
-      .from("profiles")
-      .select("whatsapp_phone, full_name")
-      .eq("role", "admin")
-      .not("whatsapp_phone", "is", null);
+    // 1. Fetch recipient contacts from whatsapp_contacts (or fallback to admin profiles)
+    let recipients: { phone: string; name: string }[] = [];
+    const { data: contacts, error: contactsErr } = await supabaseAdmin
+      .from("whatsapp_contacts")
+      .select("phone, name")
+      .eq("is_active", true)
+      .eq("notify_dof", true);
 
-    if (appErr || !admins || admins.length === 0) {
-      console.error("No admin WhatsApp number found:", appErr);
+    if (!contactsErr && contacts && contacts.length > 0) {
+      recipients = contacts.map((c: any) => ({ phone: c.phone, name: c.name }));
+    } else {
+      // Fallback to admin profiles
+      const { data: admins } = await supabaseAdmin
+        .from("profiles")
+        .select("whatsapp_phone, full_name")
+        .eq("role", "admin")
+        .not("whatsapp_phone", "is", null);
+      if (admins) {
+        recipients = admins.map((a: any) => ({ phone: a.whatsapp_phone, name: a.full_name }));
+      }
+    }
+
+    if (recipients.length === 0) {
+      console.error("No active WhatsApp recipients found for DOF notification.");
       return new Response(
-        JSON.stringify({ error: "No administrator WhatsApp number registered. Please add whatsapp_phone to the admin profile." }),
+        JSON.stringify({ error: "No active WhatsApp recipients configured in WhatsApp Management settings." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -190,64 +260,75 @@ serve(async (req) => {
       `*Linked Orders:* ${ordersListStr}\n` +
       `*Colour Count:* ${colorCount}\n` +
       `*Total Qty:* ${totalWeight.toFixed(2)} kg\n\n` +
-      `*Allocation Details:*\n${yarnDetailsStr}`;
+      `*Allocation Details:*\n${yarnDetailsStr}\n\n` +
+      `Please select an action below (or reply *APPROVE* or *REJECT*):`;
 
-    // 9. Send interactive document message to each admin
-    const metaUrl = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
-    const results = [];
-
-    for (const admin of admins) {
-      const response = await fetch(metaUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${META_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to: admin.whatsapp_phone,
-          type: "interactive",
-          interactive: {
-            type: "button",
-            header: {
-              type: "document",
-              document: {
-                link: `${pdfUrl}?t=${Date.now()}`,
-                filename: `${record.dof_number.replace(/\//g, "_")}.pdf`
-              }
-            },
-            body: {
-              text: bodyText
-            },
-            footer: {
-              text: "Please select an action below:"
-            },
-            action: {
-              buttons: [
-                {
-                  type: "reply",
-                  reply: {
-                    id: `APPROVE ${record.dof_number}`,
-                    title: "Approve"
-                  }
-                },
-                {
-                  type: "reply",
-                  reply: {
-                    id: `REJECT ${record.dof_number}`,
-                    title: "Reject"
-                  }
-                }
-              ]
-            }
-          }
-        }),
+    // 9. Discover OpenWA session
+    const botUrl = "https://openwa-attendance-bot.onrender.com";
+    const apiKey = "FacPassAttendanceOpenWaMasterKey2026";
+    let sessionId = "55581c43-9848-48ed-884d-bce4dac1a28b";
+    try {
+      const sessRes = await fetch(`${botUrl}/api/sessions`, {
+        headers: { "X-API-Key": apiKey }
       });
+      if (sessRes.ok) {
+        const sessions = await sessRes.json();
+        if (Array.isArray(sessions) && sessions.length > 0) {
+          const ready = sessions.find((s: any) => s.status === "ready" || s.engineLoaded) || sessions[0];
+          if (ready?.id) sessionId = ready.id;
+        }
+      }
+    } catch (e) {
+      console.warn("OpenWA session lookup warning:", e);
+    }
 
-      const result = await response.json();
-      console.log(`📤 Sent PDF to ${admin.whatsapp_phone} (${admin.full_name}):`, JSON.stringify(result));
-      results.push({ phone: admin.whatsapp_phone, name: admin.full_name, result });
+    // 10. Send PDF Document + Action Poll to each recipient via OpenWA
+    const results = [];
+    for (const recipient of recipients) {
+      let cleanPhone = recipient.phone.toString().replace(/\D/g, "");
+      if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
+      const chatId = cleanPhone.includes("@") ? cleanPhone : `${cleanPhone}@c.us`;
+
+      // A. Send PDF Document with Caption
+      try {
+        const docRes = await fetch(`${botUrl}/api/sessions/${sessionId}/messages/send-document`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+          },
+          body: JSON.stringify({
+            chatId,
+            url: pdfUrl,
+            filename: `${record.dof_number.replace(/\//g, "_")}.pdf`,
+            caption: bodyText,
+          }),
+        });
+        const docData = await docRes.json().catch(() => ({}));
+        console.log(`📤 Sent DOF PDF to ${chatId}:`, JSON.stringify(docData));
+
+        // B. Send 1-Click Interactive Poll for Approve / Reject
+        const pollRes = await fetch(`${botUrl}/api/sessions/${sessionId}/messages/send-poll`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+          },
+          body: JSON.stringify({
+            chatId,
+            name: `Select Action for DOF ${record.dof_number}:`,
+            options: ["Approve", "Reject"],
+            allowMultipleAnswers: false,
+          }),
+        });
+        const pollData = await pollRes.json().catch(() => ({}));
+        console.log(`🗳️ Sent Action Poll to ${chatId}:`, JSON.stringify(pollData));
+
+        results.push({ phone: cleanPhone, name: recipient.name, doc: docData, poll: pollData });
+      } catch (sendErr) {
+        console.error(`❌ Failed to send to ${chatId}:`, sendErr);
+        results.push({ phone: cleanPhone, name: recipient.name, error: (sendErr as Error).message });
+      }
     }
 
     return new Response(JSON.stringify({ success: true, sent_to: results.length, results, pdfUrl }), {
@@ -257,7 +338,7 @@ serve(async (req) => {
 
   } catch (error) {
     console.error("❌ send-whatsapp error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -43,7 +43,8 @@ const ALL_SIDEBAR_ITEMS = [
   { group: 'Dispatch', name: 'Dispatch', path: '/dispatch' },
   { group: 'Dispatch', name: 'E-Way Bill', path: '/eway-bill' },
   { group: 'System', name: 'Masters', path: '/masters' },
-  { group: 'System', name: 'User Management', path: '/admin/users' }
+  { group: 'System', name: 'User Management', path: '/admin/users' },
+  { group: 'System', name: 'WhatsApp Bot & Contacts', path: '/admin/whatsapp' }
 ];
 
 export default function UserManagement() {
@@ -131,7 +132,7 @@ export default function UserManagement() {
         const { error: updateErr } = await supabase
           .from('role_permissions')
           .update({ sidebar_links: newLinks })
-          .eq('id', role.id);
+          .eq('role_name', role.role_name);
         if (!updateErr) {
           updatedAny = true;
           return { ...role, sidebar_links: newLinks };

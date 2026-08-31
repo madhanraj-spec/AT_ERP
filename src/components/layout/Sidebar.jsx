@@ -20,7 +20,8 @@ import {
   Coins,
   Users,
   Truck,
-  FileText
+  FileText,
+  MessageSquare
 } from 'lucide-react';
 import { Archive } from 'lucide-react';
 
@@ -54,7 +55,8 @@ const MASTER_LINKS = [
   { name: 'Dispatch', path: '/dispatch', icon: Truck },
   { name: 'E-Way Bill', path: '/eway-bill', icon: Truck },
   { name: 'Masters', path: '/masters', icon: Settings },
-  { name: 'User Management', path: '/admin/users', icon: Users }
+  { name: 'User Management', path: '/admin/users', icon: Users },
+  { name: 'WhatsApp Bot', path: '/admin/whatsapp', icon: MessageSquare }
 ];
 
 export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
@@ -114,7 +116,8 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
             { name: 'Dispatch', path: '/dispatch', icon: Truck },
             { name: 'E-Way Bill', path: '/eway-bill', icon: Truck },
             { name: 'Masters', path: '/masters', icon: Settings },
-            { name: 'User Management', path: '/admin/users', icon: Users }
+            { name: 'User Management', path: '/admin/users', icon: Users },
+            { name: 'WhatsApp Bot', path: '/admin/whatsapp', icon: MessageSquare }
           ];
         case 'merchandiser':
           return [
@@ -196,7 +199,8 @@ export default function Sidebar({ user, mobileMenuOpen, setMobileMenuOpen }) {
       
       const isAllowed = allowedPaths.includes(link.path) ||
         (link.path === '/admin/proforma-invoices' && (allowedPaths.includes('/admin/orders') || allowedPaths.includes('/admin/dyeing-forms'))) ||
-        (link.path === '/merchandiser/proforma-invoices' && (allowedPaths.includes('/merchandiser/orders') || allowedPaths.includes('/merchandiser/dyeing-forms')));
+        (link.path === '/merchandiser/proforma-invoices' && (allowedPaths.includes('/merchandiser/orders') || allowedPaths.includes('/merchandiser/dyeing-forms'))) ||
+        (link.path === '/admin/whatsapp' && (user?.role === 'admin' || allowedPaths.includes('/admin/users') || allowedPaths.includes('/masters')));
 
       return isAllowed ? link : null;
     }).filter(Boolean);

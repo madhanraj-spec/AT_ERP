@@ -49,6 +49,7 @@ import DispatchModule from './pages/Dispatch/DispatchModule';
 import FabricStockInventory from './pages/Production/FabricStockInventory';
 import { Loader } from 'lucide-react';
 import EwayBillDashboard from './pages/EwayBill/EwayBillDashboard';
+import WhatsAppSettings from './pages/WhatsApp/WhatsAppSettings';
 
 function AppRoutes() {
   const { session, profile, loading } = useAuth();
@@ -101,10 +102,12 @@ function AppRoutes() {
               <Route path="approvals" element={<AdminApprovals />} />
               <Route path="finances" element={<AdminFinances />} />
               <Route path="users" element={<UserManagement />} />
+              <Route path="whatsapp" element={<WhatsAppSettings />} />
             </Route>
 
-            {/* Direct Proforma Invoice Route */}
+            {/* Direct Proforma Invoice & WhatsApp Route */}
             <Route path="/proforma-invoices" element={<ProformaInvoicesList />} />
+            <Route path="/whatsapp" element={<WhatsAppSettings />} />
 
             {/* Inventory Routes */}
             <Route path="/greige-yarn">

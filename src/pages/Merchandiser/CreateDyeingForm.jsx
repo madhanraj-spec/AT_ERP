@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, Loader, CheckSquare, Square, AlertTriangle, ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { sendDofCreationNotification } from '../../utils/openwaService';
 
 const STEPS = ['Select Orders', 'Dyeing Unit & Dates', 'Colour & Yarn Qty', 'Summary & Submit'];
 
@@ -370,9 +371,21 @@ export default function CreateDyeingForm() {
       const { data: newDof, error } = await supabase.from('dyeing_order_forms').insert([payload]).select('id').single();
       if (error) throw error;
 
-      // Note: WhatsApp notification is triggered automatically by the database webhook trigger on INSERT.
+      // Dispatch automated WhatsApp notification with PDF & Action Poll via Render OpenWA Bot
+      const selectedUnit = dyeingUnits.find(u => u.id === dyeingUnitId);
+      sendDofCreationNotification({
+        dofRecord: { ...payload, id: newDof.id },
+        dofNumber,
+        dyeingUnitName: selectedUnit?.partner_name || 'Dyeing Unit',
+        expectedDeliveryDate: deliveryDate,
+        summary,
+        allocations: sanitizedAllocations,
+        createdByName: profile?.full_name || 'Merchandiser',
+      }).catch(notifErr => {
+        console.warn('⚠️ OpenWA notification dispatch error:', notifErr);
+      });
 
-      alert(`✅ Dyeing Order Form Created!\nDOF No: ${dofNumber}\nStatus: Pending Admin Approval.\n\n📲 Admin has been notified via WhatsApp.`);
+      alert(`✅ Dyeing Order Form Created!\nDOF No: ${dofNumber}\nStatus: Pending Admin Approval.\n\n📲 WhatsApp notification with PDF & Action Buttons dispatched via OpenWA Bot.`);
       navigate(`${basePath}/dyeing-forms`);
     } catch (err) {
       console.error(err);

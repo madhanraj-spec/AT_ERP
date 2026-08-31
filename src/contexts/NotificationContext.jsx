@@ -142,7 +142,7 @@ export function NotificationProvider({ children }) {
         // A. Orders (New orders created)
         const { data: recentOrders } = await supabase
           .from('orders')
-          .select('id, order_number, design_name, design_no, customer_name, created_at, status, merchandiser_name')
+          .select('id, order_number, design_name, design_no, created_at, status, merchandiser_name')
           .gte('created_at', isoCutoff)
           .order('created_at', { ascending: false })
           .limit(30);
@@ -154,7 +154,7 @@ export function NotificationProvider({ children }) {
             type: 'order',
             category: 'orders',
             title: `New Order: ${orderLabel}`,
-            description: `${ord.customer_name ? `Customer: ${ord.customer_name}` : 'New Fabric Order'}${ord.merchandiser_name ? ` • Merchandiser: ${ord.merchandiser_name}` : ''}`,
+            description: `${ord.merchandiser_name ? `Merchandiser: ${ord.merchandiser_name}` : 'New Fabric Order'}`,
             timestamp: ord.created_at,
             route: '/admin/orders',
             status: ord.status,
@@ -237,7 +237,7 @@ export function NotificationProvider({ children }) {
 
         const { data: adminPofs } = await supabase
           .from('processing_orders')
-          .select('id, pof_number, partner_name, processes, delivery_date, created_at, fabric_rolls')
+          .select('id, pof_number, partner_name, processes, expected_delivery_date, created_at, fabric_rolls')
           .gte('created_at', isoCutoff)
           .order('created_at', { ascending: false })
           .limit(20);
@@ -251,7 +251,7 @@ export function NotificationProvider({ children }) {
             )
           ).join(', ');
 
-          const deliveryStr = p.delivery_date ? formatDateRange(null, p.delivery_date) : '';
+          const deliveryStr = p.expected_delivery_date ? formatDateRange(null, p.expected_delivery_date) : '';
 
           collected.push({
             id: `admin_pof_${p.id}`,
@@ -359,9 +359,9 @@ export function NotificationProvider({ children }) {
 
         // G. Approvals: Pending Processing Bills
         const { data: pendingProcBills } = await supabase
-          .from('processing_bills')
-          .select('id, bill_number, partner_name, invoice_number, total_amount, created_at, status')
-          .eq('status', 'awaiting_approval')
+          .from('processing_finance_bills')
+          .select('id, bill_number, partner_name, invoice_total, created_at, status')
+          .eq('status', 'submitted_for_approval')
           .order('created_at', { ascending: false })
           .limit(20);
 
@@ -371,7 +371,7 @@ export function NotificationProvider({ children }) {
             type: 'approval',
             category: 'approvals',
             title: `Processing Bill Approval: ${bill.bill_number}`,
-            description: `${bill.partner_name} - Inv #${bill.invoice_number} (₹${Number(bill.total_amount || 0).toLocaleString()})`,
+            description: `${bill.partner_name} (₹${Number(bill.invoice_total || 0).toLocaleString()})`,
             timestamp: bill.created_at,
             route: '/admin/approvals',
             status: 'pending',
@@ -688,7 +688,7 @@ export function NotificationProvider({ children }) {
           // E. Processing Order Forms (POF) created for my orders
           const { data: myPofs } = await supabase
             .from('processing_orders')
-            .select('id, pof_number, partner_name, processes, delivery_date, created_at, fabric_rolls')
+            .select('id, pof_number, partner_name, processes, expected_delivery_date, created_at, fabric_rolls')
             .gte('created_at', isoCutoff)
             .order('created_at', { ascending: false })
             .limit(20);
@@ -707,7 +707,7 @@ export function NotificationProvider({ children }) {
                 )
               ).join(', ');
 
-              const deliveryStr = pof.delivery_date ? formatDateRange(null, pof.delivery_date) : '';
+              const deliveryStr = pof.expected_delivery_date ? formatDateRange(null, pof.expected_delivery_date) : '';
 
               collected.push({
                 id: `pof_${pof.id}`,
@@ -989,7 +989,7 @@ export function NotificationProvider({ children }) {
         // A. Any order creation
         const { data: allOrders } = await supabase
           .from('orders')
-          .select('id, order_number, design_name, design_no, customer_name, created_at, status')
+          .select('id, order_number, design_name, design_no, created_at, status')
           .gte('created_at', isoCutoff)
           .order('created_at', { ascending: false })
           .limit(30);
@@ -1001,7 +1001,7 @@ export function NotificationProvider({ children }) {
             type: 'order',
             category: 'orders',
             title: `New Order: ${orderLabel}`,
-            description: `${ord.customer_name ? `Customer: ${ord.customer_name}` : 'New Production Fabric Order'}`,
+            description: `${ord.design_name || 'New Production Fabric Order'}`,
             timestamp: ord.created_at,
             route: '/production',
             priority: 'normal'
@@ -1077,20 +1077,20 @@ export function NotificationProvider({ children }) {
         });
 
         const { data: procBills } = await supabase
-          .from('processing_bills')
-          .select('id, bill_number, partner_name, invoice_number, total_amount, created_at, status')
+          .from('processing_finance_bills')
+          .select('id, bill_number, partner_name, invoice_total, created_at, status')
           .gte('created_at', isoCutoff)
           .order('created_at', { ascending: false })
           .limit(20);
 
         (procBills || []).forEach((bill) => {
-          const isPending = bill.status === 'awaiting_approval';
+          const isPending = bill.status === 'submitted_for_approval';
           collected.push({
             id: `prod_proc_bill_${bill.id}`,
             type: 'approval',
             category: 'approvals',
             title: `Processing Bill: ${bill.bill_number}`,
-            description: `${bill.partner_name} - Inv #${bill.invoice_number} (₹${Number(bill.total_amount || 0).toLocaleString()}) [${bill.status}]`,
+            description: `${bill.partner_name} (₹${Number(bill.invoice_total || 0).toLocaleString()}) [${bill.status}]`,
             timestamp: bill.created_at,
             route: '/admin/finances',
             status: bill.status,
@@ -1173,7 +1173,7 @@ export function NotificationProvider({ children }) {
 
         const { data: pofs } = await supabase
           .from('processing_orders')
-          .select('id, pof_number, partner_name, processes, delivery_date, created_at, fabric_rolls')
+          .select('id, pof_number, partner_name, processes, expected_delivery_date, created_at, fabric_rolls')
           .gte('created_at', isoCutoff)
           .order('created_at', { ascending: false })
           .limit(15);
@@ -1187,7 +1187,7 @@ export function NotificationProvider({ children }) {
             )
           ).join(', ');
 
-          const deliveryStr = p.delivery_date ? formatDateRange(null, p.delivery_date) : '';
+          const deliveryStr = p.expected_delivery_date ? formatDateRange(null, p.expected_delivery_date) : '';
 
           collected.push({
             id: `prod_pof_${p.id}`,
@@ -1256,7 +1256,7 @@ export function NotificationProvider({ children }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dyed_yarn_deliveries' }, () => fetchNotifications())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dof_bills' }, () => fetchNotifications())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_finance_bills' }, () => fetchNotifications())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'processing_bills' }, () => fetchNotifications())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'processing_finance_bills' }, () => fetchNotifications())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'warping_order_forms' }, () => fetchNotifications())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sizing_order_forms' }, () => fetchNotifications())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'weaving_orders' }, () => fetchNotifications())

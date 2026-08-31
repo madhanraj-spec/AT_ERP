@@ -8,206 +8,440 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
     window.print();
   };
 
+  const receiptNumber = receipt.receiptNumber || receipt.dyrr_number || receipt.receipt_no || '—';
+  
+  const formatDate = (dateVal) => {
+    if (!dateVal) return '—';
+    try {
+      return new Date(dateVal).toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    } catch {
+      return String(dateVal);
+    }
+  };
+
+  const formatTime = (dateVal) => {
+    if (!dateVal) return '';
+    try {
+      return new Date(dateVal).toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return '';
+    }
+  };
+
+  const receiptDate = formatDate(receipt.date || receipt.received_date || receipt.created_at);
+  const receiptTime = formatTime(receipt.created_at || receipt.date || receipt.received_date);
+
+  const isProd = receipt.source === 'production' || receipt.source_type === 'production' || receipt.source_type === 'production_return';
+  const sourceTypeLabel = isProd ? 'Production Return' : 'Partner Receipt';
+  const partnerName = receipt.partner_name || receipt.dyeing_unit?.partner_name || receipt.partnerName || (isProd ? 'In-House' : 'N/A');
+  const dofNo = receipt.dof_number || receipt.dofNo || receipt.dof?.dof_number || '—';
+  const dcNo = receipt.logistics?.dc_number || receipt.dc_number || receipt.delivery_challan_no || '—';
+  const vehicleNo = receipt.logistics?.vehicle_no || receipt.vehicle_no || '—';
+  const receivedBy = receipt.logistics?.received_by || receipt.received_by || '—';
+  const remarks = receipt.remarks || receipt.logistics?.remarks || '';
+
+  const items = receipt.items || [];
+  const totalWeight = items.reduce((sum, it) => sum + Number(it.weight ?? it.quantity_kg ?? 0), 0);
+
+  const renderReceiptCopy = (copyType, copyBadge) => (
+    <div className="dyrr-single-copy" style={{
+      padding: '0.85rem 1.25rem',
+      backgroundColor: '#fff',
+      color: '#000',
+      boxSizing: 'border-box',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      position: 'relative'
+    }}>
+      {/* Top Header Row */}
+      <div>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          borderBottom: '2px solid #7f1d1d',
+          paddingBottom: '0.45rem',
+          marginBottom: '0.5rem'
+        }}>
+          {/* Company Brand & Details */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <img 
+              src="/logo.png" 
+              alt="Ashok Textiles" 
+              style={{ 
+                height: '38px', 
+                objectFit: 'contain'
+              }} 
+              onError={(e) => { e.target.style.display = 'none'; }}
+            />
+            <div>
+              <div style={{ 
+                fontSize: '1.2rem', 
+                fontWeight: '900', 
+                letterSpacing: '0.5px', 
+                margin: 0, 
+                color: '#1a1a1a', 
+                lineHeight: '1.1' 
+              }}>
+                ASHOK TEXTILES
+              </div>
+              <div style={{ fontSize: '0.68rem', color: '#4b5563', fontWeight: '500', marginTop: '1px', lineHeight: '1.2' }}>
+                6/222, SALEM MAIN ROAD, VEERAPANDI, SALEM, TAMIL NADU - 33
+              </div>
+              <div style={{ fontSize: '0.68rem', color: '#111827', fontWeight: '700', marginTop: '1px' }}>
+                GSTIN: <span style={{ fontFamily: 'monospace' }}>33AAZFA60686D1Z6</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Title & Copy Badge */}
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ 
+              fontSize: '0.85rem', 
+              color: '#7f1d1d', 
+              fontWeight: '900', 
+              letterSpacing: '0.5px', 
+              textTransform: 'uppercase' 
+            }}>
+              DYED YARN RECEIPT (DYRR)
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '0.4rem', marginTop: '2px' }}>
+              <span style={{
+                fontSize: '0.62rem',
+                fontWeight: '800',
+                padding: '1px 6px',
+                borderRadius: '3px',
+                backgroundColor: '#fef2f2',
+                color: '#991b1b',
+                border: '1px solid #fecaca',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+              }}>
+                {copyBadge}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#374151', marginTop: '2px', fontWeight: '600' }}>
+              Receipt: <strong style={{ color: '#7f1d1d', fontFamily: 'monospace', fontSize: '0.8rem' }}>{receiptNumber}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Metadata Details Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '0.5rem',
+          backgroundColor: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: '6px',
+          padding: '0.45rem 0.65rem',
+          marginBottom: '0.5rem',
+          fontSize: '0.7rem'
+        }}>
+          <div>
+            <div style={metaLabelStyle}>RECEIPT INFO</div>
+            <div style={metaValStyle}><strong>Date:</strong> {receiptDate}</div>
+            {receiptTime && <div style={metaValStyle}><strong>Time:</strong> {receiptTime}</div>}
+          </div>
+          <div>
+            <div style={metaLabelStyle}>SOURCE DETAILS</div>
+            <div style={metaValStyle}><strong>Type:</strong> <span style={{ textTransform: 'capitalize', fontWeight: '600' }}>{sourceTypeLabel}</span></div>
+            <div style={metaValStyle} title={partnerName}><strong>Partner:</strong> {partnerName}</div>
+          </div>
+          <div>
+            <div style={metaLabelStyle}>REFERENCES</div>
+            <div style={metaValStyle}><strong>Ref DOF:</strong> <span style={{ fontWeight: '700', color: '#7f1d1d' }}>{dofNo}</span></div>
+            <div style={metaValStyle}><strong>DC No:</strong> {dcNo}</div>
+          </div>
+          <div>
+            <div style={metaLabelStyle}>LOGISTICS</div>
+            <div style={metaValStyle}><strong>Vehicle:</strong> {vehicleNo}</div>
+            <div style={metaValStyle}><strong>Received By:</strong> {receivedBy}</div>
+          </div>
+        </div>
+
+        {/* Items Table */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '0.4rem', fontSize: '0.72rem' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#f1f5f9', borderTop: '1.5px solid #334155', borderBottom: '1.5px solid #334155' }}>
+              <th style={{ ...compactThStyle, width: '4%', textAlign: 'center' }}>#</th>
+              <th style={{ ...compactThStyle, width: '22%' }}>Order / Design</th>
+              <th style={{ ...compactThStyle, width: '24%' }}>Yarn Description</th>
+              <th style={{ ...compactThStyle, width: '13%' }}>Colour</th>
+              <th style={{ ...compactThStyle, width: '9%', textAlign: 'center' }}>Type</th>
+              <th style={{ ...compactThStyle, width: '10%', textAlign: 'center' }}>Lot No</th>
+              <th style={{ ...compactThStyle, width: '8%' }}>Location</th>
+              <th style={{ ...compactThStyle, width: '10%', textAlign: 'right' }}>Qty (kg)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan="8" style={{ ...compactTdStyle, textAlign: 'center', color: '#6b7280', padding: '0.5rem' }}>
+                  No yarn items found in receipt.
+                </td>
+              </tr>
+            ) : (
+              items.map((it, i) => {
+                const orderNum = it.orderNo || it.orders?.order_number || it.order_number || '—';
+                const designNum = it.design || (it.orders ? [it.orders.design_no, it.orders.design_name].filter(Boolean).join(' / ') : '') || '—';
+                const yarnCount = it.master_yarn_counts
+                  ? [it.master_yarn_counts.count_value, it.master_yarn_counts.spec, it.master_yarn_counts.spec1, it.master_yarn_counts.product_type].filter(Boolean).join(' ')
+                  : (it.yarn_count
+                    ? [it.yarn_count.count_value, it.yarn_count.spec, it.yarn_count.spec1, it.yarn_count.product_type].filter(Boolean).join(' ')
+                    : (it.count || '—'));
+                const colour = it.colour || it.color || '—';
+                const yarnType = it.type || it.yarn_type || '—';
+                const lotNo = it.lot_number || it.lot_no || '—';
+                const locationName = typeof it.location === 'object' 
+                  ? it.location?.location_name 
+                  : (it.location || it.master_locations?.location_name || '—');
+                const qtyKg = Number(it.weight ?? it.quantity_kg ?? 0).toFixed(2);
+
+                return (
+                  <tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ ...compactTdStyle, textAlign: 'center', color: '#64748b', fontSize: '0.65rem' }}>{i + 1}</td>
+                    <td style={compactTdStyle}>
+                      <div style={{ fontWeight: '800', color: '#0f172a' }}>{orderNum}</div>
+                      <div style={{ fontSize: '0.62rem', color: '#64748b', lineHeight: '1.1' }}>{designNum}</div>
+                    </td>
+                    <td style={{ ...compactTdStyle, fontWeight: '600', color: '#1e293b' }}>
+                      {yarnCount}
+                    </td>
+                    <td style={{ ...compactTdStyle, fontWeight: '700', color: '#7f1d1d', textTransform: 'uppercase' }}>
+                      {colour}
+                    </td>
+                    <td style={{ ...compactTdStyle, textAlign: 'center' }}>
+                      <span style={{ 
+                        padding: '1px 5px', 
+                        borderRadius: '3px', 
+                        fontSize: '0.62rem', 
+                        fontWeight: '800', 
+                        backgroundColor: yarnType.toLowerCase() === 'warp' ? '#eff6ff' : '#ecfdf5',
+                        color: yarnType.toLowerCase() === 'warp' ? '#1e40af' : '#047857',
+                        border: `1px solid ${yarnType.toLowerCase() === 'warp' ? '#bfdbfe' : '#a7f3d0'}`,
+                        textTransform: 'uppercase'
+                      }}>
+                        {yarnType}
+                      </span>
+                    </td>
+                    <td style={{ ...compactTdStyle, textAlign: 'center', fontWeight: '700', fontFamily: 'monospace' }}>
+                      {lotNo}
+                    </td>
+                    <td style={{ ...compactTdStyle, color: '#334155' }}>
+                      {locationName}
+                    </td>
+                    <td style={{ ...compactTdStyle, textAlign: 'right', fontWeight: '900', color: '#0f172a', fontSize: '0.78rem' }}>
+                      {qtyKg}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+          <tfoot>
+            <tr style={{ backgroundColor: '#f8fafc', borderTop: '1.5px solid #334155' }}>
+              <td colSpan="6" style={{ padding: '0.35rem 0.5rem', textAlign: 'right', fontWeight: '800', color: '#334155', fontSize: '0.72rem' }}>
+                TOTAL RECEIVED WEIGHT:
+              </td>
+              <td colSpan="2" style={{ padding: '0.35rem 0.5rem', textAlign: 'right', fontWeight: '900', fontSize: '0.9rem', color: '#0f172a', borderBottom: '3px double #0f172a' }}>
+                {totalWeight.toFixed(2)} <span style={{ fontSize: '0.72rem', fontWeight: '700' }}>kg</span>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {/* Footer / Signatures Row */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        paddingTop: '0.4rem',
+        marginTop: '0.2rem',
+        borderTop: '1px solid #e2e8f0',
+        fontSize: '0.68rem'
+      }}>
+        {/* Left: Receiver Sign */}
+        <div style={{ minWidth: '160px', textAlign: 'left' }}>
+          <div style={{ color: '#64748b', fontSize: '0.62rem', marginBottom: '1.25rem' }}>
+            Material Received & Verified By: <strong>{receivedBy !== '—' ? receivedBy : ''}</strong>
+          </div>
+          <div style={{ borderTop: '1.5px dashed #475569', paddingTop: '2px', fontWeight: '700', color: '#1e293b' }}>
+            Receiver / Driver Signature
+          </div>
+        </div>
+
+        {/* Center: Remarks if available */}
+        {remarks ? (
+          <div style={{ maxWidth: '220px', textAlign: 'center', color: '#4b5563', fontSize: '0.62rem', fontStyle: 'italic' }}>
+            <strong>Remarks:</strong> {remarks}
+          </div>
+        ) : <div />}
+
+        {/* Right: Company Signature */}
+        <div style={{ minWidth: '180px', textAlign: 'right' }}>
+          <div style={{ fontWeight: '800', color: '#1a1a1a', marginBottom: '1.25rem', fontSize: '0.72rem' }}>
+            For ASHOK TEXTILES
+          </div>
+          <div style={{ borderTop: '1.5px solid #1a1a1a', paddingTop: '2px', fontWeight: '700', color: '#1e293b', textAlign: 'center' }}>
+            Authorized Signatory
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="print-overlay" style={{
       position: 'fixed',
       top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.6)',
+      backgroundColor: 'rgba(0,0,0,0.65)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 1000,
-      padding: '2rem'
+      zIndex: 2500,
+      padding: '1rem'
     }}>
       <div 
         className="print-modal-container"
         style={{
           backgroundColor: '#fff',
-          borderRadius: '12px',
+          borderRadius: '10px',
           width: '100%',
-          maxWidth: '900px',
-          maxHeight: '95vh',
+          maxWidth: '960px',
+          maxHeight: '96vh',
           overflowY: 'auto',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
           display: 'flex',
           flexDirection: 'column'
         }}
       >
-        {/* Modal Header (Hidden on Print) */}
+        {/* Modal Top Control Bar (Hidden on Print) */}
         <div className="no-print" style={{ 
-          padding: '1.25rem 2rem', 
-          borderBottom: '1px solid #eee', 
+          padding: '0.85rem 1.5rem', 
+          borderBottom: '1px solid #e2e8f0', 
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center',
           backgroundColor: '#f8fafc',
-          borderTopLeftRadius: '12px',
-          borderTopRightRadius: '12px'
+          borderTopLeftRadius: '10px',
+          borderTopRightRadius: '10px'
         }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>
-              Dyed Yarn Receipt: {receipt.receiptNumber || receipt.dyrr_number}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: '900', color: '#0f172a' }}>
+              Dyed Yarn Receipt: {receiptNumber}
             </h2>
+            <span style={{
+              fontSize: '0.7rem',
+              backgroundColor: '#fee2e2',
+              color: '#991b1b',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontWeight: '700'
+            }}>
+              2 Copies / A4 Sheet
+            </span>
           </div>
-          <div style={{ display: 'flex', gap: '1rem' }}>
-            <button onClick={handlePrint} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.25rem', backgroundColor: '#7f1d1d' }}>
-              <Printer size={18} /> Print Invoice
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <button 
+              onClick={handlePrint} 
+              className="btn btn-primary" 
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.4rem', 
+                padding: '0.45rem 1rem', 
+                backgroundColor: '#7f1d1d',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: '700',
+                fontSize: '0.82rem',
+                cursor: 'pointer'
+              }}
+            >
+              <Printer size={16} /> Print 2 Copies (A4)
             </button>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
-              <X size={24} />
+            <button 
+              onClick={onClose} 
+              style={{ 
+                background: 'none', 
+                border: 'none', 
+                cursor: 'pointer', 
+                color: '#64748b',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '4px'
+              }}
+            >
+              <X size={20} />
             </button>
           </div>
         </div>
 
-        {/* Printable Invoice Body */}
-        <div id="printable-dyrr" className="printable-content" style={{ padding: '3.5rem', color: '#000', backgroundColor: '#fff', minHeight: '100%' }}>
+        {/* Printable 2-Copies Container */}
+        <div id="printable-dyrr" className="printable-content" style={{ backgroundColor: '#fff' }}>
           
-          {/* Company Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem', borderBottom: '3px solid #7f1d1d', paddingBottom: '1.5rem' }}>
-             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-               <img 
-                 src="/logo.png" 
-                 alt="Ashok Textiles" 
-                 style={{ 
-                   height: '64px', 
-                   objectFit: 'contain'
-                 }} 
-               />
-               <div>
-                 <div style={{ fontSize: '2.5rem', fontWeight: '900', letterSpacing: '1px', margin: 0, color: '#1a1a1a', lineHeight: '1.1' }}>ASHOK TEXTILES</div>
-                 <div style={{ fontSize: '0.875rem', color: '#7f1d1d', fontWeight: '700', marginTop: '0.25rem', letterSpacing: '2px', textTransform: 'uppercase' }}>Dyed Yarn Material Receipt</div>
-               </div>
-             </div>
+          {/* Top Half: Original Copy */}
+          {renderReceiptCopy('original', 'Original / Office Copy')}
+
+          {/* Divider between copies */}
+          <div className="print-divider" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '2px 1.25rem',
+            color: '#64748b',
+            fontSize: '0.65rem',
+            fontWeight: '700',
+            letterSpacing: '1px',
+            userSelect: 'none'
+          }}>
+            <div style={{ flex: 1, borderBottom: '1.5px dashed #94a3b8' }} />
+            <span style={{ padding: '0 10px', display: 'flex', alignItems: 'center', gap: '4px', color: '#475569' }}>
+              ✂ CUT HERE ✂
+            </span>
+            <div style={{ flex: 1, borderBottom: '1.5px dashed #94a3b8' }} />
           </div>
 
-          {/* Document Header Info */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', marginBottom: '3rem' }}>
-            <div style={infoBoxStyle}>
-              <div style={infoLabelStyle}>RECEIPT INFORMATION</div>
-              <div style={{ ...dataLineStyle, color: '#7f1d1d', fontWeight: '900', fontSize: '1.1rem' }}>{receipt.receiptNumber || receipt.dyrr_number}</div>
-              <div style={dataLineStyle}><strong>Date:</strong> {receipt.date || new Date(receipt.created_at).toLocaleDateString()}</div>
-              <div style={dataLineStyle}><strong>Time:</strong> {new Date(receipt.created_at).toLocaleTimeString()}</div>
-            </div>
-            
-            <div style={infoBoxStyle}>
-              <div style={infoLabelStyle}>SOURCE DETAILS</div>
-              <div style={dataLineStyle}><strong>Type:</strong> <span style={{ textTransform: 'uppercase', fontWeight: '700' }}>{receipt.source === 'production' || receipt.source_type === 'production_return' ? 'Production Return' : 'Partner Receipt'}</span></div>
-              <div style={dataLineStyle}><strong>Partner:</strong> {receipt.partner_name || receipt.dyeing_unit?.partner_name || 'N/A'}</div>
-              <div style={dataLineStyle}><strong>Ref DOF:</strong> {receipt.dof_number}</div>
-            </div>
+          {/* Bottom Half: Duplicate Copy */}
+          {renderReceiptCopy('duplicate', 'Duplicate / Mill Copy')}
 
-            <div style={{ ...infoBoxStyle, backgroundColor: '#fcfcfc', border: '1px solid #7f1d1d' }}>
-              <div style={{ ...infoLabelStyle, color: '#7f1d1d' }}>LOGISTICS & TRACKING</div>
-              <div style={dataLineStyle}><strong>DC No:</strong> {receipt.logistics?.dc_number || receipt.dc_number || 'N/A'}</div>
-              <div style={dataLineStyle}><strong>Vehicle:</strong> {receipt.logistics?.vehicle_no || receipt.vehicle_no || 'N/A'}</div>
-              <div style={dataLineStyle}><strong>Receiver:</strong> {receipt.logistics?.received_by || receipt.received_by || 'N/A'}</div>
-            </div>
-          </div>
-
-          {/* Items Table */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '3rem' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#f9fafb', borderTop: '2px solid #1a1a1a', borderBottom: '2px solid #1a1a1a' }}>
-                <th style={{ ...thStyle, width: '4%' }}>#</th>
-                <th style={{ ...thStyle, width: '22%' }}>Order / Design</th>
-                <th style={{ ...thStyle, width: '28%' }}>Yarn Description</th>
-                <th style={{ ...thStyle, width: '12%' }}>Colour</th>
-                <th style={{ ...thStyle, textAlign: 'center', width: '10%' }}>Type</th>
-                <th style={{ ...thStyle, textAlign: 'center', width: '10%' }}>Lot Number</th>
-                <th style={{ ...thStyle, width: '10%' }}>Location</th>
-                <th style={{ ...thStyle, textAlign: 'right', width: '14%' }}>Quantity (kg)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {receipt.items.map((it, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                  <td style={{ ...tdStyle, color: '#6b7280', fontSize: '0.75rem' }}>{String(i + 1).padStart(2, '0')}</td>
-                  <td style={tdStyle}>
-                    <div style={{ fontWeight: '900', color: '#111827', fontSize: '1rem' }}>{it.orderNo || it.orders?.order_number || '-'}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: '500' }}>{it.design || (it.orders ? `${it.orders.design_no} / ${it.orders.design_name}` : '-')}</div>
-                  </td>
-                  <td style={tdStyle}>
-                    <div style={{ fontWeight: '700', color: '#111827' }}>
-                      {it.master_yarn_counts
-                        ? [it.master_yarn_counts.count_value, it.master_yarn_counts.spec, it.master_yarn_counts.spec1, it.master_yarn_counts.product_type].filter(Boolean).join(' ')
-                        : (it.count || '-')}
-                    </div>
-                  </td>
-                  <td style={{ ...tdStyle, fontWeight: '700', color: '#7f1d1d', textTransform: 'uppercase' }}>
-                    {it.colour || '-'}
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'center' }}>
-                    <span style={{ 
-                      padding: '0.25rem 0.6rem', 
-                      borderRadius: '6px', 
-                      fontSize: '0.75rem', 
-                      fontWeight: '900', 
-                      backgroundColor: (it.type || it.yarn_type) === 'warp' ? '#eff6ff' : '#ecfdf5',
-                      color: (it.type || it.yarn_type) === 'warp' ? '#1e40af' : '#047857',
-                      border: `1px solid ${(it.type || it.yarn_type) === 'warp' ? '#bfdbfe' : '#a7f3d0'}`,
-                      textTransform: 'uppercase'
-                    }}>
-                      {it.type || it.yarn_type || '-'}
-                    </span>
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'center', fontWeight: '700', color: '#1f2937' }}>{it.lot_number || '-'}</td>
-                  <td style={{ ...tdStyle, fontWeight: '600' }}>
-                    {typeof it.location === 'object' 
-                      ? it.location?.location_name 
-                      : (it.location || it.master_locations?.location_name || '-')}
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: '900', fontSize: '1.25rem', color: '#111827' }}>
-                    {Number(it.weight ?? it.quantity_kg ?? 0).toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan="7" style={{ padding: '2.5rem 1rem', textAlign: 'right', fontWeight: '900', color: '#4b5563', fontSize: '1rem' }}>GRAND TOTAL RECEIVED WEIGHT:</td>
-                <td style={{ padding: '2.5rem 1rem', textAlign: 'right', fontWeight: '900', fontSize: '2.25rem', borderBottom: '6px double #1a1a1a', color: '#111827' }}>
-                  {receipt.items.reduce((sum, it) => sum + Number(it.weight ?? it.quantity_kg ?? 0), 0).toFixed(2)} <span style={{ fontSize: '1.1rem' }}>kg</span>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-
-          {/* Terms and Signatures */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '4rem', marginTop: '2rem' }}>
-            <div style={{ fontSize: '0.8rem', color: '#4b5563', lineHeight: '1.8', backgroundColor: '#f9fafb', padding: '1.5rem', borderRadius: '12px', border: '1px dashed #d1d5db' }}>
-              <div style={{ fontWeight: '900', color: '#1a1a1a', marginBottom: '0.75rem', fontSize: '0.9rem', letterSpacing: '0.5px' }}>DOCUMENTS & TERMS:</div>
-              <ul style={{ paddingLeft: '1.25rem', margin: 0 }}>
-                <li>This document serves as primary proof of material handover.</li>
-                <li>Weight is subject to final verification at our weighing bridge.</li>
-                <li>Material must match quality standards approved in the DOF.</li>
-                <li>Discrepancies must be noted on this receipt before departure.</li>
-              </ul>
-            </div>
-            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-               <div style={{ fontWeight: '900', fontSize: '1.1rem', color: '#1a1a1a' }}>For ASHOK TEXTILES</div>
-               <div style={{ marginTop: 'auto' }}>
-                 <div style={{ borderTop: '2.5px solid #1a1a1a', display: 'inline-block', minWidth: '250px', paddingTop: '1rem', fontSize: '0.9rem', fontWeight: '900', textAlign: 'center', color: '#1a1a1a' }}>
-                   Authorized Signatory
-                 </div>
-               </div>
-            </div>
-          </div>
-          
         </div>
       </div>
       
       <style>{`
+        @media screen {
+          .dyrr-single-copy {
+            border: 1px solid #e2e8f0;
+            margin: 0.5rem 1rem;
+            border-radius: 6px;
+          }
+        }
         @media print {
-          @page { margin: 10mm; }
+          @page { 
+            size: A4 portrait;
+            margin: 5mm 8mm; 
+          }
           html, body, #root, .app-layout-container, .main-content-wrapper, .main-content {
             height: auto !important;
             overflow: visible !important;
             display: block !important;
             margin: 0 !important;
             padding: 0 !important;
+            background: #fff !important;
           }
           body * {
-            visibility: hidden;
+            visibility: hidden !important;
           }
           .print-overlay {
             position: absolute !important;
@@ -221,7 +455,7 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
             background: transparent !important;
           }
           .print-modal-container, .print-modal-container * {
-            visibility: visible;
+            visibility: visible !important;
           }
           .print-modal-container {
             position: relative !important;
@@ -240,6 +474,29 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
           }
           .printable-content {
             padding: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: 282mm !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justifyContent: space-between !important;
+            box-sizing: border-box !important;
+          }
+          .dyrr-single-copy {
+            height: 136mm !important;
+            max-height: 136mm !important;
+            padding: 2mm 3mm !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+            page-break-inside: avoid !important;
+            border: none !important;
+            margin: 0 !important;
+          }
+          .print-divider {
+            height: 5mm !important;
+            margin: 0 !important;
+            padding: 0 3mm !important;
           }
         }
       `}</style>
@@ -247,43 +504,35 @@ export default function DyedReceiptPrintModal({ receipt, onClose }) {
   );
 }
 
-const infoBoxStyle = {
-  padding: '1.25rem',
-  border: '1px solid #e5e7eb',
-  borderRadius: '12px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.5rem',
-  backgroundColor: '#fff'
-};
-
-const infoLabelStyle = {
-  fontSize: '0.75rem',
+const metaLabelStyle = {
+  fontSize: '0.58rem',
   fontWeight: '900',
-  color: '#6b7280',
-  letterSpacing: '1.2px',
-  marginBottom: '0.4rem'
+  color: '#64748b',
+  letterSpacing: '0.5px',
+  marginBottom: '2px',
+  textTransform: 'uppercase'
 };
 
-const dataLineStyle = {
-  fontSize: '0.9rem',
-  color: '#111827',
-  fontWeight: '500'
+const metaValStyle = {
+  fontSize: '0.68rem',
+  color: '#0f172a',
+  lineHeight: '1.3'
 };
 
-const thStyle = {
-  padding: '1rem 0.75rem',
+const compactThStyle = {
+  padding: '3px 5px',
   textAlign: 'left',
-  fontSize: '0.8rem',
+  fontSize: '0.64rem',
   textTransform: 'uppercase',
-  fontWeight: '900',
-  color: '#475569',
-  borderBottom: '2px solid #e2e8f0'
+  fontWeight: '800',
+  color: '#1e293b',
+  borderBottom: '1.5px solid #cbd5e1'
 };
 
-const tdStyle = {
-  padding: '1rem 0.75rem',
-  fontSize: '0.9rem',
+const compactTdStyle = {
+  padding: '3px 5px',
+  fontSize: '0.7rem',
   color: '#1e293b',
-  verticalAlign: 'middle'
+  verticalAlign: 'middle',
+  lineHeight: '1.2'
 };

@@ -34,7 +34,7 @@ export default function AdminApprovals() {
         supabase.from('production_finance_bills').select('*', { count: 'exact', head: true }).eq('form_type', 'warping').eq('status', 'awaiting_approval'),
         supabase.from('production_finance_bills').select('*', { count: 'exact', head: true }).eq('form_type', 'sizing').eq('status', 'awaiting_approval'),
         supabase.from('production_finance_bills').select('*', { count: 'exact', head: true }).eq('form_type', 'weaving').eq('status', 'awaiting_approval'),
-        supabase.from('processing_bills').select('*', { count: 'exact', head: true }).eq('status', 'awaiting_approval'),
+        supabase.from('processing_finance_bills').select('*', { count: 'exact', head: true }).eq('status', 'submitted_for_approval'),
         supabase.from('dyeing_order_forms').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       ]);
 
@@ -60,7 +60,7 @@ export default function AdminApprovals() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'greige_yarn_receipts' }, () => fetchPendingCounts())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dof_bills' }, () => fetchPendingCounts())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_finance_bills' }, () => fetchPendingCounts())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'processing_bills' }, () => fetchPendingCounts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'processing_finance_bills' }, () => fetchPendingCounts())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dyeing_order_forms' }, () => fetchPendingCounts())
       .subscribe();
 

@@ -46,144 +46,210 @@ serve(async (req) => {
       const supabaseAdmin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
       // Log incoming webhook event for diagnostics
-      let insertErr = null;
       try {
-        const { error } = await supabaseAdmin.from("webhook_logs").insert({ payload: body });
-        if (error) {
-          insertErr = error;
-          console.error("⚠️ Webhook log insert error:", error);
-        }
+        await supabaseAdmin.from("webhook_logs").insert({ payload: body });
       } catch (err) {
-        console.error("⚠️ Webhook log try-catch error:", err);
+        console.error("⚠️ Webhook log error:", err);
       }
 
+      let senderPhone = "";
+      let rawText = "";
+      let dofNumberFromContext = "";
+
+      // ── A. Check for OpenWA Payload Format ──
+      const data = body.data || (body.event ? body : null);
+      if (data) {
+        const rawFrom = data.from || data.chatId || data.author || "";
+        senderPhone = rawFrom.toString().replace(/@c\.us|@s\.whatsapp\.net|\D/g, "");
+
+        // 1. Text or button body
+        if (data.body) {
+          rawText = data.body.toString().trim();
+        }
+
+        // 2. Poll vote
+        if (data.pollVote?.selectedOptions?.length) {
+          rawText = data.pollVote.selectedOptions[0];
+        } else if (data.selectedOptions?.length) {
+          rawText = data.selectedOptions[0];
+        }
+
+        // 3. Extract DOF Number from poll name or quoted message
+        const contextStr = `${data.pollName || ''} ${data.poll?.name || ''} ${data.quotedMsg?.caption || ''} ${data.quotedMsg?.body || ''}`;
+        const dofMatch = contextStr.match(/AT\/\d{4}\/DOF\/\d+/i);
+        if (dofMatch) {
+          dofNumberFromContext = dofMatch[0];
+        }
+      }
+
+      // ── B. Check for Meta Payload Format (Fallback) ──
       const entry   = body.entry?.[0];
       const changes = entry?.changes?.[0];
       const value   = changes?.value;
       const message = value?.messages?.[0];
 
-      // Acknowledge immediately (Meta requires 200 within 20s)
-      if (!message) {
-        return new Response("ok", { status: 200 });
-      }
-
-      const senderPhone = message.from; // e.g. "919876543210"
-
-      // ── Handle text replies or button clicks ──
-      let rawText = "";
-      if (message.type === "text") {
-        rawText = (message.text?.body || "").trim().toUpperCase();
-      } else if (message.type === "button") {
-        rawText = (message.button?.payload || "").trim().toUpperCase();
-      } else if (message.type === "interactive") {
-        const buttonReply = message.interactive?.button_reply;
-        if (buttonReply) {
-          rawText = (buttonReply.id || "").trim().toUpperCase();
-        }
-      }
-
-      if (rawText) {
-        // Match: "APPROVE AT/2026/DOF/00001" or "REJECT AT/2026/DOF/00001"
-        const match = rawText.match(/^(APPROVE|REJECT)\s+(.+)$/);
-        if (!match) {
-          console.log(`ℹ️ Ignored non-command message from ${senderPhone}: ${rawText}`);
-          return new Response("ok", { status: 200 });
-        }
-
-        const action    = match[1];           // "APPROVE" or "REJECT"
-        const dofNumber = match[2].trim();    // DOF number
-
-        // Verify the sender is an authorized admin
-        const { data: userProfile, error: profileErr } = await supabaseAdmin
-          .from("profiles")
-          .select("id, role, full_name")
-          .eq("whatsapp_phone", senderPhone)
-          .single();
-
-        if (profileErr || !userProfile || userProfile.role !== "admin") {
-          console.warn(`⛔ Unauthorized WhatsApp reply from: ${senderPhone}`);
-          const replyResult = await sendWhatsAppReply(senderPhone, `⛔ Unauthorized. Your number is not registered as an admin.`);
-          return new Response(JSON.stringify({ status: "unauthorized", reply_result: replyResult, insert_error: insertErr }), {
-            status: 200, headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        // Find the DOF by its number
-        const { data: dof, error: dofErr } = await supabaseAdmin
-          .from("dyeing_order_forms")
-          .select("id, status, dof_number")
-          .ilike("dof_number", dofNumber)
-          .single();
-
-        if (dofErr || !dof) {
-          console.warn(`❌ DOF not found: ${dofNumber}`);
-          const replyResult = await sendWhatsAppReply(senderPhone, `❌ DOF *${dofNumber}* not found. Please check the DOF number and try again.`);
-          return new Response(JSON.stringify({ status: "dof_not_found", reply_result: replyResult, insert_error: insertErr }), {
-            status: 200, headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        if (dof.status !== "pending") {
-          const replyResult = await sendWhatsAppReply(senderPhone, `ℹ️ DOF *${dof.dof_number}* is already *${dof.status.toUpperCase()}*. No changes made.`);
-          return new Response(JSON.stringify({ status: "already_processed", reply_result: replyResult, insert_error: insertErr }), {
-            status: 200, headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        const newStatus = action === "APPROVE" ? "approved" : "rejected";
-
-        const { error: updateErr } = await supabaseAdmin
-          .from("dyeing_order_forms")
-          .update({
-            status: newStatus,
-            approved_by: userProfile.id,
-            approval_notes: `${action} via WhatsApp by ${userProfile.full_name} (${senderPhone})`,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", dof.id);
-
-        if (updateErr) {
-          console.error("❌ DB update error:", updateErr);
-          const replyResult = await sendWhatsAppReply(senderPhone, `❌ Error updating DOF status. Please try again.`);
-          return new Response(JSON.stringify({ status: "db_update_error", update_error: updateErr, reply_result: replyResult, insert_error: insertErr }), {
-            status: 200, headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        // Delete the temporary PDF from storage to save space
-        try {
-          const pdfFilename = `${dof.dof_number.replace(/\//g, "_")}.pdf`;
-          const { error: deleteErr } = await supabaseAdmin.storage
-            .from("dof-pdfs")
-            .remove([pdfFilename]);
-          if (deleteErr) {
-            console.warn("⚠️ Failed to delete PDF from storage:", deleteErr.message);
-          } else {
-            console.log(`🧹 Deleted temporary PDF: ${pdfFilename}`);
+      if (message) {
+        senderPhone = message.from?.toString().replace(/\D/g, "") || "";
+        if (message.type === "text") {
+          rawText = (message.text?.body || "").trim();
+        } else if (message.type === "button") {
+          rawText = (message.button?.payload || "").trim();
+        } else if (message.type === "interactive") {
+          const buttonReply = message.interactive?.button_reply;
+          if (buttonReply) {
+            rawText = (buttonReply.id || buttonReply.title || "").trim();
           }
-        } catch (sErr) {
-          console.warn("⚠️ Storage cleanup error:", sErr);
         }
+      }
 
-        const emoji = action === "APPROVE" ? "✅" : "❌";
-        const replyResult = await sendWhatsAppReply(
-          senderPhone,
-          `${emoji} *DOF ${dof.dof_number}* has been *${newStatus.toUpperCase()}* successfully by ${userProfile.full_name}.`
-        );
-
-        console.log(`✅ DOF ${dof.dof_number} ${newStatus} by ${userProfile.full_name}`);
-        return new Response(JSON.stringify({ status: "success", reply_result: replyResult, insert_error: insertErr }), {
+      if (!senderPhone || !rawText) {
+        return new Response(JSON.stringify({ status: "ignored", reason: "no_message_or_sender" }), {
           status: 200, headers: { "Content-Type": "application/json" }
         });
       }
 
-      return new Response(JSON.stringify({ status: "ignored", insert_error: insertErr }), {
+      const upperText = rawText.toUpperCase();
+
+      // Determine Action (Supports "A", "R", "APPROVE", "REJECT", "D1", "D2", etc.)
+      let action: "APPROVE" | "REJECT" | null = null;
+      let dofNumber = dofNumberFromContext;
+
+      if (upperText === "A" || upperText.startsWith("A ") || /^D\s*1\b/i.test(upperText) || /^DOF\s*(APPROVE|1)\b/i.test(upperText) || /^APPROVE\s+DOF/i.test(upperText) || /^APPROVE\s+AT.*DOF/i.test(upperText)) {
+        action = "APPROVE";
+        const matched = upperText.match(/(\bAT[\w\/-]*DOF[\w\/-]*|\b\d{4,5}\b)/i);
+        if (matched) dofNumber = matched[1];
+      } else if (upperText === "R" || upperText.startsWith("R ") || /^D\s*2\b/i.test(upperText) || /^DOF\s*(REJECT|2)\b/i.test(upperText) || /^REJECT\s+DOF/i.test(upperText) || /^REJECT\s+AT.*DOF/i.test(upperText)) {
+        action = "REJECT";
+        const matched = upperText.match(/(\bAT[\w\/-]*DOF[\w\/-]*|\b\d{4,5}\b)/i);
+        if (matched) dofNumber = matched[1];
+      } else if (upperText.startsWith("APPROVE")) {
+        action = "APPROVE";
+        const rest = upperText.replace(/^APPROVE\s*/i, "").trim();
+        if (rest) dofNumber = rest;
+      } else if (upperText.startsWith("REJECT")) {
+        action = "REJECT";
+        const rest = upperText.replace(/^REJECT\s*/i, "").trim();
+        if (rest) dofNumber = rest;
+      } else if (upperText === "1" || upperText.startsWith("1 ")) {
+        action = "APPROVE";
+        const rest = upperText.replace(/^1\s*/i, "").trim();
+        if (rest) dofNumber = rest;
+      } else if (upperText === "2" || upperText.startsWith("2 ")) {
+        action = "REJECT";
+        const rest = upperText.replace(/^2\s*/i, "").trim();
+        if (rest) dofNumber = rest;
+      }
+
+      if (!action) {
+        console.log(`ℹ️ Ignored non-approval message from ${senderPhone}: ${rawText}`);
+        return new Response(JSON.stringify({ status: "ignored", reason: "not_an_action" }), {
+          status: 200, headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      // Verify the sender is authorized (Check whatsapp_contacts OR profiles admin)
+      let approverName = "Admin";
+      let approverId: string | null = null;
+
+      // 1. Check whatsapp_contacts
+      const { data: contact } = await supabaseAdmin
+        .from("whatsapp_contacts")
+        .select("id, name, is_active")
+        .eq("phone", senderPhone)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (contact) {
+        approverName = contact.name || "Admin";
+      } else {
+        // 2. Check profiles admin
+        const { data: profile } = await supabaseAdmin
+          .from("profiles")
+          .select("id, role, full_name")
+          .eq("whatsapp_phone", senderPhone)
+          .maybeSingle();
+
+        if (profile && profile.role === "admin") {
+          approverName = profile.full_name || "Admin";
+          approverId = profile.id;
+        } else {
+          console.warn(`⛔ Unauthorized WhatsApp reply from: ${senderPhone}`);
+          await sendOpenWaReply(senderPhone, `⛔ Unauthorized. Your number (${senderPhone}) is not registered for approvals.`);
+          return new Response(JSON.stringify({ status: "unauthorized" }), {
+            status: 200, headers: { "Content-Type": "application/json" }
+          });
+        }
+      }
+
+      // Find the DOF
+      let dofQuery = supabaseAdmin.from("dyeing_order_forms").select("id, status, dof_number");
+      if (dofNumber) {
+        dofQuery = dofQuery.ilike("dof_number", `%${dofNumber}%`);
+      } else {
+        // Fallback to the latest pending DOF
+        dofQuery = dofQuery.eq("status", "pending").order("created_at", { ascending: false }).limit(1);
+      }
+
+      const { data: dofData, error: dofErr } = await dofQuery;
+      const dof = Array.isArray(dofData) ? dofData[0] : dofData;
+
+      if (dofErr || !dof) {
+        console.warn(`❌ Pending DOF not found for reference: ${dofNumber || "latest"}`);
+        await sendOpenWaReply(senderPhone, `❌ Pending DOF not found. Please check the DOF number and try again.`);
+        return new Response(JSON.stringify({ status: "dof_not_found" }), {
+          status: 200, headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      if (dof.status !== "pending") {
+        await sendOpenWaReply(senderPhone, `ℹ️ DOF *${dof.dof_number}* is already *${dof.status.toUpperCase()}*. No changes made.`);
+        return new Response(JSON.stringify({ status: "already_processed" }), {
+          status: 200, headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      const newStatus = action === "APPROVE" ? "approved" : "rejected";
+
+      // Update DOF status in Supabase DB
+      const { error: updateErr } = await supabaseAdmin
+        .from("dyeing_order_forms")
+        .update({
+          status: newStatus,
+          approved_by: approverId,
+          approval_notes: `${action === "APPROVE" ? "Approved" : "Rejected"} via WhatsApp by ${approverName} (${senderPhone})`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", dof.id);
+
+      if (updateErr) {
+        console.error("❌ DB update error:", updateErr);
+        await sendOpenWaReply(senderPhone, `❌ Error updating DOF status in ERP. Please try again.`);
+        return new Response(JSON.stringify({ status: "db_update_error", error: updateErr }), {
+          status: 200, headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      // Cleanup temporary PDF from storage
+      try {
+        const pdfFilename = `${dof.dof_number.replace(/\//g, "_")}.pdf`;
+        await supabaseAdmin.storage.from("dof-pdfs").remove([pdfFilename]);
+      } catch (sErr) {
+        console.warn("⚠️ Storage cleanup error:", sErr);
+      }
+
+      // Send confirmation message back to WhatsApp
+      const emoji = action === "APPROVE" ? "✅" : "❌";
+      const replyText = `${emoji} *DOF ${dof.dof_number}* has been *${newStatus.toUpperCase()}* successfully by ${approverName}.`;
+      await sendOpenWaReply(senderPhone, replyText);
+
+      console.log(`✅ DOF ${dof.dof_number} ${newStatus} by ${approverName} (${senderPhone})`);
+      return new Response(JSON.stringify({ success: true, status: newStatus, dof: dof.dof_number }), {
         status: 200, headers: { "Content-Type": "application/json" }
       });
 
     } catch (err) {
       console.error("❌ Webhook processing error:", err);
-      return new Response(JSON.stringify({ status: "error", error: err.message }), {
+      return new Response(JSON.stringify({ status: "error", error: (err as Error).message }), {
         status: 200, headers: { "Content-Type": "application/json" }
       });
     }
@@ -192,28 +258,46 @@ serve(async (req) => {
   return new Response("Method Not Allowed", { status: 405 });
 });
 
-// ── Helper: Send a reply message back via WhatsApp ──────────
-async function sendWhatsAppReply(to: string, text: string) {
+// ── Helper: Send confirmation message back via OpenWA (Render Bot) ──
+async function sendOpenWaReply(phone: string, text: string) {
   try {
-    const metaUrl = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
-    const response = await fetch(metaUrl, {
+    const botUrl = "https://openwa-attendance-bot.onrender.com";
+    const apiKey = "FacPassAttendanceOpenWaMasterKey2026";
+    let cleanPhone = phone.toString().replace(/\D/g, "");
+    if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
+    const chatId = cleanPhone.includes("@") ? cleanPhone : `${cleanPhone}@c.us`;
+
+    let sessionId = "55581c43-9848-48ed-884d-bce4dac1a28b";
+    try {
+      const sessRes = await fetch(`${botUrl}/api/sessions`, {
+        headers: { "X-API-Key": apiKey }
+      });
+      if (sessRes.ok) {
+        const sessions = await sessRes.json();
+        if (Array.isArray(sessions) && sessions.length > 0) {
+          const ready = sessions.find((s: any) => s.status === "ready" || s.engineLoaded) || sessions[0];
+          if (ready?.id) sessionId = ready.id;
+        }
+      }
+    } catch (_) {}
+
+    const response = await fetch(`${botUrl}/api/sessions/${sessionId}/messages/send-text`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${META_ACCESS_TOKEN}`,
         "Content-Type": "application/json",
+        "X-API-Key": apiKey,
       },
       body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to,
-        type: "text",
-        text: { body: text, preview_url: false },
+        chatId,
+        text,
       }),
     });
-    const result = await response.json();
-    console.log(`📤 Reply sent to ${to}:`, JSON.stringify(result));
-    return { ok: response.ok, status: response.status, data: result };
+
+    const result = await response.json().catch(() => ({}));
+    console.log(`📤 OpenWA confirmation reply sent to ${chatId}:`, JSON.stringify(result));
+    return { ok: response.ok, data: result };
   } catch (err) {
-    console.error("❌ Failed to send WhatsApp reply:", err);
-    return { ok: false, error: err.message };
+    console.error("❌ Failed to send OpenWA reply:", err);
+    return { ok: false, error: (err as Error).message };
   }
 }
