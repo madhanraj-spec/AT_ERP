@@ -340,11 +340,11 @@ export async function sendDofCreationNotification({
     const summaryLines = (fullRecord.summary || summary || []).slice(0, 10).map(s => {
       const label = countsMap.get(s.countId) || s.yarnLabel || 'Yarn';
       const kg = (parseFloat(s.total_kg) || 0).toFixed(2);
-      return `• *${s.colour}* (${label}): ${kg} kg`;
+      return `•  ${s.colour} (${label}): ${kg} kg`;
     });
 
     if ((fullRecord.summary || summary || []).length > 10) {
-      summaryLines.push(`• ...and ${(fullRecord.summary || summary || []).length - 10} more colour item(s)`);
+      summaryLines.push(`•  ...and ${(fullRecord.summary || summary || []).length - 10} more colour item(s)`);
     }
 
     const formattedDate = expectedDeliveryDate || fullRecord.expected_delivery_date
@@ -359,10 +359,10 @@ export async function sendDofCreationNotification({
       `🔹 *Expected Delivery:* ${formattedDate}`,
       `🔹 *Prepared By:* ${createdByName}`,
       `🔹 *Colour Count:* ${uniqueColours.length}`,
-      `🔹 *Total Qty:* ${totalKg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`,
+      `🔹 *Total Qty:* ${totalKg.toFixed(2)} kg`,
       `━━━━━━━━━━━━━━━━━━━━`,
       `📦 *Allocation Details:*`,
-      summaryLines.join('\n') || '• No items listed',
+      summaryLines.join('\n') || '•  No items listed',
       `━━━━━━━━━━━━━━━━━━━━`,
       `📲 *REPLY TO TAKE ACTION:*`,
       `✅ Reply *A* to *APPROVE*`,

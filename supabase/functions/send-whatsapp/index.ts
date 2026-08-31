@@ -141,9 +141,28 @@ serve(async (req) => {
     const uniqueColors = new Set((record.summary || []).map((item: any) => item.colour).filter(Boolean));
     const colorCount = uniqueColors.size;
 
-    // 4. Build summary of colours/yarns
+    // 4. Fetch yarn counts mapping
+    const countsMap = new Map<string, string>();
+    try {
+      const { data: countsData } = await supabaseAdmin
+        .from("master_yarn_counts")
+        .select("id, count_value, material, product_type, spec, spec1");
+      if (countsData) {
+        countsData.forEach((c: any) => {
+          const desc = [c.count_value, c.spec, c.spec1, c.product_type, c.material].filter(Boolean).join(" ");
+          countsMap.set(c.id, desc);
+        });
+      }
+    } catch (cErr) {
+      console.error("Error fetching yarn counts mapping:", cErr);
+    }
+
+    // Build summary of colours/yarns
     const yarnDetailsStr = (record.summary || [])
-      .map((item: any) => `• *${item.colour}* (${item.yarnLabel || "Yarn"}): ${parseFloat(item.total_kg || 0).toFixed(2)} kg`)
+      .map((item: any) => {
+        const countLabel = countsMap.get(item.countId) || item.yarnLabel || "Yarn";
+        return `•  ${item.colour} (${countLabel}): ${parseFloat(item.total_kg || 0).toFixed(2)} kg`;
+      })
       .join("\n");
 
     // 5. Fetch linked orders details
@@ -175,21 +194,6 @@ serve(async (req) => {
       } catch (oErr) {
         console.error("Error fetching orders for notification:", oErr);
       }
-    }
-
-    // Fetch yarn counts mapping
-    const countsMap = new Map<string, string>();
-    try {
-      const { data: countsData } = await supabaseAdmin
-        .from("master_yarn_counts")
-        .select("id, count_value, material, product_type");
-      if (countsData) {
-        countsData.forEach((c: any) => {
-          countsMap.set(c.id, `${c.count_value} - ${c.material} - ${c.product_type}`);
-        });
-      }
-    } catch (cErr) {
-      console.error("Error fetching yarn counts mapping:", cErr);
     }
 
     // Fetch creator details
@@ -251,17 +255,25 @@ serve(async (req) => {
     const pdfUrl = urlData.publicUrl;
     console.log("PDF Uploaded successfully. Public URL:", pdfUrl);
 
-    // 8. Build body text
-    const bodyText =
-      `*DOF Number:* ${record.dof_number}\n` +
-      `*Dyeing Unit:* ${dyeingUnit?.partner_name || "N/A"}\n` +
-      `*Expected Delivery:* ${deliveryDateStr}\n` +
-      `*Prepared By:* ${creatorName}\n` +
-      `*Linked Orders:* ${ordersListStr}\n` +
-      `*Colour Count:* ${colorCount}\n` +
-      `*Total Qty:* ${totalWeight.toFixed(2)} kg\n\n` +
-      `*Allocation Details:*\n${yarnDetailsStr}\n\n` +
-      `Please select an action below (or reply *APPROVE* or *REJECT*):`;
+    // 8. Build body text with formatted emojis and reply instructions
+    const bodyText = [
+      `🏭 *ASHOK TEXTILES ERP*`,
+      `📋 *DYEING ORDER FORM: ${record.dof_number}*`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `🔹 *Dyeing Unit:* ${dyeingUnit?.partner_name || "N/A"}`,
+      `🔹 *Expected Delivery:* ${deliveryDateStr}`,
+      `🔹 *Prepared By:* ${creatorName}`,
+      `🔹 *Colour Count:* ${colorCount}`,
+      `🔹 *Total Qty:* ${totalWeight.toFixed(2)} kg`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `📦 *Allocation Details:*`,
+      yarnDetailsStr || "•  No items listed",
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `📲 *REPLY TO TAKE ACTION:*`,
+      `✅ Reply *A* to *APPROVE*`,
+      `❌ Reply *R* to *REJECT*`,
+      `_(Or reply APPROVE ${record.dof_number} / REJECT ${record.dof_number})_`,
+    ].join("\n");
 
     // 9. Discover OpenWA session
     const botUrl = "https://openwa-attendance-bot.onrender.com";
@@ -282,14 +294,14 @@ serve(async (req) => {
       console.warn("OpenWA session lookup warning:", e);
     }
 
-    // 10. Send PDF Document + Action Poll to each recipient via OpenWA
+    // 10. Send PDF Document with Caption to each recipient via OpenWA
     const results = [];
     for (const recipient of recipients) {
       let cleanPhone = recipient.phone.toString().replace(/\D/g, "");
       if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
       const chatId = cleanPhone.includes("@") ? cleanPhone : `${cleanPhone}@c.us`;
 
-      // A. Send PDF Document with Caption
+      // Send PDF Document with Caption
       try {
         const docRes = await fetch(`${botUrl}/api/sessions/${sessionId}/messages/send-document`, {
           method: "POST",
@@ -307,24 +319,7 @@ serve(async (req) => {
         const docData = await docRes.json().catch(() => ({}));
         console.log(`📤 Sent DOF PDF to ${chatId}:`, JSON.stringify(docData));
 
-        // B. Send 1-Click Interactive Poll for Approve / Reject
-        const pollRes = await fetch(`${botUrl}/api/sessions/${sessionId}/messages/send-poll`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-Key": apiKey,
-          },
-          body: JSON.stringify({
-            chatId,
-            name: `Select Action for DOF ${record.dof_number}:`,
-            options: ["Approve", "Reject"],
-            allowMultipleAnswers: false,
-          }),
-        });
-        const pollData = await pollRes.json().catch(() => ({}));
-        console.log(`🗳️ Sent Action Poll to ${chatId}:`, JSON.stringify(pollData));
-
-        results.push({ phone: cleanPhone, name: recipient.name, doc: docData, poll: pollData });
+        results.push({ phone: cleanPhone, name: recipient.name, doc: docData });
       } catch (sendErr) {
         console.error(`❌ Failed to send to ${chatId}:`, sendErr);
         results.push({ phone: cleanPhone, name: recipient.name, error: (sendErr as Error).message });
