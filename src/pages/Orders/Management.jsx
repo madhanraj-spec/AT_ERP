@@ -22,6 +22,7 @@ import PrintablePOFModal from '../Processing/PrintablePOFModal';
 import PrintablePOFRRModal from '../Processing/PrintablePOFRRModal';
 import OrderProgressMilestones from '../../components/OrderProgressMilestones';
 import ViewPiModal from '../../components/ViewPiModal';
+import PrintableOrderConfirmationModal from '../../components/PrintableOrderConfirmationModal';
 
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -426,6 +427,7 @@ function OrderCard({
   hideDeleteButton = false,
   orderBills = [],
   allStockItems = [],
+  onPrintOrderConfirmation,
   onRefresh
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -659,9 +661,18 @@ function OrderCard({
               </div>
             </div>
           </div>
-
           <div className="order-card-actions">
             <div style={{ display: 'flex', gap: '0.5rem' }} onClick={e => e.stopPropagation()}>
+               {onPrintOrderConfirmation && (
+                 <button 
+                   onClick={() => onPrintOrderConfirmation(order)}
+                   className="btn-icon"
+                   title="Print Order Confirmation (Single A4 Page)"
+                   style={{ color: '#800000' }}
+                 >
+                   <Printer size={18} />
+                 </button>
+               )}
                <button 
                 onClick={() => navigate(`${basePath}/edit-order/${order.id}`)}
                 className="btn-icon"
@@ -3576,6 +3587,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
   const [allPofs, setAllPofs] = useState([]);
   const [allBills, setAllBills] = useState([]);
   const [allStockItems, setAllStockItems] = useState([]);
+  const [printOrderConfirmation, setPrintOrderConfirmation] = useState(null);
   
   // Collapsible Filters State
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
@@ -4218,6 +4230,7 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
                 allPofs={allPofs}
                 orderBills={orderBills}
                 allStockItems={allStockItems}
+                onPrintOrderConfirmation={setPrintOrderConfirmation}
                 onRefresh={() => setRefreshTrigger(prev => prev + 1)}
               />
             );
@@ -4611,6 +4624,15 @@ export default function OrdersManagement({ hideNewOrderButton = false, showAllMe
           pi={printPIData} 
           currentOrder={printPIData._currentOrder}
           onClose={() => setPrintPIData(null)} 
+        />
+      )}
+      {printOrderConfirmation && (
+        <PrintableOrderConfirmationModal 
+          order={printOrderConfirmation}
+          yarnCounts={yarnCounts}
+          brands={brands}
+          partners={partners}
+          onClose={() => setPrintOrderConfirmation(null)}
         />
       )}
       {loadingDetail && (
