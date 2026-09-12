@@ -1,89 +1,51 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Save, ArrowLeft, ArrowRight, Check, Plus, Trash2, Calculator, List, Printer, Upload, FileImage, X, Package, Scale, Info } from 'lucide-react';
+import { Save, ArrowLeft, ArrowRight, Check, Plus, Trash2, Calculator, List, Printer, Upload, FileImage, X, Package, Scale, Info, Zap, PenLine, RefreshCw, ChevronDown, ChevronUp, Link2, Unlink } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
 const WEAVE_TYPES = ['Plain', '2/1 Twill', '2/2 Twill', '3/1 Twill', 'Oxford', 'Herringbone', 'Dobby', 'Satin'];
 const ORDER_CATEGORIES = ['Conventional', 'BCI', 'Organic', 'GOTS', 'GRS', 'OCS'];
+const LOOM_TYPES = ['Airjet', 'Rapier', 'Sulzer / Projectile', 'Shuttle'];
 
-// Yarn Bundle & Knot Conversion Constants & Helpers
-export const STANDARD_BUNDLE_WEIGHT_KG = 4.6; // Standard commercial bundle weight = 4.6 kg (Ashok Textiles standard)
+import PrintableDesignSpecificationsSheet from '../../components/PrintableDesignSpecificationsSheet';
+import {
+  WARP_CRIMP_TABLE,
+  WEFT_CRIMP_TABLE,
+  WARP_WASTAGE,
+  WEFT_WASTAGE,
+  STANDARD_BUNDLE_WEIGHT_KG,
+  NE_CONVERSION_CONSTANT,
+  getCrimpAndWastage,
+  parseEffectiveCount,
+  getYarnCountPackingInfo,
+  calculateWarpYarnKg,
+  calculateWeftYarnKg,
+  kgToBundlesKnots,
+  calculateKgFromBundlesKnots,
+  flattenSequence,
+  computeWarpDesignResults,
+  computeWeftDesignResults
+} from '../../utils/yarnCalculations';
 
-/**
- * Extracts resultant/effective yarn count from count_value string.
- * Handles formats like '40s', '60s CW', '2/40', '2/40s', '40/2', '3/30s', '30/3', etc.
- */
-export function parseEffectiveCount(countValue) {
-  if (!countValue) return 40;
-  const str = String(countValue).trim();
-
-  // Multi-ply pattern: '2/40' or '2/40s' (ply / single)
-  const prefixPly = str.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
-  if (prefixPly) {
-    const ply = parseFloat(prefixPly[1]);
-    const single = parseFloat(prefixPly[2]);
-    if (ply > 0 && single > 0) {
-      const actualPly = Math.min(ply, single);
-      const actualSingle = Math.max(ply, single);
-      return actualSingle / actualPly;
-    }
-  }
-
-  // Multi-ply pattern: '40/2' or '40s/2' (single / ply)
-  const suffixPly = str.match(/^(\d+(?:\.\d+)?)\s*(?:s|S)?\s*\/\s*(\d+(?:\.\d+)?)/);
-  if (suffixPly) {
-    const p1 = parseFloat(suffixPly[1]);
-    const p2 = parseFloat(suffixPly[2]);
-    if (p1 > 0 && p2 > 0) {
-      const actualPly = Math.min(p1, p2);
-      const actualSingle = Math.max(p1, p2);
-      return actualSingle / actualPly;
-    }
-  }
-
-  // Single count: '40s', '60', '80.5'
-  const single = str.match(/(\d+(?:\.\d+)?)/);
-  if (single) {
-    const val = parseFloat(single[1]);
-    if (val > 0) return val;
-  }
-
-  return 40;
-}
-
-/**
- * Returns packing specification details for a given count
- */
-export function getYarnCountPackingInfo(yarn, bundleWeight = STANDARD_BUNDLE_WEIGHT_KG) {
-  const countStr = yarn?.count_value || (typeof yarn === 'string' ? yarn : '');
-  const effCount = parseEffectiveCount(countStr);
-  const knotsPerBundle = effCount;
-  const kgPerKnot = knotsPerBundle > 0 ? (bundleWeight / knotsPerBundle) : 0;
-  
-  return {
-    effCount,
-    knotsPerBundle,
-    bundleWeight,
-    kgPerKnot,
-    isMultiPly: String(countStr).includes('/')
-  };
-}
-
-/**
- * Calculates total KG from bundles and knots
- */
-export function calculateKgFromBundlesKnots(yarn, bundles, knots, bundleWeight = STANDARD_BUNDLE_WEIGHT_KG) {
-  const b = parseFloat(bundles) || 0;
-  const k = parseFloat(knots) || 0;
-  if (b === 0 && k === 0 && (bundles === '' || bundles === undefined) && (knots === '' || knots === undefined)) {
-    return '';
-  }
-  
-  const info = getYarnCountPackingInfo(yarn, bundleWeight);
-  const totalKg = (b * info.bundleWeight) + (k * info.kgPerKnot);
-  return totalKg > 0 ? Number(totalKg.toFixed(3)) : '';
-}
+export {
+  WARP_CRIMP_TABLE,
+  WEFT_CRIMP_TABLE,
+  WARP_WASTAGE,
+  WEFT_WASTAGE,
+  STANDARD_BUNDLE_WEIGHT_KG,
+  NE_CONVERSION_CONSTANT,
+  getCrimpAndWastage,
+  parseEffectiveCount,
+  getYarnCountPackingInfo,
+  calculateWarpYarnKg,
+  calculateWeftYarnKg,
+  kgToBundlesKnots,
+  calculateKgFromBundlesKnots,
+  flattenSequence,
+  computeWarpDesignResults,
+  computeWeftDesignResults
+};
 
 // HTML5 Canvas Client-side WebP Compression Helper
 const compressImage = (file) => {
@@ -144,6 +106,276 @@ const compressImage = (file) => {
   });
 };
 
+// ─── Reusable Sequence Builder Component for Design Repeats ───
+function SequenceBuilder({
+  designKey,
+  warpIdx = 0,
+  valueField,
+  seq = [],
+  options = [],
+  yarnCounts = [],
+  formatYarnPreview,
+  onAdd,
+  onRemove,
+  onMove,
+  onUpdateValue,
+  onUpdateChainEntryValue,
+  onChainSelected,
+  onUnchainItem,
+}) {
+  const [selected, setSelected] = useState([]);
+
+  const toggleSelect = (id) => {
+    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const handleChain = () => {
+    onChainSelected(selected);
+    setSelected([]);
+  };
+
+  return (
+    <div>
+      {/* Color selector chips */}
+      <div style={{ marginBottom: '0.85rem' }}>
+        <label style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)', marginBottom: '0.4rem', display: 'block', fontWeight: '500' }}>
+          Click count & color to add to {designKey === 'warp' ? 'warp' : 'weft'} pattern:
+        </label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          {options.length === 0 && (
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted-current)', fontStyle: 'italic' }}>
+              No {designKey} yarns mapped. Please ensure counts and colors are entered in Step 3.
+            </span>
+          )}
+          {options.map((opt, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onAdd(opt)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.35rem 0.75rem',
+                borderRadius: '20px',
+                cursor: 'pointer',
+                fontSize: '0.82rem',
+                fontWeight: '600',
+                border: '1.5px dashed var(--color-primary, #2563eb)',
+                backgroundColor: 'var(--surface-current, #f8fafc)',
+                color: 'var(--color-primary, #2563eb)',
+                transition: 'all 0.15s ease',
+              }}
+              title="Click to add into sequence"
+            >
+              <Plus size={14} /> {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Sequence table */}
+      {seq.length > 0 && (
+        <div style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: '0.75rem', backgroundColor: 'white' }}>
+          <table className="table" style={{ marginBottom: 0 }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f8fafc' }}>
+                <th style={{ width: '4%', textAlign: 'center' }}>#</th>
+                <th style={{ width: '4%', textAlign: 'center' }}></th>
+                <th style={{ width: '28%' }}>Count</th>
+                <th style={{ width: '18%' }}>Color</th>
+                <th style={{ width: '14%', textAlign: 'right' }}>{valueField === 'ends' ? 'Ends / Color' : 'Picks / Color'}</th>
+                <th style={{ width: '14%', textAlign: 'center' }}>Sub-Repeats</th>
+                <th style={{ width: '18%', textAlign: 'center' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {seq.map((item, sIdx) => {
+                if (item.type === 'chain') {
+                  const subRepeats = parseFloat(item.subRepeats) || 1;
+                  const totalInChain = (item.entries || []).reduce((s, e) => s + (parseFloat(e[valueField]) || 0), 0) * subRepeats;
+                  return (
+                    <React.Fragment key={item.id || sIdx}>
+                      {/* Chain header row */}
+                      <tr style={{ backgroundColor: '#eff6ff', borderTop: '2px solid #bfdbfe' }}>
+                        <td style={{ textAlign: 'center', fontWeight: '700', color: '#3b82f6' }} rowSpan={(item.entries?.length || 0) + 1}>
+                          <Link2 size={16} />
+                        </td>
+                        <td colSpan={3} style={{ fontWeight: '700', color: '#1e40af', fontSize: '0.85rem' }}>
+                          ⛓ Chained Repeat ({item.entries?.length || 0} colors)
+                          <span style={{ marginLeft: '0.75rem', fontWeight: 'normal', fontSize: '0.78rem', color: '#3b82f6' }}>
+                            Subtotal: <strong>{totalInChain}</strong> {valueField}
+                          </span>
+                        </td>
+                        <td></td>
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: '600' }}>×</span>
+                            <input
+                              type="number"
+                              className="input-field"
+                              style={{ maxWidth: '60px', textAlign: 'center', padding: '0.25rem 0.4rem', fontWeight: 'bold' }}
+                              placeholder="1"
+                              value={item.subRepeats !== undefined ? item.subRepeats : '1'}
+                              onChange={e => onUpdateValue(sIdx, 'subRepeats', e.target.value)}
+                              min="1"
+                            />
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <button
+                              type="button"
+                              onClick={() => onMove(sIdx, -1)}
+                              disabled={sIdx === 0}
+                              title="Move Up"
+                              style={{ background: 'none', border: 'none', cursor: sIdx === 0 ? 'not-allowed' : 'pointer', opacity: sIdx === 0 ? 0.3 : 0.8, padding: '0.15rem' }}
+                            >
+                              <ChevronUp size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onMove(sIdx, 1)}
+                              disabled={sIdx === seq.length - 1}
+                              title="Move Down"
+                              style={{ background: 'none', border: 'none', cursor: sIdx === seq.length - 1 ? 'not-allowed' : 'pointer', opacity: sIdx === seq.length - 1 ? 0.3 : 0.8, padding: '0.15rem' }}
+                            >
+                              <ChevronDown size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onUnchainItem(sIdx)}
+                              title="Unchain into individual colors"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#d97706', padding: '0.15rem' }}
+                            >
+                              <Unlink size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onRemove(sIdx)}
+                              title="Delete chain"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.15rem' }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {/* Chain entries */}
+                      {(item.entries || []).map((entry, eIdx) => {
+                        const yc = yarnCounts.find(y => y.id === entry.countId);
+                        return (
+                          <tr key={`${item.id}-${eIdx}`} style={{ backgroundColor: '#f8faff', borderBottom: eIdx === item.entries.length - 1 ? '2px solid #bfdbfe' : '1px solid #f1f5f9' }}>
+                            <td></td>
+                            <td style={{ fontWeight: '500', fontSize: '0.85rem', paddingLeft: '1.25rem' }}>
+                              {yc ? formatYarnPreview(yc) : entry.countId}
+                            </td>
+                            <td>{entry.color || '—'}</td>
+                            <td style={{ textAlign: 'right' }}>
+                              <input
+                                type="number"
+                                className="input-field"
+                                style={{ maxWidth: '85px', marginLeft: 'auto', textAlign: 'right', padding: '0.25rem 0.5rem' }}
+                                placeholder="0"
+                                value={entry[valueField] !== undefined ? entry[valueField] : ''}
+                                onChange={e => onUpdateChainEntryValue(sIdx, eIdx, valueField, e.target.value)}
+                              />
+                            </td>
+                            <td></td>
+                            <td></td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                }
+
+                // Single entry
+                const yc = yarnCounts.find(y => y.id === item.countId);
+                const isSelected = selected.includes(item.id);
+                return (
+                  <tr key={item.id || sIdx} style={{ backgroundColor: isSelected ? '#fef3c7' : 'transparent' }}>
+                    <td style={{ textAlign: 'center', fontWeight: '500', color: 'var(--text-muted-current)', fontSize: '0.8rem' }}>{sIdx + 1}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(item.id)}
+                        title="Select for chaining"
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </td>
+                    <td style={{ fontWeight: '500', fontSize: '0.85rem' }}>{yc ? formatYarnPreview(yc) : item.countId}</td>
+                    <td>{item.color || '—'}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <input
+                        type="number"
+                        className="input-field"
+                        style={{ maxWidth: '85px', marginLeft: 'auto', textAlign: 'right', padding: '0.25rem 0.5rem' }}
+                        placeholder="0"
+                        value={item[valueField] !== undefined ? item[valueField] : ''}
+                        onChange={e => onUpdateValue(sIdx, valueField, e.target.value)}
+                      />
+                    </td>
+                    <td></td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => onMove(sIdx, -1)}
+                          disabled={sIdx === 0}
+                          title="Move Up"
+                          style={{ background: 'none', border: 'none', cursor: sIdx === 0 ? 'not-allowed' : 'pointer', opacity: sIdx === 0 ? 0.3 : 0.8, padding: '0.15rem' }}
+                        >
+                          <ChevronUp size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onMove(sIdx, 1)}
+                          disabled={sIdx === seq.length - 1}
+                          title="Move Down"
+                          style={{ background: 'none', border: 'none', cursor: sIdx === seq.length - 1 ? 'not-allowed' : 'pointer', opacity: sIdx === seq.length - 1 ? 0.3 : 0.8, padding: '0.15rem' }}
+                        >
+                          <ChevronDown size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRemove(sIdx)}
+                          title="Delete entry"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.15rem' }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {/* Chain selected action banner */}
+          {selected.length >= 2 && (
+            <div style={{ padding: '0.6rem 1rem', borderTop: '1px solid var(--border-current)', backgroundColor: '#fffbeb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.82rem', color: '#92400e', fontWeight: '500' }}>
+                {selected.length} colors selected to group together as repeating sub-pattern
+              </span>
+              <button
+                type="button"
+                onClick={handleChain}
+                className="btn btn-primary"
+                style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem', backgroundColor: '#d97706', borderColor: '#b45309' }}
+              >
+                <Link2 size={14} style={{ marginRight: '0.35rem' }} /> Chain Selected Colors
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CreateOrder() {
   const { id } = useParams();
   const isEdit = !!id;
@@ -153,6 +385,10 @@ export default function CreateOrder() {
   const [loading, setLoading] = useState(false);
   const [submittedOrderNumber, setSubmittedOrderNumber] = useState(null);
   const [yarnInputMode, setYarnInputMode] = useState('bundles_knots'); // 'bundles_knots' | 'kg'
+  const [yarnEntryMode, setYarnEntryMode] = useState('design_details'); // 'design_details' | 'manual'
+  const [crimpOverrides, setCrimpOverrides] = useState(null); // null = use auto-lookup
+  const [showCrimpPanel, setShowCrimpPanel] = useState(true);
+  const [applyFeedback, setApplyFeedback] = useState(false);
 
   // Design Image State
   const [imageFile, setImageFile] = useState(null);
@@ -191,7 +427,12 @@ export default function CreateOrder() {
       weave_type: '',
       gsm: '',
       production_quantity: '',
-      order_category: ''
+      order_category: '',
+      loom_type: 'Airjet',
+      design_details: {
+        warp_designs: [], // [{ sequence: [{ id, type:'single'|'chain', countId, color, ends, subRepeats?, entries? }], num_repeats:'', extra_threads:'' }]
+        weft_design: { sequence: [] },
+      }
     },
     // color_mapping: { type: 'warp'|'weft', countId: '', colors: [{ name: '', kg: '', bundles: '', knots: '', unit_mode: '' }] }
     yarn_mappings: [],
@@ -276,6 +517,245 @@ export default function CreateOrder() {
 
   const currentYear = new Date().getFullYear();
 
+  const updateDesignDetails = (newDD) => {
+    setFormData(prev => ({
+      ...prev,
+      technical_specs: { ...prev.technical_specs, design_details: newDD }
+    }));
+  };
+
+  const getAvailableDesignOptions = (type, warpIdx = 0) => {
+    return (formData.yarn_mappings || []).filter(m => {
+      if (type === 'warp') return m.type === 'warp' && (m.warpIdx || 0) === warpIdx;
+      return m.type === 'weft';
+    }).map(m => {
+      const yc = yarnCounts.find(y => y.id === m.countId);
+      return { countId: m.countId, color: m.color || '', label: `${yc ? formatYarnPreview(yc) : m.countId} — ${m.color || 'No Color'}`, yc };
+    });
+  };
+
+  const flattenSequence = (seq) => {
+    const flat = [];
+    (seq || []).forEach(item => {
+      if (item.type === 'chain') {
+        const sr = parseFloat(item.subRepeats) || 1;
+        for (let i = 0; i < sr; i++) {
+          (item.entries || []).forEach(e => flat.push({ ...e }));
+        }
+      } else {
+        flat.push({ countId: item.countId, color: item.color, ends: item.ends, picks: item.picks });
+      }
+    });
+    return flat;
+  };
+
+  const computeWarpResults = () => {
+    return computeWarpDesignResults(formData.technical_specs, yarnCounts, crimpOverrides);
+  };
+
+  const computeWeftResults = () => {
+    return computeWeftDesignResults(formData.technical_specs, yarnCounts, crimpOverrides).colorResults || [];
+  };
+
+  const calculateAutoExtraThreads = (warpDesign, ts = formData.technical_specs) => {
+    const orderWidth = parseFloat(ts?.order_width) || 0;
+    const loomReed = parseFloat(ts?.on_loom_reed) || parseFloat(ts?.order_reed) || 0;
+    if (orderWidth <= 0 || loomReed <= 0) return 0;
+    const targetEnds = Math.round(orderWidth * loomReed);
+    const flatEntries = flattenSequence(warpDesign?.sequence || []);
+    const endsInOneRepeat = Math.round(flatEntries.reduce((s, e) => s + (parseFloat(e.ends) || 0), 0));
+    const repeats = parseFloat(warpDesign?.num_repeats) || 0;
+    if (repeats <= 0 || endsInOneRepeat <= 0) return 0;
+    const patternEnds = endsInOneRepeat * repeats;
+    return Math.max(0, targetEnds - patternEnds);
+  };
+
+  const syncWarpExtraThreads = (newDD, warpIdx) => {
+    if (warpIdx !== undefined && newDD?.warp_designs?.[warpIdx]) {
+      const wd = newDD.warp_designs[warpIdx];
+      if (!wd.extra_threads_manual_override && parseFloat(wd.num_repeats) > 0) {
+        wd.extra_threads = String(calculateAutoExtraThreads(wd));
+      }
+    }
+  };
+
+  const resetExtraThreadsToAuto = (warpIdx) => {
+    const dd = formData.technical_specs?.design_details || { warp_designs: [], weft_design: { sequence: [] } };
+    const newDD = JSON.parse(JSON.stringify(dd));
+    while (newDD.warp_designs.length <= warpIdx) newDD.warp_designs.push({ sequence: [], num_repeats: '', extra_threads: '' });
+    const autoExtra = calculateAutoExtraThreads(newDD.warp_designs[warpIdx]);
+    newDD.warp_designs[warpIdx].extra_threads = String(autoExtra);
+    newDD.warp_designs[warpIdx].extra_threads_manual_override = false;
+    updateDesignDetails(newDD);
+  };
+
+  useEffect(() => {
+    if (currentStep === 4 && yarnEntryMode === 'design_details') {
+      const dd = formData.technical_specs?.design_details;
+      if (dd?.warp_designs?.length > 0) {
+        let changed = false;
+        const newDD = JSON.parse(JSON.stringify(dd));
+        newDD.warp_designs.forEach(wd => {
+          if (!wd.extra_threads_manual_override && (wd.extra_threads === '' || wd.extra_threads === undefined) && parseFloat(wd.num_repeats) > 0) {
+            const autoExtra = calculateAutoExtraThreads(wd, formData.technical_specs);
+            wd.extra_threads = String(autoExtra);
+            changed = true;
+          }
+        });
+        if (changed) {
+          updateDesignDetails(newDD);
+        }
+      }
+    }
+  }, [currentStep, yarnEntryMode, formData.technical_specs?.order_width, formData.technical_specs?.on_loom_reed, formData.technical_specs?.order_reed]);
+
+  const applyDesignCalcToMappings = () => {
+    const warpResults = computeWarpResults();
+    const weftResults = computeWeftResults();
+
+    const updated = formData.yarn_mappings.map(m => {
+      if (m.type === 'warp') {
+        const wr = warpResults.find(r => r.warpIdx === (m.warpIdx || 0));
+        const cr = wr?.colorResults?.find(c => c.countId === m.countId && c.color === m.color);
+        if (cr) return { ...m, kg: cr.kg, bundles: cr.bundles, knots: cr.knots, unit_mode: 'design_calc' };
+      } else if (m.type === 'weft') {
+        const wr = weftResults.find(c => c.countId === m.countId && c.color === m.color);
+        if (wr) return { ...m, kg: wr.kg, bundles: wr.bundles, knots: wr.knots, unit_mode: 'design_calc' };
+      }
+      return m;
+    });
+
+    setFormData(prev => ({ ...prev, yarn_mappings: updated }));
+    setApplyFeedback(true);
+    setTimeout(() => setApplyFeedback(false), 3000);
+  };
+
+  const addToSequence = (designKey, warpIdx, option) => {
+    const dd = formData.technical_specs?.design_details || { warp_designs: [], weft_design: { sequence: [] } };
+    const newDD = JSON.parse(JSON.stringify(dd));
+    const newId = Date.now() + Math.floor(Math.random() * 1000);
+    if (designKey === 'warp') {
+      while (newDD.warp_designs.length <= warpIdx) newDD.warp_designs.push({ sequence: [], num_repeats: '', extra_threads: '' });
+      newDD.warp_designs[warpIdx].sequence.push({ id: newId, type: 'single', countId: option.countId, color: option.color, ends: '' });
+      syncWarpExtraThreads(newDD, warpIdx);
+    } else {
+      if (!newDD.weft_design) newDD.weft_design = { sequence: [] };
+      newDD.weft_design.sequence.push({ id: newId, type: 'single', countId: option.countId, color: option.color, picks: '' });
+    }
+    updateDesignDetails(newDD);
+  };
+
+  const removeFromSequence = (designKey, warpIdx, seqIdx) => {
+    const dd = formData.technical_specs?.design_details || { warp_designs: [], weft_design: { sequence: [] } };
+    const newDD = JSON.parse(JSON.stringify(dd));
+    if (designKey === 'warp') {
+      newDD.warp_designs[warpIdx].sequence.splice(seqIdx, 1);
+      syncWarpExtraThreads(newDD, warpIdx);
+    } else {
+      newDD.weft_design.sequence.splice(seqIdx, 1);
+    }
+    updateDesignDetails(newDD);
+  };
+
+  const moveSequenceItem = (designKey, warpIdx, seqIdx, direction) => {
+    const dd = formData.technical_specs?.design_details || { warp_designs: [], weft_design: { sequence: [] } };
+    const newDD = JSON.parse(JSON.stringify(dd));
+    const seq = designKey === 'warp' ? newDD.warp_designs[warpIdx].sequence : newDD.weft_design.sequence;
+    const targetIdx = seqIdx + direction;
+    if (targetIdx >= 0 && targetIdx < seq.length) {
+      const temp = seq[seqIdx];
+      seq[seqIdx] = seq[targetIdx];
+      seq[targetIdx] = temp;
+      updateDesignDetails(newDD);
+    }
+  };
+
+  const updateSequenceValue = (designKey, warpIdx, seqIdx, field, value) => {
+    const dd = formData.technical_specs?.design_details || { warp_designs: [], weft_design: { sequence: [] } };
+    const newDD = JSON.parse(JSON.stringify(dd));
+    const seq = designKey === 'warp' ? newDD.warp_designs[warpIdx].sequence : newDD.weft_design.sequence;
+    seq[seqIdx] = { ...seq[seqIdx], [field]: value };
+    if (designKey === 'warp') {
+      syncWarpExtraThreads(newDD, warpIdx);
+    }
+    updateDesignDetails(newDD);
+  };
+
+  const updateChainEntryValue = (designKey, warpIdx, seqIdx, entryIdx, field, value) => {
+    const dd = formData.technical_specs?.design_details || { warp_designs: [], weft_design: { sequence: [] } };
+    const newDD = JSON.parse(JSON.stringify(dd));
+    const seq = designKey === 'warp' ? newDD.warp_designs[warpIdx].sequence : newDD.weft_design.sequence;
+    seq[seqIdx].entries[entryIdx] = { ...seq[seqIdx].entries[entryIdx], [field]: value };
+    if (designKey === 'warp') {
+      syncWarpExtraThreads(newDD, warpIdx);
+    }
+    updateDesignDetails(newDD);
+  };
+
+  const chainSelected = (designKey, warpIdx, selectedIds) => {
+    const dd = formData.technical_specs?.design_details || { warp_designs: [], weft_design: { sequence: [] } };
+    const newDD = JSON.parse(JSON.stringify(dd));
+    const seq = designKey === 'warp' ? newDD.warp_designs[warpIdx].sequence : newDD.weft_design.sequence;
+    const toChain = [];
+    const remaining = [];
+    let insertIdx = seq.length;
+    seq.forEach((item, idx) => {
+      if (selectedIds.includes(item.id) && item.type === 'single') {
+        if (toChain.length === 0) insertIdx = idx;
+        toChain.push({ countId: item.countId, color: item.color, ends: item.ends, picks: item.picks });
+      } else {
+        remaining.push(item);
+      }
+    });
+    if (toChain.length >= 2) {
+      const chainItem = { id: Date.now() + Math.floor(Math.random() * 1000), type: 'chain', subRepeats: '2', entries: toChain };
+      remaining.splice(Math.min(insertIdx, remaining.length), 0, chainItem);
+      if (designKey === 'warp') {
+        newDD.warp_designs[warpIdx].sequence = remaining;
+        syncWarpExtraThreads(newDD, warpIdx);
+      } else {
+        newDD.weft_design.sequence = remaining;
+      }
+      updateDesignDetails(newDD);
+    }
+  };
+
+  const unchainItem = (designKey, warpIdx, seqIdx) => {
+    const dd = formData.technical_specs?.design_details || { warp_designs: [], weft_design: { sequence: [] } };
+    const newDD = JSON.parse(JSON.stringify(dd));
+    const seq = designKey === 'warp' ? newDD.warp_designs[warpIdx].sequence : newDD.weft_design.sequence;
+    const chain = seq[seqIdx];
+    if (chain.type !== 'chain') return;
+    const singles = (chain.entries || []).map(e => ({ id: Date.now() + Math.floor(Math.random() * 1000), type: 'single', countId: e.countId, color: e.color, ends: e.ends, picks: e.picks }));
+    seq.splice(seqIdx, 1, ...singles);
+    if (designKey === 'warp') {
+      syncWarpExtraThreads(newDD, warpIdx);
+    }
+    updateDesignDetails(newDD);
+  };
+
+  const updateWarpDesignField = (warpIdx, field, value) => {
+    const dd = formData.technical_specs?.design_details || { warp_designs: [], weft_design: { sequence: [] } };
+    const newDD = JSON.parse(JSON.stringify(dd));
+    while (newDD.warp_designs.length <= warpIdx) newDD.warp_designs.push({ sequence: [], num_repeats: '', extra_threads: '' });
+    
+    if (field === 'extra_threads') {
+      newDD.warp_designs[warpIdx].extra_threads = value;
+      newDD.warp_designs[warpIdx].extra_threads_manual_override = true;
+    } else if (field === 'num_repeats') {
+      newDD.warp_designs[warpIdx].num_repeats = value;
+      if (!newDD.warp_designs[warpIdx].extra_threads_manual_override) {
+        const autoExtra = calculateAutoExtraThreads(newDD.warp_designs[warpIdx]);
+        if (parseFloat(value) > 0) {
+          newDD.warp_designs[warpIdx].extra_threads = String(autoExtra);
+        }
+      }
+    } else {
+      newDD.warp_designs[warpIdx][field] = value;
+    }
+    updateDesignDetails(newDD);
+  };
+
   const handleNext = () => {
     if (currentStep === 2) {
       // Clean up orphaned yarn mappings whose counts were removed in Step 2
@@ -295,6 +775,9 @@ export default function CreateOrder() {
         return { ...prev, yarn_mappings: cleanedMappings };
       });
     }
+    if (currentStep === 4 && yarnEntryMode === 'design_details') {
+      applyDesignCalcToMappings();
+    }
     setCurrentStep(prev => prev + 1);
   };
   const handleBack = () => setCurrentStep(prev => prev - 1);
@@ -304,6 +787,19 @@ export default function CreateOrder() {
       ...prev,
       technical_specs: { ...prev.technical_specs, [field]: value }
     }));
+  };
+
+  const handleLoomTypeChangeInCrimp = (newLoomType) => {
+    updateTechnicalSpecs('loom_type', newLoomType);
+    const loomReed = formData.technical_specs?.on_loom_reed || formData.technical_specs?.order_reed;
+    const loomPick = formData.technical_specs?.on_loom_pick || formData.technical_specs?.order_pick;
+    const newCrimp = getCrimpAndWastage(
+      formData.technical_specs?.weave_type,
+      loomReed,
+      loomPick,
+      newLoomType
+    );
+    setCrimpOverrides(newCrimp);
   };
 
   const handleOrderTypeSelect = (type) => {
@@ -586,7 +1082,12 @@ export default function CreateOrder() {
         weave_type: '',
         gsm: '',
         production_quantity: '',
-        order_category: ''
+        order_category: '',
+        loom_type: 'Airjet',
+        design_details: {
+          warp_designs: [],
+          weft_design: { sequence: [] },
+        }
       },
       yarn_mappings: [],
       design_image_url: '',
@@ -1137,348 +1638,703 @@ export default function CreateOrder() {
         )}
 
         {/* Step 4: Yarn Requirements */}
-        {currentStep === 4 && (
+        {currentStep === 4 && (() => {
+          const ts = formData.technical_specs || {};
+          const loomReed = parseFloat(ts.on_loom_reed) || parseFloat(ts.order_reed) || 0;
+          const loomPick = parseFloat(ts.on_loom_pick) || parseFloat(ts.order_pick) || 0;
+          const currentCrimp = crimpOverrides || getCrimpAndWastage(ts.weave_type, loomReed, loomPick, ts.loom_type || 'Airjet');
+          const orderWidth = parseFloat(ts.order_width) || 0;
+          const orderReed = parseFloat(ts.order_reed) || 0;
+          const orderPick = parseFloat(ts.order_pick) || 0;
+          const dd = ts.design_details || { warp_designs: [], weft_design: { sequence: [] } };
+          const numWarps = ts.num_warps || 1;
+          const warpResults = yarnEntryMode === 'design_details' ? computeWarpResults() : [];
+          const weftResults = yarnEntryMode === 'design_details' ? computeWeftResults() : [];
+          const totalWarpKg = warpResults.reduce((s, wr) => s + (wr.colorResults || []).reduce((ss, cr) => ss + cr.kg, 0), 0);
+          const totalWeftKg = weftResults.reduce((s, wr) => s + wr.kg, 0);
+
+          const kgBadge = (kg) => (
+            <span style={{ display: 'inline-block', padding: '0.3rem 0.6rem', backgroundColor: kg > 0 ? '#ecfdf5' : 'var(--surface-current)', color: kg > 0 ? '#059669' : 'var(--text-muted-current)', borderRadius: '6px', border: kg > 0 ? '1px solid #a7f3d0' : '1px solid var(--border-current)', fontWeight: 'bold', minWidth: '75px', textAlign: 'right' }}>
+              {kg > 0 ? `${Math.round(kg)} kg` : '—'}
+            </span>
+          );
+
+          return (
           <div className="fade-in">
+            {/* Header with Toggle */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
               <div>
                 <h2 style={{ margin: '0 0 0.25rem 0' }}>Enter Yarn Requirements</h2>
                 <p style={{ margin: 0, color: 'var(--text-muted-current)', fontSize: '0.875rem' }}>
-                  Specify yarn quantity for each mapped count and color.
+                  {yarnEntryMode === 'design_details'
+                    ? 'Construct your design repeat pattern — yarn KG will be auto-calculated.'
+                    : 'Specify yarn quantity manually for each count and color.'}
                 </p>
               </div>
-
-              {/* Mode Toggle Switch */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: 'var(--surface-current)', padding: '0.3rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-current)' }}>
-                <button
-                  type="button"
-                  onClick={() => setYarnInputMode('bundles_knots')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.45rem 0.9rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: 'none',
-                    backgroundColor: yarnInputMode === 'bundles_knots' ? 'var(--color-primary)' : 'transparent',
-                    color: yarnInputMode === 'bundles_knots' ? 'white' : 'var(--text-color)',
-                    fontWeight: yarnInputMode === 'bundles_knots' ? '600' : 'normal',
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    boxShadow: yarnInputMode === 'bundles_knots' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
-                  }}
-                >
-                  <Package size={15} /> Bundles & Knots
+                <button type="button" onClick={() => setYarnEntryMode('design_details')}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', borderRadius: 'var(--radius-sm)', border: 'none', backgroundColor: yarnEntryMode === 'design_details' ? 'var(--color-primary)' : 'transparent', color: yarnEntryMode === 'design_details' ? 'white' : 'var(--text-color)', fontWeight: yarnEntryMode === 'design_details' ? '600' : 'normal', fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: yarnEntryMode === 'design_details' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none' }}>
+                  <Zap size={15} /> Enter Design Details
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setYarnInputMode('kg')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.45rem 0.9rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: 'none',
-                    backgroundColor: yarnInputMode === 'kg' ? 'var(--color-primary)' : 'transparent',
-                    color: yarnInputMode === 'kg' ? 'white' : 'var(--text-color)',
-                    fontWeight: yarnInputMode === 'kg' ? '600' : 'normal',
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    boxShadow: yarnInputMode === 'kg' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
-                  }}
-                >
-                  <Scale size={15} /> Direct KG
+                <button type="button" onClick={() => setYarnEntryMode('manual')}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', borderRadius: 'var(--radius-sm)', border: 'none', backgroundColor: yarnEntryMode === 'manual' ? 'var(--color-primary)' : 'transparent', color: yarnEntryMode === 'manual' ? 'white' : 'var(--text-color)', fontWeight: yarnEntryMode === 'manual' ? '600' : 'normal', fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: yarnEntryMode === 'manual' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none' }}>
+                  <PenLine size={15} /> Enter Manually
                 </button>
               </div>
             </div>
 
-            {yarnInputMode === 'bundles_knots' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1rem', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#166534' }}>
-                <Info size={16} style={{ flexShrink: 0 }} />
-                <span>
-                  <strong>Standard Packing Rule:</strong> 1 Bundle = <strong>4.600 KG</strong>. Knots per bundle is automatically calculated from the yarn resultant count (e.g., 32s = 32 knots/bdl, 2/32s = 16 knots/bdl).
-                </span>
+            {/* ═══════════════ DESIGN DETAILS MODE ═══════════════ */}
+            {yarnEntryMode === 'design_details' && (
+              <div>
+                {/* ── 1. Crimp & Wastage Panel (First) ── */}
+                <div style={{ marginBottom: '1.5rem', border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                  <button type="button" onClick={() => setShowCrimpPanel(!showCrimpPanel)}
+                    style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', border: 'none', cursor: 'pointer', backgroundColor: '#f0f9ff', color: '#1e40af', fontWeight: '600', fontSize: '0.85rem' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <Info size={16} />
+                      Crimp & Wastage — Loom: <strong style={{ color: '#1e3a8a' }}>{ts.loom_type || 'Airjet'}</strong> • Weave: <strong>{ts.weave_type || 'Plain'}</strong>
+                      <span style={{ fontWeight: 'normal', color: '#3b82f6', fontSize: '0.8rem', marginLeft: '0.25rem' }}>
+                        (Warp Crimp: {((crimpOverrides || currentCrimp).warpCrimp * 100).toFixed(1)}% | Weft Crimp: {((crimpOverrides || currentCrimp).weftCrimp * 100).toFixed(1)}% | Warp Waste: {((crimpOverrides || currentCrimp).warpWastage * 100).toFixed(1)}% | Weft Waste: {((crimpOverrides || currentCrimp).weftWastage * 100).toFixed(1)}%)
+                      </span>
+                    </span>
+                    {showCrimpPanel ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+                  {showCrimpPanel && (
+                    <div style={{ padding: '1rem', backgroundColor: 'white', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem', alignItems: 'flex-end' }}>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: '0.8rem', fontWeight: '600', color: '#1e40af' }}>Loom Type</label>
+                        <select
+                          className="input-field"
+                          value={ts.loom_type || 'Airjet'}
+                          onChange={e => handleLoomTypeChangeInCrimp(e.target.value)}
+                          style={{ borderColor: '#93c5fd', backgroundColor: '#f8fafc', fontWeight: '600' }}
+                        >
+                          {LOOM_TYPES.map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                      </div>
+                      {[{ label: 'Warp Crimp %', key: 'warpCrimp' }, { label: 'Weft Crimp %', key: 'weftCrimp' }, { label: 'Warp Wastage %', key: 'warpWastage' }, { label: 'Weft Wastage %', key: 'weftWastage' }].map(({ label, key }) => (
+                        <div key={key} className="input-group" style={{ marginBottom: 0 }}>
+                          <label className="input-label" style={{ fontSize: '0.8rem' }}>{label}</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            className="input-field"
+                            value={((crimpOverrides || currentCrimp)[key] * 100).toFixed(1)}
+                            onChange={e => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setCrimpOverrides(prev => ({ ...(prev || currentCrimp), [key]: val / 100 }));
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', alignItems: 'center', height: '100%', paddingBottom: '2px' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const def = getCrimpAndWastage(ts.weave_type, ts.on_loom_reed || ts.order_reed, ts.on_loom_pick || ts.order_pick, ts.loom_type || 'Airjet');
+                            setCrimpOverrides(def);
+                          }}
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          title="Recalculate industry standard % for this loom and weave"
+                        >
+                          <RefreshCw size={14} style={{ marginRight: '0.3rem' }} /> Recalculate %
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── 2. Warp Design Builder (per warp) ── */}
+                {Array.from({ length: numWarps }, (_, wi) => {
+                  const wd = dd.warp_designs?.[wi] || { sequence: [], num_repeats: '', extra_threads: '' };
+                  const wrResult = warpResults[wi];
+                  const autoExtra = calculateAutoExtraThreads(wd, ts);
+                  const isOverridden = !!wd.extra_threads_manual_override;
+                  const targetTotalEnds = orderWidth > 0 && loomReed > 0 ? Math.round(orderWidth * loomReed) : 0;
+                  const endsInOneRepeat = wrResult?.endsInOneRepeat || 0;
+                  const repeats = parseFloat(wd.num_repeats) || 0;
+                  const patternEnds = Math.round(endsInOneRepeat * repeats);
+                  const calculatedWidthNum = wrResult?.calculatedWidth && wrResult.calculatedWidth !== '—' ? parseFloat(wrResult.calculatedWidth) : null;
+                  const isWidthMatched = calculatedWidthNum !== null && orderWidth > 0 && Math.abs(calculatedWidthNum - orderWidth) <= 0.2;
+
+                  return (
+                    <div key={`warp-builder-${wi}`} style={{ marginBottom: '1.5rem', border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
+                      <h3 style={{ fontSize: '1.05rem', color: 'var(--color-primary)', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
+                        Warp {numWarps > 1 ? wi + 1 : ''} — Design Builder
+                      </h3>
+
+                      <SequenceBuilder
+                        designKey="warp"
+                        warpIdx={wi}
+                        valueField="ends"
+                        seq={wd.sequence || []}
+                        options={getAvailableDesignOptions('warp', wi)}
+                        yarnCounts={yarnCounts}
+                        formatYarnPreview={formatYarnPreview}
+                        onAdd={opt => addToSequence('warp', wi, opt)}
+                        onRemove={sIdx => removeFromSequence('warp', wi, sIdx)}
+                        onMove={(sIdx, dir) => moveSequenceItem('warp', wi, sIdx, dir)}
+                        onUpdateValue={(sIdx, f, v) => updateSequenceValue('warp', wi, sIdx, f, v)}
+                        onUpdateChainEntryValue={(sIdx, eIdx, f, v) => updateChainEntryValue('warp', wi, sIdx, eIdx, f, v)}
+                        onChainSelected={sel => chainSelected('warp', wi, sel)}
+                        onUnchainItem={sIdx => unchainItem('warp', wi, sIdx)}
+                      />
+
+                      {/* Repeat & Extra Threads Controls + Metrics */}
+                      <div style={{
+                        marginTop: '1rem',
+                        padding: '1.1rem',
+                        backgroundColor: 'var(--surface-current)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-current)'
+                      }}>
+                        {/* Top Inputs: 2 well-spaced columns */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+                          {/* Repeats Input */}
+                          <div className="input-group" style={{ marginBottom: 0 }}>
+                            <label className="input-label" style={{ fontSize: '0.85rem', fontWeight: '600' }}>
+                              Number of Repeats
+                            </label>
+                            <input
+                              type="number"
+                              className="input-field"
+                              value={wd.num_repeats}
+                              onChange={e => updateWarpDesignField(wi, 'num_repeats', e.target.value)}
+                              placeholder="e.g. 15"
+                              style={{ height: '40px', fontSize: '0.95rem' }}
+                            />
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '0.35rem' }}>
+                              {endsInOneRepeat > 0 && repeats > 0 ? (
+                                <span>{endsInOneRepeat} ends/rep × {repeats} reps = <strong style={{ color: 'var(--text-current)' }}>{patternEnds.toLocaleString()}</strong> pattern ends</span>
+                              ) : (
+                                <span>Enter repeats to calculate total pattern ends</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Extra Threads Input */}
+                          <div className="input-group" style={{ marginBottom: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.35rem' }}>
+                              <label className="input-label" style={{ fontSize: '0.85rem', fontWeight: '600', marginBottom: 0 }}>
+                                Extra Threads (Selvedge, Leno)
+                              </label>
+                              {isOverridden ? (
+                                <button
+                                  type="button"
+                                  onClick={() => resetExtraThreadsToAuto(wi)}
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    padding: '2px 8px',
+                                    backgroundColor: '#fef3c7',
+                                    color: '#92400e',
+                                    border: '1px solid #fde68a',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontWeight: '600',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                  title={`Reset to auto-calculated extra threads (${autoExtra}) to match on-loom width`}
+                                >
+                                  <RefreshCw size={11} /> Overridden · Auto ({autoExtra})
+                                </button>
+                              ) : (
+                                (repeats > 0 && wd.extra_threads !== '') ? (
+                                  <span
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      padding: '2px 8px',
+                                      backgroundColor: '#dcfce7',
+                                      color: '#15803d',
+                                      border: '1px solid #bbf7d0',
+                                      borderRadius: '4px',
+                                      fontWeight: '600'
+                                    }}
+                                    title={`Auto-calculated to match loom width of ${orderWidth}"`}
+                                  >
+                                    ✓ Auto-matched
+                                  </span>
+                                ) : null
+                              )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <input
+                                type="number"
+                                className="input-field"
+                                value={wd.extra_threads}
+                                onChange={e => updateWarpDesignField(wi, 'extra_threads', e.target.value)}
+                                placeholder={autoExtra > 0 ? String(autoExtra) : "e.g. 188"}
+                                style={{
+                                  flex: 1,
+                                  height: '40px',
+                                  fontSize: '0.95rem',
+                                  borderColor: isOverridden ? '#f59e0b' : undefined,
+                                  backgroundColor: isOverridden ? '#fffbeb' : undefined
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => resetExtraThreadsToAuto(wi)}
+                                className="btn btn-secondary"
+                                style={{
+                                  height: '40px',
+                                  padding: '0 1rem',
+                                  fontSize: '0.8rem',
+                                  fontWeight: '600',
+                                  whiteSpace: 'nowrap',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  borderColor: '#cbd5e1'
+                                }}
+                                title="Auto-calculate extra threads needed to match on-loom width"
+                              >
+                                <RefreshCw size={13} /> Auto Match
+                              </button>
+                            </div>
+
+                            {orderWidth > 0 && loomReed > 0 && repeats > 0 && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '0.35rem' }}>
+                                Target: {targetTotalEnds.toLocaleString()} ends ({orderWidth}" × {loomReed} loom reed) − {patternEnds.toLocaleString()} pattern = <strong style={{ color: 'var(--text-current)' }}>{autoExtra}</strong> extra
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Bottom Metrics Bar */}
+                        {wrResult && (
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                            gap: '0.75rem',
+                            marginTop: '1rem',
+                            paddingTop: '1rem',
+                            borderTop: '1px solid var(--border-current)'
+                          }}>
+                            <div style={{ backgroundColor: 'white', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid var(--border-current)' }}>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ends / Repeat</div>
+                              <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-current)', marginTop: '2px' }}>{wrResult.endsInOneRepeat || '—'}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)' }}>1 pattern repeat</div>
+                            </div>
+
+                            <div style={{ backgroundColor: 'white', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid var(--border-current)' }}>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Pattern Ends</div>
+                              <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-current)', marginTop: '2px' }}>{patternEnds ? patternEnds.toLocaleString() : '—'}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)' }}>{endsInOneRepeat} × {repeats} reps</div>
+                            </div>
+
+                            <div style={{ backgroundColor: 'white', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid var(--border-current)' }}>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Ends</div>
+                              <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-current)', marginTop: '2px' }}>{wrResult.totalEnds ? Math.round(wrResult.totalEnds).toLocaleString() : '—'}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted-current)' }}>Pattern + Extra ({wd.extra_threads || 0})</div>
+                            </div>
+
+                            <div style={{
+                              backgroundColor: isWidthMatched ? '#f0fdf4' : (wrResult.calculatedWidth !== '—' && Math.abs((calculatedWidthNum || 0) - orderWidth) > 1 ? '#fef2f2' : 'white'),
+                              padding: '0.65rem 0.85rem',
+                              borderRadius: '6px',
+                              border: `1px solid ${isWidthMatched ? '#bbf7d0' : (wrResult.calculatedWidth !== '—' && Math.abs((calculatedWidthNum || 0) - orderWidth) > 1 ? '#fecaca' : 'var(--border-current)')}`
+                            }}>
+                              <div style={{ fontSize: '0.7rem', color: isWidthMatched ? '#166534' : 'var(--text-muted-current)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Calc. Loom Width</div>
+                              <div style={{ fontSize: '1.25rem', fontWeight: '800', color: isWidthMatched ? '#15803d' : (Math.abs((calculatedWidthNum || 0) - orderWidth) > 1 ? '#dc2626' : 'var(--text-current)'), marginTop: '2px' }}>
+                                {wrResult.calculatedWidth !== '—' ? `${wrResult.calculatedWidth}"` : '—'}
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: isWidthMatched ? '#166534' : '#dc2626', fontWeight: '600' }}>
+                                {isWidthMatched ? `✓ Matches Order (${orderWidth}")` : (orderWidth > 0 && calculatedWidthNum !== null ? `Order is ${orderWidth}" (diff: ${Math.abs(calculatedWidthNum - orderWidth).toFixed(2)}")` : '—')}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Color-wise results */}
+                      {wrResult?.colorResults?.length > 0 && (
+                        <div style={{ marginTop: '0.75rem', border: '1px solid #bbf7d0', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                          <table className="table" style={{ marginBottom: 0 }}>
+                            <thead><tr style={{ backgroundColor: '#f0fdf4' }}>
+                              <th>Count</th><th>Color</th><th style={{ textAlign: 'right' }}>Total Ends</th><th style={{ textAlign: 'right' }}>Bundles</th><th style={{ textAlign: 'right' }}>Yarn (KG)</th>
+                            </tr></thead>
+                            <tbody>
+                              {wrResult.colorResults.map((cr, i) => (
+                                <tr key={i}>
+                                  <td style={{ fontWeight: '500' }}>{cr.yc ? formatYarnPreview(cr.yc) : cr.countId}</td>
+                                  <td>{cr.color || '—'}</td>
+                                  <td style={{ textAlign: 'right', fontWeight: '600' }}>{Math.round(cr.totalEnds)}</td>
+                                  <td style={{ textAlign: 'right', fontSize: '0.85rem' }}>{cr.kg > 0 ? `${cr.bundles} bdl ${cr.knots} knt` : '—'}</td>
+                                  <td style={{ textAlign: 'right' }}>{kgBadge(cr.kg)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* ── 3. Weft Design Builder ── */}
+                <div style={{ marginBottom: '1.5rem', border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
+                  <h3 style={{ fontSize: '1.05rem', color: 'var(--color-primary)', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>
+                    Weft — Design Builder
+                  </h3>
+
+                  <SequenceBuilder
+                    designKey="weft"
+                    warpIdx={0}
+                    valueField="picks"
+                    seq={dd.weft_design?.sequence || []}
+                    options={getAvailableDesignOptions('weft', 0)}
+                    yarnCounts={yarnCounts}
+                    formatYarnPreview={formatYarnPreview}
+                    onAdd={opt => addToSequence('weft', 0, opt)}
+                    onRemove={sIdx => removeFromSequence('weft', 0, sIdx)}
+                    onMove={(sIdx, dir) => moveSequenceItem('weft', 0, sIdx, dir)}
+                    onUpdateValue={(sIdx, f, v) => updateSequenceValue('weft', 0, sIdx, f, v)}
+                    onUpdateChainEntryValue={(sIdx, eIdx, f, v) => updateChainEntryValue('weft', 0, sIdx, eIdx, f, v)}
+                    onChainSelected={sel => chainSelected('weft', 0, sel)}
+                    onUnchainItem={sIdx => unchainItem('weft', 0, sIdx)}
+                  />
+
+                  {/* Weft summary stats */}
+                  {weftResults.length > 0 && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <div style={{ display: 'flex', gap: '2rem', marginBottom: '0.75rem', padding: '0.5rem 0.75rem', backgroundColor: 'var(--surface-current)', borderRadius: 'var(--radius-md)' }}>
+                        <div><span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>Total Picks / Repeat</span><div style={{ fontWeight: '700' }}>{flattenSequence(dd.weft_design?.sequence || []).reduce((s, e) => s + (parseFloat(e.picks) || 0), 0) || '—'}</div></div>
+                        <div><span style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)' }}>Loom Pick (PPI)</span><div style={{ fontWeight: '700' }}>{loomPick || '—'}</div></div>
+                      </div>
+                      <div style={{ border: '1px solid #bbf7d0', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                        <table className="table" style={{ marginBottom: 0 }}>
+                          <thead><tr style={{ backgroundColor: '#f0fdf4' }}>
+                            <th>Count</th><th>Color</th><th style={{ textAlign: 'right' }}>Eff. PPI</th><th style={{ textAlign: 'right' }}>Bundles</th><th style={{ textAlign: 'right' }}>Yarn (KG)</th>
+                          </tr></thead>
+                          <tbody>
+                            {weftResults.map((wr, i) => (
+                              <tr key={i}>
+                                <td style={{ fontWeight: '500' }}>{wr.yc ? formatYarnPreview(wr.yc) : wr.countId}</td>
+                                <td>{wr.color || '—'}</td>
+                                <td style={{ textAlign: 'right', fontSize: '0.85rem' }}>{wr.effectivePPI}</td>
+                                <td style={{ textAlign: 'right', fontSize: '0.85rem' }}>{wr.kg > 0 ? `${wr.bundles} bdl ${wr.knots} knt` : '—'}</td>
+                                <td style={{ textAlign: 'right' }}>{kgBadge(wr.kg)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── 4. Grand Totals & Apply ── */}
+                {(totalWarpKg > 0 || totalWeftKg > 0) && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', padding: '1rem 1.25rem', marginBottom: '1.5rem', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                      <div><span style={{ fontSize: '0.8rem', color: '#166534' }}>Total Warp</span><div style={{ fontWeight: '700', fontSize: '1.15rem', color: '#059669' }}>{Math.round(totalWarpKg)} KG</div></div>
+                      <div><span style={{ fontSize: '0.8rem', color: '#166534' }}>Total Weft</span><div style={{ fontWeight: '700', fontSize: '1.15rem', color: '#059669' }}>{Math.round(totalWeftKg)} KG</div></div>
+                      <div><span style={{ fontSize: '0.8rem', color: '#166534' }}>Grand Total</span><div style={{ fontWeight: '700', fontSize: '1.25rem', color: '#047857' }}>{Math.round(totalWarpKg + totalWeftKg)} KG</div></div>
+                    </div>
+                    <button type="button" onClick={applyDesignCalcToMappings} className="btn btn-primary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}>
+                      {applyFeedback ? (
+                        <>
+                          <Check size={16} style={{ marginRight: '0.3rem', color: '#86efac' }} /> Applied to Order!
+                        </>
+                      ) : (
+                        <>
+                          <Check size={16} style={{ marginRight: '0.3rem' }} /> Apply to Order
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
-            
-            {/* Warp Section */}
-            <div style={{ marginBottom: '2rem' }}>
-              <h3 style={{ fontSize: '1.1rem', color: 'var(--color-primary)', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>Warp Requirements</h3>
-              <div style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '15%' }}>Position</th>
-                      <th style={{ width: yarnInputMode === 'bundles_knots' ? '30%' : '40%' }}>Count & Spec</th>
-                      <th style={{ width: yarnInputMode === 'bundles_knots' ? '20%' : '20%' }}>Color</th>
-                      {yarnInputMode === 'bundles_knots' ? (
-                        <>
-                          <th style={{ width: '12%', textAlign: 'right' }}>Bundles</th>
-                          <th style={{ width: '11%', textAlign: 'right' }}>Knots</th>
-                          <th style={{ width: '12%', textAlign: 'right' }}>Calculated (KG)</th>
-                        </>
-                      ) : (
-                        <th style={{ width: '25%', textAlign: 'right' }}>Requirement (KG)</th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {formData.yarn_mappings.filter(m => m.type === 'warp' && (formData.technical_specs?.warp_selections?.[m.warpIdx || 0] || []).includes(m.countId)).length === 0 ? (
-                      <tr>
-                        <td colSpan={yarnInputMode === 'bundles_knots' ? 6 : 4} style={{ textAlign: 'center', color: 'var(--text-muted-current)', padding: '1rem' }}>No warp yarns mapped. Go back to add warp specifications.</td>
-                      </tr>
-                    ) : (
-                      formData.yarn_mappings.map((m, idx) => {
-                        if (m.type !== 'warp' || !(formData.technical_specs?.warp_selections?.[m.warpIdx || 0] || []).includes(m.countId)) return null;
-                        const yc = yarnCounts.find(y => y.id === m.countId);
-                        const packingInfo = getYarnCountPackingInfo(yc);
-                        return (
-                          <tr key={idx}>
-                            <td style={{ textTransform: 'capitalize', fontWeight: '500' }}>Warp {m.warpIdx + 1}</td>
-                            <td>
-                              <div style={{ fontWeight: '500' }}>{formatYarnPreview(yc)}</div>
-                              {yarnInputMode === 'bundles_knots' && (
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
-                                  <span style={{ backgroundColor: 'var(--surface-current)', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--border-current)' }}>
-                                    Eff: {packingInfo.effCount}s • {packingInfo.knotsPerBundle} knts/bdl • {packingInfo.kgPerKnot.toFixed(3)} kg/knt
-                                  </span>
-                                </div>
-                              )}
-                            </td>
-                            <td>{m.color || <span style={{ color: 'red' }}>Enter Color in prev step</span>}</td>
-                            {yarnInputMode === 'bundles_knots' ? (
-                              <>
-                                <td style={{ textAlign: 'right' }}>
-                                  <input 
-                                    type="number" 
-                                    step="any"
-                                    min="0"
-                                    className="input-field" 
-                                    style={{ maxWidth: '90px', marginLeft: 'auto', textAlign: 'right' }}
-                                    placeholder="0"
-                                    value={m.bundles !== undefined ? m.bundles : ''}
-                                    onChange={e => {
-                                      const val = e.target.value;
-                                      const updated = [...formData.yarn_mappings];
-                                      const computedKg = calculateKgFromBundlesKnots(yc, val, m.knots);
-                                      updated[idx] = {
-                                        ...updated[idx],
-                                        bundles: val,
-                                        kg: computedKg !== '' ? computedKg : (val || m.knots ? 0 : ''),
-                                        unit_mode: 'bundles_knots'
-                                      };
-                                      setFormData({...formData, yarn_mappings: updated});
-                                    }}
-                                  />
-                                </td>
-                                <td style={{ textAlign: 'right' }}>
-                                  <input 
-                                    type="number" 
-                                    step="any"
-                                    min="0"
-                                    className="input-field" 
-                                    style={{ maxWidth: '85px', marginLeft: 'auto', textAlign: 'right' }}
-                                    placeholder="0"
-                                    value={m.knots !== undefined ? m.knots : ''}
-                                    onChange={e => {
-                                      const val = e.target.value;
-                                      const updated = [...formData.yarn_mappings];
-                                      const computedKg = calculateKgFromBundlesKnots(yc, m.bundles, val);
-                                      updated[idx] = {
-                                        ...updated[idx],
-                                        knots: val,
-                                        kg: computedKg !== '' ? computedKg : (m.bundles || val ? 0 : ''),
-                                        unit_mode: 'bundles_knots'
-                                      };
-                                      setFormData({...formData, yarn_mappings: updated});
-                                    }}
-                                  />
-                                </td>
-                                <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
-                                  <span style={{ 
-                                    display: 'inline-block', 
-                                    padding: '0.35rem 0.6rem', 
-                                    backgroundColor: (m.kg && parseFloat(m.kg) > 0) ? '#ecfdf5' : 'var(--surface-current)',
-                                    color: (m.kg && parseFloat(m.kg) > 0) ? '#059669' : 'var(--text-muted-current)',
-                                    borderRadius: '6px',
-                                    border: (m.kg && parseFloat(m.kg) > 0) ? '1px solid #a7f3d0' : '1px solid var(--border-current)',
-                                    minWidth: '85px'
-                                  }}>
-                                    {m.kg ? `${parseFloat(m.kg).toFixed(2)} kg` : '—'}
-                                  </span>
-                                </td>
-                              </>
-                            ) : (
-                              <td style={{ textAlign: 'right' }}>
-                                <input 
-                                  type="number" 
-                                  step="any"
-                                  className="input-field" 
-                                  style={{ maxWidth: '120px', marginLeft: 'auto', textAlign: 'right' }}
-                                  value={m.kg !== undefined ? m.kg : ''}
-                                  placeholder="0.00"
-                                  onChange={e => {
-                                    const updated = [...formData.yarn_mappings];
-                                    updated[idx] = {
-                                      ...updated[idx],
-                                      kg: e.target.value,
-                                      unit_mode: 'kg'
-                                    };
-                                    setFormData({...formData, yarn_mappings: updated});
-                                  }}
-                                />
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
 
-            {/* Weft Section */}
-            <div style={{ marginBottom: '2rem' }}>
-              <h3 style={{ fontSize: '1.1rem', color: 'var(--color-primary)', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>Weft Requirements</h3>
-              <div style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '15%' }}>Position</th>
-                      <th style={{ width: yarnInputMode === 'bundles_knots' ? '30%' : '40%' }}>Count & Spec</th>
-                      <th style={{ width: yarnInputMode === 'bundles_knots' ? '20%' : '20%' }}>Color</th>
-                      {yarnInputMode === 'bundles_knots' ? (
-                        <>
-                          <th style={{ width: '12%', textAlign: 'right' }}>Bundles</th>
-                          <th style={{ width: '11%', textAlign: 'right' }}>Knots</th>
-                          <th style={{ width: '12%', textAlign: 'right' }}>Calculated (KG)</th>
-                        </>
-                      ) : (
-                        <th style={{ width: '25%', textAlign: 'right' }}>Requirement (KG)</th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {formData.yarn_mappings.filter(m => m.type === 'weft' && (formData.technical_specs?.weft_selections?.[0] || []).includes(m.countId)).length === 0 ? (
-                      <tr>
-                        <td colSpan={yarnInputMode === 'bundles_knots' ? 6 : 4} style={{ textAlign: 'center', color: 'var(--text-muted-current)', padding: '1rem' }}>No weft yarns mapped. Go back to add weft specifications.</td>
-                      </tr>
-                    ) : (
-                      formData.yarn_mappings.map((m, idx) => {
-                        if (m.type !== 'weft' || !(formData.technical_specs?.weft_selections?.[0] || []).includes(m.countId)) return null;
-                        const yc = yarnCounts.find(y => y.id === m.countId);
-                        const packingInfo = getYarnCountPackingInfo(yc);
-                        return (
-                          <tr key={idx}>
-                            <td style={{ textTransform: 'capitalize', fontWeight: '500' }}>Weft</td>
-                            <td>
-                              <div style={{ fontWeight: '500' }}>{formatYarnPreview(yc)}</div>
-                              {yarnInputMode === 'bundles_knots' && (
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
-                                  <span style={{ backgroundColor: 'var(--surface-current)', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--border-current)' }}>
-                                    Eff: {packingInfo.effCount}s • {packingInfo.knotsPerBundle} knts/bdl • {packingInfo.kgPerKnot.toFixed(3)} kg/knt
-                                  </span>
-                                </div>
-                              )}
-                            </td>
-                            <td>{m.color || <span style={{ color: 'red' }}>Enter Color in prev step</span>}</td>
-                            {yarnInputMode === 'bundles_knots' ? (
-                              <>
-                                <td style={{ textAlign: 'right' }}>
-                                  <input 
-                                    type="number" 
-                                    step="any"
-                                    min="0"
-                                    className="input-field" 
-                                    style={{ maxWidth: '90px', marginLeft: 'auto', textAlign: 'right' }}
-                                    placeholder="0"
-                                    value={m.bundles !== undefined ? m.bundles : ''}
-                                    onChange={e => {
-                                      const val = e.target.value;
-                                      const updated = [...formData.yarn_mappings];
-                                      const computedKg = calculateKgFromBundlesKnots(yc, val, m.knots);
-                                      updated[idx] = {
-                                        ...updated[idx],
-                                        bundles: val,
-                                        kg: computedKg !== '' ? computedKg : (val || m.knots ? 0 : ''),
-                                        unit_mode: 'bundles_knots'
-                                      };
-                                      setFormData({...formData, yarn_mappings: updated});
-                                    }}
-                                  />
-                                </td>
-                                <td style={{ textAlign: 'right' }}>
-                                  <input 
-                                    type="number" 
-                                    step="any"
-                                    min="0"
-                                    className="input-field" 
-                                    style={{ maxWidth: '85px', marginLeft: 'auto', textAlign: 'right' }}
-                                    placeholder="0"
-                                    value={m.knots !== undefined ? m.knots : ''}
-                                    onChange={e => {
-                                      const val = e.target.value;
-                                      const updated = [...formData.yarn_mappings];
-                                      const computedKg = calculateKgFromBundlesKnots(yc, m.bundles, val);
-                                      updated[idx] = {
-                                        ...updated[idx],
-                                        knots: val,
-                                        kg: computedKg !== '' ? computedKg : (m.bundles || val ? 0 : ''),
-                                        unit_mode: 'bundles_knots'
-                                      };
-                                      setFormData({...formData, yarn_mappings: updated});
-                                    }}
-                                  />
-                                </td>
-                                <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
-                                  <span style={{ 
-                                    display: 'inline-block', 
-                                    padding: '0.35rem 0.6rem', 
-                                    backgroundColor: (m.kg && parseFloat(m.kg) > 0) ? '#ecfdf5' : 'var(--surface-current)',
-                                    color: (m.kg && parseFloat(m.kg) > 0) ? '#059669' : 'var(--text-muted-current)',
-                                    borderRadius: '6px',
-                                    border: (m.kg && parseFloat(m.kg) > 0) ? '1px solid #a7f3d0' : '1px solid var(--border-current)',
-                                    minWidth: '85px'
-                                  }}>
-                                    {m.kg ? `${parseFloat(m.kg).toFixed(2)} kg` : '—'}
-                                  </span>
-                                </td>
-                              </>
-                            ) : (
-                              <td style={{ textAlign: 'right' }}>
-                                <input 
-                                  type="number" 
-                                  step="any"
-                                  className="input-field" 
-                                  style={{ maxWidth: '120px', marginLeft: 'auto', textAlign: 'right' }}
-                                  value={m.kg !== undefined ? m.kg : ''}
-                                  placeholder="0.00"
-                                  onChange={e => {
-                                    const updated = [...formData.yarn_mappings];
-                                    updated[idx] = {
-                                      ...updated[idx],
-                                      kg: e.target.value,
-                                      unit_mode: 'kg'
-                                    };
-                                    setFormData({...formData, yarn_mappings: updated});
-                                  }}
-                                />
-                              </td>
-                            )}
+            {/* ═══════════════ MANUAL ENTRY MODE ═══════════════ */}
+            {yarnEntryMode === 'manual' && (
+              <div>
+                {/* Sub-toggle: Bundles/Knots vs Direct KG */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: 'var(--surface-current)', padding: '0.3rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-current)' }}>
+                    <button
+                      type="button"
+                      onClick={() => setYarnInputMode('bundles_knots')}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                        padding: '0.4rem 0.8rem', borderRadius: 'var(--radius-sm)', border: 'none',
+                        backgroundColor: yarnInputMode === 'bundles_knots' ? 'var(--color-primary)' : 'transparent',
+                        color: yarnInputMode === 'bundles_knots' ? 'white' : 'var(--text-color)',
+                        fontWeight: yarnInputMode === 'bundles_knots' ? '600' : 'normal',
+                        fontSize: '0.8rem', cursor: 'pointer', transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <Package size={14} /> Bundles & Knots
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setYarnInputMode('kg')}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                        padding: '0.4rem 0.8rem', borderRadius: 'var(--radius-sm)', border: 'none',
+                        backgroundColor: yarnInputMode === 'kg' ? 'var(--color-primary)' : 'transparent',
+                        color: yarnInputMode === 'kg' ? 'white' : 'var(--text-color)',
+                        fontWeight: yarnInputMode === 'kg' ? '600' : 'normal',
+                        fontSize: '0.8rem', cursor: 'pointer', transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <Scale size={14} /> Direct KG
+                    </button>
+                  </div>
+                </div>
+
+                {yarnInputMode === 'bundles_knots' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1rem', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', fontSize: '0.85rem', color: '#166534' }}>
+                    <Info size={16} style={{ flexShrink: 0 }} />
+                    <span>
+                      <strong>Standard Packing Rule:</strong> 1 Bundle = <strong>4.600 KG</strong>. Knots per bundle is automatically calculated from the yarn resultant count (e.g., 32s = 32 knots/bdl, 2/32s = 16 knots/bdl).
+                    </span>
+                  </div>
+                )}
+
+                {/* Warp Section - Manual */}
+                <div style={{ marginBottom: '2rem' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--color-primary)', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>Warp Requirements</h3>
+                  <div style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: '15%' }}>Position</th>
+                          <th style={{ width: yarnInputMode === 'bundles_knots' ? '30%' : '40%' }}>Count & Spec</th>
+                          <th style={{ width: yarnInputMode === 'bundles_knots' ? '20%' : '20%' }}>Color</th>
+                          {yarnInputMode === 'bundles_knots' ? (
+                            <>
+                              <th style={{ width: '12%', textAlign: 'right' }}>Bundles</th>
+                              <th style={{ width: '11%', textAlign: 'right' }}>Knots</th>
+                              <th style={{ width: '12%', textAlign: 'right' }}>Calculated (KG)</th>
+                            </>
+                          ) : (
+                            <th style={{ width: '25%', textAlign: 'right' }}>Requirement (KG)</th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {formData.yarn_mappings.filter(m => m.type === 'warp' && (formData.technical_specs?.warp_selections?.[m.warpIdx || 0] || []).includes(m.countId)).length === 0 ? (
+                          <tr>
+                            <td colSpan={yarnInputMode === 'bundles_knots' ? 6 : 4} style={{ textAlign: 'center', color: 'var(--text-muted-current)', padding: '1rem' }}>No warp yarns mapped. Go back to add warp specifications.</td>
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                        ) : (
+                          formData.yarn_mappings.map((m, idx) => {
+                            if (m.type !== 'warp' || !(formData.technical_specs?.warp_selections?.[m.warpIdx || 0] || []).includes(m.countId)) return null;
+                            const yc = yarnCounts.find(y => y.id === m.countId);
+                            const packingInfo = getYarnCountPackingInfo(yc);
+                            return (
+                              <tr key={idx}>
+                                <td style={{ textTransform: 'capitalize', fontWeight: '500' }}>Warp {m.warpIdx + 1}</td>
+                                <td>
+                                  <div style={{ fontWeight: '500' }}>{formatYarnPreview(yc)}</div>
+                                  {yarnInputMode === 'bundles_knots' && (
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
+                                      <span style={{ backgroundColor: 'var(--surface-current)', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--border-current)' }}>
+                                        Eff: {packingInfo.effCount}s • {packingInfo.knotsPerBundle} knts/bdl • {packingInfo.kgPerKnot.toFixed(3)} kg/knt
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                                <td>{m.color || <span style={{ color: 'red' }}>Enter Color in prev step</span>}</td>
+                                {yarnInputMode === 'bundles_knots' ? (
+                                  <>
+                                    <td style={{ textAlign: 'right' }}>
+                                      <input
+                                        type="number" step="any" min="0"
+                                        className="input-field"
+                                        style={{ maxWidth: '90px', marginLeft: 'auto', textAlign: 'right' }}
+                                        placeholder="0"
+                                        value={m.bundles !== undefined ? m.bundles : ''}
+                                        onChange={e => {
+                                          const val = e.target.value;
+                                          const updated = [...formData.yarn_mappings];
+                                          const computedKg = calculateKgFromBundlesKnots(yc, val, m.knots);
+                                          updated[idx] = { ...updated[idx], bundles: val, kg: computedKg !== '' ? computedKg : (val || m.knots ? 0 : ''), unit_mode: 'bundles_knots' };
+                                          setFormData({...formData, yarn_mappings: updated});
+                                        }}
+                                      />
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                      <input
+                                        type="number" step="any" min="0"
+                                        className="input-field"
+                                        style={{ maxWidth: '85px', marginLeft: 'auto', textAlign: 'right' }}
+                                        placeholder="0"
+                                        value={m.knots !== undefined ? m.knots : ''}
+                                        onChange={e => {
+                                          const val = e.target.value;
+                                          const updated = [...formData.yarn_mappings];
+                                          const computedKg = calculateKgFromBundlesKnots(yc, m.bundles, val);
+                                          updated[idx] = { ...updated[idx], knots: val, kg: computedKg !== '' ? computedKg : (m.bundles || val ? 0 : ''), unit_mode: 'bundles_knots' };
+                                          setFormData({...formData, yarn_mappings: updated});
+                                        }}
+                                      />
+                                    </td>
+                                    <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
+                                      <span style={{
+                                        display: 'inline-block', padding: '0.35rem 0.6rem',
+                                        backgroundColor: (m.kg && parseFloat(m.kg) > 0) ? '#ecfdf5' : 'var(--surface-current)',
+                                        color: (m.kg && parseFloat(m.kg) > 0) ? '#059669' : 'var(--text-muted-current)',
+                                        borderRadius: '6px',
+                                        border: (m.kg && parseFloat(m.kg) > 0) ? '1px solid #a7f3d0' : '1px solid var(--border-current)',
+                                        minWidth: '85px'
+                                      }}>
+                                        {m.kg ? `${parseFloat(m.kg).toFixed(2)} kg` : '—'}
+                                      </span>
+                                    </td>
+                                  </>
+                                ) : (
+                                  <td style={{ textAlign: 'right' }}>
+                                    <input
+                                      type="number" step="any"
+                                      className="input-field"
+                                      style={{ maxWidth: '120px', marginLeft: 'auto', textAlign: 'right' }}
+                                      value={m.kg !== undefined ? m.kg : ''}
+                                      placeholder="0.00"
+                                      onChange={e => {
+                                        const updated = [...formData.yarn_mappings];
+                                        updated[idx] = { ...updated[idx], kg: e.target.value, unit_mode: 'kg' };
+                                        setFormData({...formData, yarn_mappings: updated});
+                                      }}
+                                    />
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Weft Section - Manual */}
+                <div style={{ marginBottom: '2rem' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--color-primary)', marginBottom: '0.75rem', borderBottom: '1px solid var(--border-current)', paddingBottom: '0.25rem' }}>Weft Requirements</h3>
+                  <div style={{ border: '1px solid var(--border-current)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: '15%' }}>Position</th>
+                          <th style={{ width: yarnInputMode === 'bundles_knots' ? '30%' : '40%' }}>Count & Spec</th>
+                          <th style={{ width: yarnInputMode === 'bundles_knots' ? '20%' : '20%' }}>Color</th>
+                          {yarnInputMode === 'bundles_knots' ? (
+                            <>
+                              <th style={{ width: '12%', textAlign: 'right' }}>Bundles</th>
+                              <th style={{ width: '11%', textAlign: 'right' }}>Knots</th>
+                              <th style={{ width: '12%', textAlign: 'right' }}>Calculated (KG)</th>
+                            </>
+                          ) : (
+                            <th style={{ width: '25%', textAlign: 'right' }}>Requirement (KG)</th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {formData.yarn_mappings.filter(m => m.type === 'weft' && (formData.technical_specs?.weft_selections?.[0] || []).includes(m.countId)).length === 0 ? (
+                          <tr>
+                            <td colSpan={yarnInputMode === 'bundles_knots' ? 6 : 4} style={{ textAlign: 'center', color: 'var(--text-muted-current)', padding: '1rem' }}>No weft yarns mapped. Go back to add weft specifications.</td>
+                          </tr>
+                        ) : (
+                          formData.yarn_mappings.map((m, idx) => {
+                            if (m.type !== 'weft' || !(formData.technical_specs?.weft_selections?.[0] || []).includes(m.countId)) return null;
+                            const yc = yarnCounts.find(y => y.id === m.countId);
+                            const packingInfo = getYarnCountPackingInfo(yc);
+                            return (
+                              <tr key={idx}>
+                                <td style={{ textTransform: 'capitalize', fontWeight: '500' }}>Weft</td>
+                                <td>
+                                  <div style={{ fontWeight: '500' }}>{formatYarnPreview(yc)}</div>
+                                  {yarnInputMode === 'bundles_knots' && (
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted-current)', marginTop: '2px' }}>
+                                      <span style={{ backgroundColor: 'var(--surface-current)', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--border-current)' }}>
+                                        Eff: {packingInfo.effCount}s • {packingInfo.knotsPerBundle} knts/bdl • {packingInfo.kgPerKnot.toFixed(3)} kg/knt
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                                <td>{m.color || <span style={{ color: 'red' }}>Enter Color in prev step</span>}</td>
+                                {yarnInputMode === 'bundles_knots' ? (
+                                  <>
+                                    <td style={{ textAlign: 'right' }}>
+                                      <input
+                                        type="number" step="any" min="0"
+                                        className="input-field"
+                                        style={{ maxWidth: '90px', marginLeft: 'auto', textAlign: 'right' }}
+                                        placeholder="0"
+                                        value={m.bundles !== undefined ? m.bundles : ''}
+                                        onChange={e => {
+                                          const val = e.target.value;
+                                          const updated = [...formData.yarn_mappings];
+                                          const computedKg = calculateKgFromBundlesKnots(yc, val, m.knots);
+                                          updated[idx] = { ...updated[idx], bundles: val, kg: computedKg !== '' ? computedKg : (val || m.knots ? 0 : ''), unit_mode: 'bundles_knots' };
+                                          setFormData({...formData, yarn_mappings: updated});
+                                        }}
+                                      />
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                      <input
+                                        type="number" step="any" min="0"
+                                        className="input-field"
+                                        style={{ maxWidth: '85px', marginLeft: 'auto', textAlign: 'right' }}
+                                        placeholder="0"
+                                        value={m.knots !== undefined ? m.knots : ''}
+                                        onChange={e => {
+                                          const val = e.target.value;
+                                          const updated = [...formData.yarn_mappings];
+                                          const computedKg = calculateKgFromBundlesKnots(yc, m.bundles, val);
+                                          updated[idx] = { ...updated[idx], knots: val, kg: computedKg !== '' ? computedKg : (m.bundles || val ? 0 : ''), unit_mode: 'bundles_knots' };
+                                          setFormData({...formData, yarn_mappings: updated});
+                                        }}
+                                      />
+                                    </td>
+                                    <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
+                                      <span style={{
+                                        display: 'inline-block', padding: '0.35rem 0.6rem',
+                                        backgroundColor: (m.kg && parseFloat(m.kg) > 0) ? '#ecfdf5' : 'var(--surface-current)',
+                                        color: (m.kg && parseFloat(m.kg) > 0) ? '#059669' : 'var(--text-muted-current)',
+                                        borderRadius: '6px',
+                                        border: (m.kg && parseFloat(m.kg) > 0) ? '1px solid #a7f3d0' : '1px solid var(--border-current)',
+                                        minWidth: '85px'
+                                      }}>
+                                        {m.kg ? `${parseFloat(m.kg).toFixed(2)} kg` : '—'}
+                                      </span>
+                                    </td>
+                                  </>
+                                ) : (
+                                  <td style={{ textAlign: 'right' }}>
+                                    <input
+                                      type="number" step="any"
+                                      className="input-field"
+                                      style={{ maxWidth: '120px', marginLeft: 'auto', textAlign: 'right' }}
+                                      value={m.kg !== undefined ? m.kg : ''}
+                                      placeholder="0.00"
+                                      onChange={e => {
+                                        const updated = [...formData.yarn_mappings];
+                                        updated[idx] = { ...updated[idx], kg: e.target.value, unit_mode: 'kg' };
+                                        setFormData({...formData, yarn_mappings: updated});
+                                      }}
+                                    />
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
 
             <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-              <button 
+              <button
                 type="button"
                 onClick={handleSaveDraft}
                 className="btn btn-secondary"
@@ -1491,10 +2347,16 @@ export default function CreateOrder() {
               </button>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Step 5: Summary & Submit */}
-        {currentStep === 5 && (
+        {currentStep === 5 && (() => {
+          const hasDesignDetails = Boolean(
+            formData.technical_specs?.design_details?.warp_designs?.some(wd => (wd.sequence || []).length > 0) ||
+            (formData.technical_specs?.design_details?.weft_design?.sequence || []).length > 0
+          );
+          return (
           <div className="fade-in print-area">
             {submittedOrderNumber && (
               <div 
@@ -1519,7 +2381,7 @@ export default function CreateOrder() {
                     Order Finalized & Submitted Successfully!
                   </h3>
                   <p style={{ color: '#047857', margin: 0, fontSize: '0.85rem' }}>
-                    Order Number <strong style={{ textDecoration: 'underline' }}>{submittedOrderNumber}</strong> has been saved. You can print the single-sheet confirmation below.
+                    Order Number <strong style={{ textDecoration: 'underline' }}>{submittedOrderNumber}</strong> has been saved. You can print the confirmation {hasDesignDetails ? '(2 Pages: Commercial Order + Weaving Design)' : 'below'}.
                   </p>
                 </div>
               </div>
@@ -1632,8 +2494,8 @@ export default function CreateOrder() {
                       <tr>
                         <td style={{ padding: '6px 9px', fontWeight: '700', backgroundColor: '#f8fafc', border: '1px solid #94a3b8', color: '#334155' }}>Finished / Order Width</td>
                         <td style={{ padding: '6px 9px', border: '1px solid #94a3b8' }}>{formData.technical_specs?.finished_width || '—'} / {formData.technical_specs?.order_width || '—'}</td>
-                        <td style={{ padding: '6px 9px', fontWeight: '700', backgroundColor: '#f8fafc', border: '1px solid #94a3b8', color: '#334155' }}>Weave / GSM</td>
-                        <td style={{ padding: '6px 9px', border: '1px solid #94a3b8' }}>{formData.technical_specs?.weave_type || '—'} {formData.technical_specs?.gsm ? `• ${formData.technical_specs.gsm} GSM` : ''}</td>
+                        <td style={{ padding: '6px 9px', fontWeight: '700', backgroundColor: '#f8fafc', border: '1px solid #94a3b8', color: '#334155' }}>Weave / Loom / GSM</td>
+                        <td style={{ padding: '6px 9px', border: '1px solid #94a3b8' }}>{formData.technical_specs?.weave_type || '—'} • {formData.technical_specs?.loom_type || 'Airjet'} {formData.technical_specs?.gsm ? `• ${formData.technical_specs.gsm} GSM` : ''}</td>
                       </tr>
                       <tr>
                         <td style={{ padding: '6px 9px', fontWeight: '700', backgroundColor: '#f8fafc', border: '1px solid #94a3b8', color: '#334155' }}>Order Qty / Prod Qty</td>
@@ -1721,7 +2583,7 @@ export default function CreateOrder() {
                                   {totalBundles > 0 || totalKnots > 0 ? `${totalBundles}b ${totalKnots}k` : ''}
                                 </td>
                                 <td style={{ padding: '5px 8px', border: '1px solid #94a3b8', textAlign: 'right', color: '#800000', fontSize: '0.88rem' }}>
-                                  {totalYarnKg.toFixed(2)} kg
+                                  {Math.round(totalYarnKg)} kg
                                 </td>
                               </tr>
                             )}
@@ -1751,7 +2613,7 @@ export default function CreateOrder() {
                                     {totals.bundles > 0 || totals.knots > 0 ? `${totals.bundles}b ${totals.knots}k` : '—'}
                                   </td>
                                   <td style={{ padding: '4.5px 8px', border: '1px solid #94a3b8', textAlign: 'right', fontWeight: '700', color: '#800000' }}>
-                                    {totals.kg.toFixed(2)} kg
+                                    {Math.round(totals.kg)} kg
                                   </td>
                                 </tr>
                               ))}
@@ -1835,6 +2697,43 @@ export default function CreateOrder() {
               </div>
 
             </div>
+
+            {/* Visual Page 2 Divider on Screen */}
+            {hasDesignDetails && (
+              <div className="no-print" style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '1rem', 
+                margin: '2.5rem 0 1.5rem 0',
+                color: '#64748b'
+              }}>
+                <div style={{ flex: 1, height: '1px', backgroundColor: '#cbd5e1' }} />
+                <span style={{ fontSize: '0.82rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', backgroundColor: '#f1f5f9', padding: '5px 14px', borderRadius: '12px', border: '1px solid #cbd5e1', color: '#800000', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  📄 Page 2 of 2: Weaving Design Specifications & Pattern Breakdown
+                </span>
+                <div style={{ flex: 1, height: '1px', backgroundColor: '#cbd5e1' }} />
+              </div>
+            )}
+
+            {/* PAGE 2 OF A4: WEAVING DESIGN SPECIFICATIONS */}
+            {hasDesignDetails && (
+              <PrintableDesignSpecificationsSheet
+                order={{
+                  order_number: submittedOrderNumber ? submittedOrderNumber : (isEdit ? formData.order_number : 'DRAFT'),
+                  order_type: formData.order_type || 'BULK',
+                  design_no: formData.design_no,
+                  design_name: formData.design_name,
+                  season: formData.season,
+                  merchandiser_name: profile?.full_name || formData.merchandiser_name,
+                  total_quantity: formData.total_quantity,
+                  created_at: new Date().toISOString(),
+                  technical_specs: formData.technical_specs
+                }}
+                yarnCounts={yarnCounts}
+                formatCountFn={id => formatYarnPreview(yarnCounts.find(y => y.id === id))}
+                crimpOverrides={crimpOverrides}
+              />
+            )}
 
             {/* Design Image Upload Section (Screen only) */}
             <div style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }} className="no-print">
@@ -1974,7 +2873,16 @@ export default function CreateOrder() {
                   justify-content: space-between !important;
                   box-sizing: border-box !important;
                   page-break-inside: avoid !important;
-                  page-break-after: avoid !important;
+                }
+
+                .a4-confirmation-sheet:not(.a4-design-sheet) {
+                  ${hasDesignDetails ? 'page-break-after: always !important; break-after: page !important;' : 'page-break-after: avoid !important;'}
+                }
+
+                .a4-design-sheet {
+                  page-break-before: always !important;
+                  break-before: page !important;
+                  page-break-inside: avoid !important;
                 }
 
                 table {
@@ -2008,7 +2916,7 @@ export default function CreateOrder() {
                     className="btn btn-primary"
                     style={{ minWidth: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer' }}
                   >
-                    <Printer size={18} /> Print Confirmation
+                    <Printer size={18} /> Print Confirmation {hasDesignDetails ? '(2 Pages)' : ''}
                   </button>
                   {!isEdit && (
                     <button 
@@ -2037,7 +2945,7 @@ export default function CreateOrder() {
                     className="btn btn-secondary"
                     style={{ minWidth: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#e2e8f0', color: '#1e293b', border: '1px solid #cbd5e1', cursor: 'pointer' }}
                   >
-                    <Printer size={18} /> Print Summary
+                    <Printer size={18} /> Print Summary {hasDesignDetails ? '(2 Pages)' : ''}
                   </button>
                   <button 
                     type="button"
@@ -2060,7 +2968,8 @@ export default function CreateOrder() {
               )}
             </div>
           </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

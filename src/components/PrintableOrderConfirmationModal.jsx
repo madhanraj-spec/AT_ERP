@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Printer } from 'lucide-react';
+import PrintableDesignSpecificationsSheet from './PrintableDesignSpecificationsSheet';
 
 export function formatYarnName(yarn) {
   if (!yarn) return '';
@@ -22,6 +23,11 @@ export default function PrintableOrderConfirmationModal({ order, yarnCounts = []
   const warpSelections = techSpecs.warp_selections || [];
   const weftSelections = techSpecs.weft_selections || [];
   const yarnMappings = order.yarn_requirements || order.yarn_mappings || [];
+
+  const hasDesignDetails = Boolean(
+    techSpecs.design_details?.warp_designs?.some(wd => (wd.sequence || []).length > 0) ||
+    (techSpecs.design_details?.weft_design?.sequence || []).length > 0
+  );
 
   // Filter active mappings
   const activeMappings = yarnMappings.filter(m => {
@@ -138,7 +144,7 @@ export default function PrintableOrderConfirmationModal({ order, yarnCounts = []
                 cursor: 'pointer'
               }}
             >
-              <Printer size={16} /> Print Confirmation (1 A4 Page)
+              <Printer size={16} /> Print Confirmation ({hasDesignDetails ? '2 Pages' : '1 A4 Page'})
             </button>
             <button
               onClick={onClose}
@@ -207,7 +213,14 @@ export default function PrintableOrderConfirmationModal({ order, yarnCounts = []
                 justify-content: space-between !important;
                 box-sizing: border-box !important;
                 page-break-inside: avoid !important;
-                page-break-after: avoid !important;
+              }
+              .printable-order-sheet:not(.printable-design-sheet) {
+                ${hasDesignDetails ? 'page-break-after: always !important; break-after: page !important;' : 'page-break-after: avoid !important;'}
+              }
+              .printable-design-sheet {
+                page-break-before: always !important;
+                break-before: page !important;
+                page-break-inside: avoid !important;
               }
               table {
                 width: 100% !important;
@@ -409,7 +422,7 @@ export default function PrintableOrderConfirmationModal({ order, yarnCounts = []
                         {totalBundles > 0 || totalKnots > 0 ? `${totalBundles}b ${totalKnots}k` : ''}
                       </td>
                       <td style={{ padding: '5px 8px', border: '1px solid #94a3b8', textAlign: 'right', color: '#800000', fontSize: '0.88rem' }}>
-                        {totalYarnKg.toFixed(2)} kg
+                        {Math.round(totalYarnKg)} kg
                       </td>
                     </tr>
                   )}
@@ -447,7 +460,7 @@ export default function PrintableOrderConfirmationModal({ order, yarnCounts = []
                           {totals.bundles > 0 || totals.knots > 0 ? `${totals.bundles}b ${totals.knots}k` : '—'}
                         </td>
                         <td style={{ padding: '4.5px 8px', border: '1px solid #94a3b8', textAlign: 'right', fontWeight: '700', color: '#800000' }}>
-                          {totals.kg.toFixed(2)} kg
+                          {Math.round(totals.kg)} kg
                         </td>
                       </tr>
                     ))}
@@ -536,6 +549,48 @@ export default function PrintableOrderConfirmationModal({ order, yarnCounts = []
           </div>
 
         </div>
+
+        {/* Visual Page 2 Divider on Screen */}
+        {hasDesignDetails && (
+          <div className="no-print" style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '1rem',
+            margin: '2rem 1.75rem 1rem 1.75rem',
+            color: '#64748b'
+          }}>
+            <div style={{ flex: 1, height: '1px', backgroundColor: '#cbd5e1' }} />
+            <span style={{
+              fontSize: '0.82rem',
+              fontWeight: '800',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              backgroundColor: '#f1f5f9',
+              padding: '4px 14px',
+              borderRadius: '12px',
+              border: '1px solid #cbd5e1',
+              color: '#800000',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem'
+            }}>
+              📄 Page 2 of 2: Weaving Design Specifications & Pattern Breakdown
+            </span>
+            <div style={{ flex: 1, height: '1px', backgroundColor: '#cbd5e1' }} />
+          </div>
+        )}
+
+        {/* Page 2: Design Specifications & Weaving Pattern Breakdown */}
+        {hasDesignDetails && (
+          <div style={{ padding: '0 1.75rem 1.5rem 1.75rem' }}>
+            <PrintableDesignSpecificationsSheet
+              order={order}
+              yarnCounts={yarnCounts}
+              formatCountFn={id => formatYarnName(yarnCounts.find(y => y.id === id))}
+            />
+          </div>
+        )}
+
       </div>
     </div>
   );
